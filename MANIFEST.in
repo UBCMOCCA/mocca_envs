@@ -1,0 +1,20 @@
+include mocca_envs/data/*.stl
+include mocca_envs/data/*/*.stl
+include mocca_envs/data/*/*/*.stl
+
+include mocca_envs/data/*.urdf
+include mocca_envs/data/*/*.urdf
+include mocca_envs/data/*/*/*.urdf
+
+include mocca_envs/data/*.xacro
+include mocca_envs/data/*/*.xacro
+include mocca_envs/data/*/*/*.xacro
+
+include mocca_envs/data/*.xml
+include mocca_envs/data/*/*.xml
+include mocca_envs/data/*/*/*.xml
+
+include mocca_envs/data/misc/*.png
+include mocca_envs/data/misc/*.sdf
+include mocca_envs/data/misc/*.mtl
+include mocca_envs/data/misc/*.obj

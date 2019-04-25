@@ -23,24 +23,6 @@ from mocca_envs.robots import Cassie, Walker3D
 Colors = {k: colors.to_rgba(v) for k, v in colors.cnames.items()}
 
 
-def register(id, **kvargs):
-    if id in gym.envs.registration.registry.env_specs:
-        return
-    else:
-        return gym.envs.registration.register(id, **kvargs)
-
-
-register(
-    id="CassieEnv-v0", entry_point="mocca_envs.envs:CassieEnv", max_episode_steps=1000
-)
-
-register(
-    id="Walker3DCustomEnv-v0",
-    entry_point="mocca_envs.envs:Walker3DCustomEnv",
-    max_episode_steps=1000,
-)
-
-
 DEG2RAD = np.pi / 180
 RAD2DEG = 180 / np.pi
 
