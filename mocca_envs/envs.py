@@ -7,7 +7,6 @@ os.sys.path.append(parent_dir)
 import gym
 import gym.utils
 import gym.utils.seeding
-import matplotlib.colors as colors
 import numpy as np
 import pybullet
 import torch
@@ -20,8 +19,12 @@ from mocca_envs.bullet_utils import (
 )
 from mocca_envs.robots import Cassie, Walker3D
 
-Colors = {k: colors.to_rgba(v) for k, v in colors.cnames.items()}
-
+# Hard-coding the colors to get rid of the `matplotlib` dependency
+# Colors = {k: matplotlib.colors.to_rgba(v) for k, v in matplotlib.colors.cnames.items()}
+Colors = {
+    "dodgerblue": (0.11764705882352941, 0.5647058823529412, 1.0, 1.0),
+    "crimson": (0.8627450980392157, 0.0784313725490196, 0.23529411764705882, 1.0),
+}
 
 DEG2RAD = np.pi / 180
 RAD2DEG = 180 / np.pi

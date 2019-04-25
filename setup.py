@@ -8,9 +8,8 @@ setup(name='mocca_envs',
     version='0.1',
     install_requires=[
         'pybullet',
-        'gym',
+        'gym>=0.10.10',
         'numpy',
-        'matplotlib',
         'torch',  # TODO: get rid of this dependency
         # And any other dependencies
     ],
