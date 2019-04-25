@@ -389,16 +389,26 @@ class Walker3D(WalkerBase):
         self.base_joint_angles[[18]] = np.pi / 6  # Left shoulder forward
         self.base_joint_angles[[16, 20]] = np.pi / 3  # Elbow
 
-        # Need this to set pose later
-        self._right_joints = np.array([3, 4, 5, 6, 7, 13, 14, 15, 16], dtype=np.int64)
-        self._left_joints = np.array([8, 9, 10, 11, 12, 17, 18, 19, 20], dtype=np.int64)
+        # Need this to set pose and mirroring
+        # hip_[x,z,y], knee, ankle, shoulder_[x,z,y], elbow
+        self._right_joint_indices = np.array(
+            [3, 4, 5, 6, 7, 13, 14, 15, 16], dtype=np.int64
+        )
+        self._left_joint_indices = np.array(
+            [8, 9, 10, 11, 12, 17, 18, 19, 20], dtype=np.int64
+        )
+        self._negation_joint_indices = np.array([0, 2], dtype=np.int64)  # abdomen_[x,z]
 
     def reset(self, random_pose=True):
         if random_pose:
             # Flip left right
             if self.np_random.rand() < 0.5:
-                rl = np.concatenate((self._right_joints, self._left_joints))
-                lr = np.concatenate((self._left_joints, self._right_joints))
+                rl = np.concatenate(
+                    (self._right_joint_indices, self._left_joint_indices)
+                )
+                lr = np.concatenate(
+                    (self._left_joint_indices, self._right_joint_indices)
+                )
                 self.base_joint_angles[rl] = self.base_joint_angles[lr]
             # Add small deviations
             ds = self.np_random.uniform(low=-0.1, high=0.1, size=self.action_dim)
@@ -480,4 +490,3 @@ class Crab2D(WalkerBase):
         model_path = os.path.join(current_dir, "data", "custom", "crab2d.xml")
         root_link_name = "pelvis"
         super(Crab2D, self).load_robot_model(model_path, flags, root_link_name)
-

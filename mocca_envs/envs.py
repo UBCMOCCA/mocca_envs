@@ -9,7 +9,6 @@ import gym.utils
 import gym.utils.seeding
 import numpy as np
 import pybullet
-import torch
 
 from mocca_envs.bullet_utils import (
     BulletClient,
@@ -410,74 +409,32 @@ class Walker3DCustomEnv(EnvBase):
         self.calc_base_reward(action)
         self.calc_target_reward()
 
-    def get_mirror_function(self):
+    def get_mirror_indices(self):
 
-        right_indices = torch.from_numpy(self.robot._right_joints).long()
-        left_indices = torch.from_numpy(self.robot._left_joints).long()
         action_dim = self.robot.action_space.shape[0]
+        # _ + 6 accounting for global
+        right = self.robot._right_joint_indices + 6
+        # _ + action_dim to get velocities, 48 is right foot contact
+        right = np.concatenate((right, right + action_dim, [48]))
+        # Do the same for left, except using 49 for left foot contact
+        left = self.robot._left_joint_indices + 6
+        left = np.concatenate((left, left + action_dim, [49]))
 
-        def mirror_trajectory(trajectory_samples):
-            observations_batch = trajectory_samples[0]
-            states_batch = trajectory_samples[1]
-            actions_batch = trajectory_samples[2]
-            value_preds_batch = trajectory_samples[3]
-            return_batch = trajectory_samples[4]
-            masks_batch = trajectory_samples[5]
-            old_action_log_probs_batch = trajectory_samples[6]
-            adv_targ = trajectory_samples[7]
+        # Used for creating mirrored observations
+        negation_obs_indices = np.array([2, 4, 6, 8, 27, 29, 50], dtype=np.int64)
+        right_obs_indices = right
+        left_obs_indices = left
 
-            def swap_lr(t, r, l):
-                t[:, torch.cat((r, l))] = t[:, torch.cat((l, r))]
+        # Used for creating mirrored actions
+        negation_action_indices = self.robot._negation_joint_indices
+        right_action_indices = self.robot._right_joint_indices
+        left_action_indices = self.robot._left_joint_indices
 
-            # Create left / right mirrored training data
-            observations_clone = observations_batch.clone()
-            actions_clone = actions_batch.clone()
-
-            # (0-6) more, (6-27) joints angles,
-            # (27-48) joint speeds, (48-50) contacts, (50-52) angles
-            # 2:  vy
-            # 4:  roll
-            # 6:  abdomen_z pos
-            # 8:  abdomen_x pos
-            # 27: abdomen_z vel
-            # 29: abdomen_x vel
-            # 50: sin(-a) = -sin(a)
-            observations_clone[:, [2, 4, 6, 8, 27, 29, 50]] *= -1
-            # hip_[x,z,y], knee, ankle, shoulder_[x,z,y], elbow, contacts
-            right = right_indices.add(6)
-            left = left_indices.add(6)
-            right = torch.cat((right, right.add(action_dim)))  # +19 to get speeds
-            left = torch.cat((left, left.add(action_dim)))
-            # contacts
-            right = torch.cat((right, torch.tensor([48]).long()))
-            left = torch.cat((left, torch.tensor([49]).long()))
-            swap_lr(observations_clone, right, left)
-
-            # Mirror actions
-            # 0, 2: abdomen_z, abdomen_x
-            actions_clone[:, [0, 2]] *= -1
-            # hip_[x,y,z], knee, ankle, shoulder_[x,z,y], elbow
-            swap_lr(actions_clone, right_indices, left_indices)
-
-            observations_batch = torch.cat([observations_batch, observations_clone])
-            actions_batch = torch.cat([actions_batch, actions_clone])
-            states_batch = states_batch.repeat((2, 1))
-            value_preds_batch = value_preds_batch.repeat((2, 1))
-            return_batch = return_batch.repeat((2, 1))
-            masks_batch = masks_batch.repeat((2, 1))
-            old_action_log_probs_batch = old_action_log_probs_batch.repeat((2, 1))
-            adv_targ = adv_targ.repeat((2, 1))
-
-            return (
-                observations_batch,
-                states_batch,
-                actions_batch,
-                value_preds_batch,
-                return_batch,
-                masks_batch,
-                old_action_log_probs_batch,
-                adv_targ,
-            )
-
-        return mirror_trajectory
-
+        return (
+            negation_obs_indices,
+            right_obs_indices,
+            left_obs_indices,
+            negation_action_indices,
+            right_action_indices,
+            left_action_indices,
+        )
