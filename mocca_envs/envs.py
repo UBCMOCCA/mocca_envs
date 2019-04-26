@@ -30,36 +30,38 @@ RAD2DEG = 180 / np.pi
 
 
 class EnvBase(gym.Env):
-    def __init__(self, render=False):
+    def __init__(self, robot_class, render=False):
         self.scene = None
         self.physics_client_id = -1
         self.owns_physics_client = 0
         self.state_id = -1
 
         self.is_render = render
+        self.robot_class = robot_class
+
+        self.seed()
+        self.initialize_scene_and_robot()
 
     def close(self):
         if self.owns_physics_client and self.physics_client_id >= 0:
             self._p.disconnect()
         self.physics_client_id = -1
 
-    def initialize_scene_and_robot(self, robot_class):
+    def initialize_scene_and_robot(self):
 
-        if self.physics_client_id < 0:
-            self.owns_physics_client = True
+        self.owns_physics_client = True
 
-            bc_mode = pybullet.GUI if self.is_render else pybullet.DIRECT
-            self._p = BulletClient(connection_mode=bc_mode)
+        bc_mode = pybullet.GUI if self.is_render else pybullet.DIRECT
+        self._p = BulletClient(connection_mode=bc_mode)
 
-            if self.is_render:
-                self.camera = Camera(self._p, 1 / self.control_step)
-                if hasattr(self, "create_target"):
-                    self.create_target()
+        if self.is_render:
+            self.camera = Camera(self._p, 1 / self.control_step)
+            if hasattr(self, "create_target"):
+                self.create_target()
 
-            self.physics_client_id = self._p._client
-            self._p.configureDebugVisualizer(pybullet.COV_ENABLE_GUI, 0)
+        self.physics_client_id = self._p._client
+        self._p.configureDebugVisualizer(pybullet.COV_ENABLE_GUI, 0)
 
-        frame_skip = 4
         self.scene = SinglePlayerStadiumScene(
             self._p,
             gravity=9.8,
@@ -72,7 +74,7 @@ class EnvBase(gym.Env):
         self.ground_ids = {(self.scene.ground_plane_mjcf[0], -1)}
 
         # Create robot object
-        self.robot = robot_class(self._p)
+        self.robot = self.robot_class(self._p)
         self.robot.initialize()
         self.robot.np_random = self.np_random
 
@@ -80,12 +82,15 @@ class EnvBase(gym.Env):
         if hasattr(self, "create_terrain"):
             self.create_terrain()
 
-        if self.state_id < 0:
-            self.state_id = self._p.saveState()
+        self.state_id = self._p.saveState()
 
     def render(self, mode="human"):
         # Taken care of by pybullet
-        pass
+        if not self.is_render:
+            self.is_render = True
+            self._p.disconnect()
+            self.initialize_scene_and_robot()
+            self.reset()
 
     def reset(self):
         raise NotImplementedError
@@ -122,11 +127,8 @@ class CassieEnv(EnvBase):
     kd = kp / 15
     kd[[6, 13]] /= 10
 
-    def __init__(self, render=True):
-        super(CassieEnv, self).__init__(render)
-
-        self.seed()
-        self.initialize_scene_and_robot(Cassie)
+    def __init__(self, render=False):
+        super(CassieEnv, self).__init__(Cassie, render)
 
         high = np.inf * np.ones(self.robot.observation_space.shape[0] + 2)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
@@ -241,10 +243,6 @@ class CassieEnv(EnvBase):
         state = np.concatenate((robot_state, target[0:2]))
         return state, sum(self.rewards), done, {}
 
-    def render(self, mode="human"):
-        # Taken care of by pybullet
-        self.is_render = True
-
 
 class Walker3DCustomEnv(EnvBase):
 
@@ -253,16 +251,13 @@ class Walker3DCustomEnv(EnvBase):
     sim_frame_skip = 4
 
     def __init__(self, render=False):
-        super(Walker3DCustomEnv, self).__init__(render)
+        super(Walker3DCustomEnv, self).__init__(Walker3D, render)
 
         self.electricity_cost = 4.5
         self.stall_torque_cost = 0.225
         self.joints_at_limit_cost = 0.1
 
         self.dist = 5.0
-
-        self.seed()
-        self.initialize_scene_and_robot(Walker3D)
 
         high = np.inf * np.ones(self.robot.observation_space.shape[0] + 2)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
