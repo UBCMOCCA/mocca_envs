@@ -9,11 +9,13 @@ def register(id, **kvargs):
 
 
 register(
-    id="CassieEnv-v0", entry_point="mocca_envs.envs:CassieEnv", max_episode_steps=1000
+    id="CassieEnv-v0",
+    entry_point="mocca_envs.cassie_envs:CassieEnv",
+    max_episode_steps=1000,
 )
 
 register(
     id="Walker3DCustomEnv-v0",
-    entry_point="mocca_envs.envs:Walker3DCustomEnv",
+    entry_point="mocca_envs.walker3d_envs:Walker3DCustomEnv",
     max_episode_steps=1000,
 )

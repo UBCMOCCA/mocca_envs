@@ -374,7 +374,6 @@ class Walker3D(WalkerBase):
             | self._p.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
         )
         model_path = os.path.join(current_dir, "data", "custom", "walker3d.xml")
-        print(model_path)
         root_link_name = None
 
         # Need to call this first to parse body
