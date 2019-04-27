@@ -16,6 +16,9 @@ Colors = {
     "crimson": (0.8627450980392157, 0.0784313725490196, 0.23529411764705882, 1.0),
 }
 
+DEG2RAD = np.pi / 180
+RAD2DEG = 180 / np.pi
+
 
 class Walker3DCustomEnv(EnvBase):
 
@@ -42,7 +45,7 @@ class Walker3DCustomEnv(EnvBase):
     def reset(self):
         self.done = False
         self.add_angular_progress = True
-        self.dist = self.np_random.uniform(0, 10)
+        self.dist = 0.6
 
         angle = self.np_random.uniform(-np.pi, np.pi)
         self.walk_target = np.array(
@@ -88,15 +91,13 @@ class Walker3DCustomEnv(EnvBase):
         state = np.concatenate((self.robot_state, [sin_], [cos_]))
 
         if self.is_render:
+            self._handle_keyboard()
             self.camera.track(pos=self.robot.body_xyz)
             self.target.set_position(pos=self.walk_target)
             if self.distance_to_target < 0.15:
                 self.target.set_color(Colors["dodgerblue"])
             else:
                 self.target.set_color(Colors["crimson"])
-
-        if self.is_render:
-            self._handle_keyboard()
 
         return state, reward, self.done, {}
 
@@ -209,3 +210,356 @@ class Walker3DCustomEnv(EnvBase):
             right_action_indices,
             left_action_indices,
         )
+
+
+class Walker3DTerrainEnv(EnvBase):
+
+    control_step = 1 / 60
+    llc_frame_skip = 1
+    sim_frame_skip = 4
+
+    def __init__(self, render=False):
+
+        # Need these before calling constructor
+        # because they are used in self.create_terrain()
+        self.step_radius = 0.3
+        self.step_height = 0.1
+        self.rendered_step_count = 3
+
+        super(Walker3DTerrainEnv, self).__init__(Walker3D, render)
+
+        self.electricity_cost = 4.5
+        self.stall_torque_cost = 0.225
+        self.joints_at_limit_cost = 0.1
+
+        # Terrain info
+        self.n_steps = 24
+        self.next_step_index = 0
+        self.lookahead = 2
+        # x, y, z, phi
+        self.terrain_info = np.zeros((self.n_steps, 4))
+
+        # (2 targets) * (x, y, z)
+        high = np.inf * np.ones(self.robot.observation_space.shape[0] + 2 * 3)
+        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
+        self.action_space = self.robot.action_space
+
+    def generate_step_placements(
+        self,
+        x0=0,
+        y0=0,
+        z0=0,
+        n_steps=50,
+        min_gap=0.65,
+        max_gap=0.85,
+        phi_limit=30,
+        theta_limit=25,
+    ):
+        phi_limit = phi_limit * DEG2RAD
+        theta_limit = theta_limit * DEG2RAD
+        dr = self.np_random.uniform(low=min_gap, high=max_gap, size=n_steps)
+        dphi = self.np_random.uniform(low=-phi_limit, high=phi_limit, size=n_steps)
+        dtheta = self.np_random.uniform(
+            low=np.pi / 2 - theta_limit, high=np.pi / 2 + theta_limit, size=n_steps
+        )
+
+        dphi = np.cumsum(dphi)
+        x_ = dr * np.sin(dtheta) * np.cos(dphi)
+        y_ = dr * np.sin(dtheta) * np.sin(dphi)
+        z_ = dr * np.cos(dtheta)
+        x = x0 + np.cumsum(x_)
+        y = y0 + np.cumsum(y_)
+        z = z0 + np.cumsum(z_)
+        np.clip(z, a_min=0.01, a_max=None, out=z)
+
+        return zip(x, y, z, dphi)
+
+    def create_terrain(self):
+
+        planks = []
+        plank_ids = []
+        covers = []
+        cover_ids = []
+
+        plank_shape = self._p.createCollisionShape(
+            self._p.GEOM_CYLINDER, radius=self.step_radius, height=self.step_height * 2
+        )
+        cover_shape = self._p.createCollisionShape(
+            self._p.GEOM_CYLINDER, radius=self.step_radius, height=0.01
+        )
+        plank_vshape = self._p.createVisualShape(
+            self._p.GEOM_CYLINDER,
+            radius=self.step_radius,
+            length=self.step_height * 2,
+            rgbaColor=[88 / 255, 99 / 255, 110 / 255, 1],
+            specularColor=[0.4, 0.4, 0],
+        )
+        cover_vshape = self._p.createVisualShape(
+            self._p.GEOM_CYLINDER,
+            radius=self.step_radius,
+            length=0.01,
+            rgbaColor=[55 / 255, 55 / 255, 55 / 255, 1],
+            specularColor=[0.4, 0.4, 0],
+        )
+
+        x, y, z = 1, 1, 1
+        for index in range(self.rendered_step_count):
+            oid = self._p.createMultiBody(
+                baseMass=0,
+                baseCollisionShapeIndex=plank_shape,
+                baseVisualShapeIndex=plank_vshape,
+                basePosition=[x, y, z - self.step_height],
+            )
+            self._p.changeDynamics(oid, -1, lateralFriction=1.0, restitution=0.1)
+            planks.append(oid)
+            plank_ids.append((oid, -1))
+
+            oid = self._p.createMultiBody(
+                baseMass=0,
+                baseCollisionShapeIndex=cover_shape,
+                baseVisualShapeIndex=cover_vshape,
+                basePosition=[x, y, z],
+            )
+            self._p.changeDynamics(oid, -1, lateralFriction=1.0, restitution=0.1)
+            covers.append(oid)
+            cover_ids.append((oid, -1))
+
+        self.planks = planks
+        self.covers = covers
+        # Need set for detecting contact
+        self.plank_ids = set(plank_ids)
+        self.cover_ids = set(cover_ids)
+        self.all_contact_object_ids = self.plank_ids | self.cover_ids | self.ground_ids
+
+    def randomize_terrain(self):
+        r0 = self.np_random.uniform(0.65, 0.85)
+        phi0 = self.np_random.uniform(-30 * DEG2RAD, 30 * DEG2RAD)
+        x0 = r0 * np.cos(phi0)
+        y0 = r0 * np.sin(phi0)
+
+        # Make flat terrain for now
+        theta_limit = 0
+
+        placements = self.generate_step_placements(
+            x0=x0, y0=y0, z0=0, n_steps=self.n_steps, theta_limit=theta_limit
+        )
+
+        for index, (x, y, z, phi) in enumerate(placements):
+            self.terrain_info[index, :] = [x, y, z, phi]
+            if index < self.rendered_step_count:
+                pid = self.planks[index]
+                cid = self.covers[index]
+                quaternion = np.array(self._p.getQuaternionFromEuler([0, 0, phi]))
+                self._p.resetBasePositionAndOrientation(
+                    pid, posObj=(x, y, z - self.step_height), ornObj=quaternion
+                )
+                self._p.resetBasePositionAndOrientation(
+                    cid, posObj=(x, y, z), ornObj=quaternion
+                )
+
+    def update_steps(self):
+        if self.next_step_index > self.rendered_step_count - self.lookahead:
+            i = (
+                self.next_step_index + self.lookahead - self.rendered_step_count - 1
+            ) % self.rendered_step_count
+            pid = self.planks[i]
+            cid = self.covers[i]
+
+            if self.next_step_index + self.lookahead - 1 < len(self.terrain_info):
+                x, y, z, phi = self.terrain_info[
+                    self.next_step_index + self.lookahead - 1
+                ]
+            else:
+                # At the end of the course, hopefully this doesn't happen
+                x, y, z, phi = self.terrain_info[-1]
+
+            quaternion = np.array(self._p.getQuaternionFromEuler([0, 0, phi]))
+            self._p.resetBasePositionAndOrientation(
+                pid, posObj=(x, y, z - self.step_height), ornObj=quaternion
+            )
+            self._p.resetBasePositionAndOrientation(
+                cid, posObj=(x, y, z + 0.01), ornObj=quaternion
+            )
+
+    def reset(self):
+        self.done = False
+        self.last_count = 0
+        self._p.restoreState(self.state_id)
+
+        # Randomize platforms
+        self.randomize_terrain()
+        self.next_step_index = 0
+
+        self.robot_state = self.robot.reset(random_pose=True)
+
+        # Reset camera
+        if self.is_render:
+            self.camera.lookat(self.robot.body_xyz)
+
+        self.targets = self.delta_to_k_targets(k=self.lookahead)
+        # Order is important because walk_target is set up above
+        self.calc_potential()
+
+        # Normalize targets to between -1 and 1 using softsign
+        self.targets[:, 0:2] /= 1 + np.abs(self.targets[:, 0:2])
+        state = np.concatenate((self.robot_state, self.targets.flatten()[0:2]))
+
+        return state
+
+    def step(self, action):
+
+        self.robot.apply_action(action)
+        self.scene.global_step()
+
+        # Don't calculate the contacts for now
+        self.robot_state = self.robot.calc_state()
+        self.calc_env_state(action)
+
+        reward = self.progress + self.target_bonus
+        reward += self.step_bonus - self.energy_penalty
+        reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
+        reward /= 4
+
+        state = np.concatenate((self.robot_state, self.targets.flatten()[0:2]))
+
+        if self.is_render:
+            self._handle_keyboard()
+            self.camera.track(pos=self.robot.body_xyz)
+
+        return state, reward, self.done, {}
+
+    def calc_potential(self):
+
+        walk_target_theta = np.arctan2(
+            self.walk_target[1] - self.robot.body_xyz[1],
+            self.walk_target[0] - self.robot.body_xyz[0],
+        )
+        walk_target_delta = self.walk_target - self.robot.body_xyz
+
+        self.angle_to_target = walk_target_theta - self.robot.body_rpy[2]
+
+        self.distance_to_target = (
+            walk_target_delta[0] ** 2 + walk_target_delta[1] ** 2
+        ) ** (1 / 2)
+
+        self.linear_potential = -self.distance_to_target / self.scene.dt
+        self.angular_potential = np.cos(self.angle_to_target)
+
+    def calc_base_reward(self, action):
+
+        # Bookkeeping stuff
+        old_linear_potential = self.linear_potential
+        old_angular_potential = self.angular_potential
+
+        self.calc_potential()
+
+        linear_progress = self.linear_potential - old_linear_potential
+        angular_progress = self.angular_potential - old_angular_potential
+
+        self.progress = 2 * linear_progress + 100 * angular_progress
+
+        self.posture_penalty = 0
+        if not -0.2 < self.robot.body_rpy[1] < 0.4:
+            self.posture_penalty = abs(self.robot.body_rpy[1])
+
+        if not -0.4 < self.robot.body_rpy[0] < 0.4:
+            self.posture_penalty += abs(self.robot.body_rpy[0])
+
+        self.energy_penalty = self.electricity_cost * float(
+            np.abs(action * self.robot.joint_speeds).mean()
+        )
+        self.energy_penalty += self.stall_torque_cost * float(np.square(action).mean())
+
+        self.joints_penalty = float(
+            self.joints_at_limit_cost * self.robot.joints_at_limit
+        )
+
+        # Calculate done
+        height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
+        self.tall_bonus = 2.0 if height > 0.7 else -1.0
+        self.done = self.done or self.tall_bonus < 0
+
+    def calc_terrain_state(self):
+
+        # Calculate contact separately for planks
+        target_cover_index = self.next_step_index % self.rendered_step_count
+        target_cover_id = {(self.covers[target_cover_index], -1)}
+
+        self.target_reached = False
+        centre_distance = float("inf")
+        p_xyz = self.terrain_info[self.next_step_index, [0, 1, 2]]
+        for i, f in enumerate(self.robot.feet):
+            self.robot.feet_xyz[i] = f.pose().xyz()
+            contact_ids = set((x[2], x[4]) for x in f.contact_list())
+
+            in_contact = self.all_contact_object_ids & contact_ids
+            self.robot.feet_contact[i] = 1.0 if in_contact else 0.0
+
+            if target_cover_id & contact_ids:
+                self.target_reached = True
+                delta = self.robot.feet_xyz[i] - p_xyz
+                distance = (delta[0] ** 2 + delta[1] ** 2) ** (1 / 2)
+                if distance < centre_distance:
+                    centre_distance = distance
+
+        self.step_bonus = 0
+        if self.target_reached:
+            self.step_bonus = 50 * 2.718 ** (-centre_distance / 0.25)
+
+            self.next_step_index += 1
+            print(self.next_step_index)
+            if self.next_step_index >= len(self.terrain_info):
+                self.next_step_index -= 1
+                self.last_count += 1
+
+            if self.last_count > 1:
+                self.step_bonus = 0
+
+            self.update_steps()
+
+        self.target_bonus = 0
+        if self.distance_to_target < 0.15:
+            self.target_bonus = 2.0
+
+    def calc_env_state(self, action):
+        if not np.isfinite(self.robot_state).all():
+            print("~INF~", self.robot_state)
+            self.done = True
+
+        self.calc_base_reward(action)
+        # detects contact and set next step
+        self.calc_terrain_state()
+        # use next step to calculate next k steps
+        self.targets = self.delta_to_k_targets(k=self.lookahead)
+        # Order is important because walk_target is set up above
+        self.calc_potential()
+
+    def delta_to_k_targets(self, k=1):
+        """ Return positions (relative to root) of target, and k-1 planks after """
+        targets = self.terrain_info[
+            self.next_step_index : self.next_step_index + k, [0, 1, 2]
+        ]
+        if len(targets) < k:
+            # If running out of targets, repeat last target
+            targets = np.concatenate(
+                (targets, np.repeat(targets[[-1]], k - len(targets), axis=0))
+            )
+
+        self.walk_target = targets[:, 0:3].mean(axis=0)
+
+        deltas = targets - self.robot.body_xyz
+        target_thetas = np.arctan2(deltas[:, 1], deltas[:, 0])
+
+        self.angle_to_targets = target_thetas - self.robot.body_rpy[2]
+        self.distance_to_targets = np.linalg.norm(deltas[:, 0:2], ord=2, axis=1)
+
+        deltas = np.stack(
+            (
+                np.sin(self.angle_to_targets) * self.distance_to_targets,
+                np.cos(self.angle_to_targets) * self.distance_to_targets,
+                deltas[:, 2],
+            ),
+            axis=1,
+        )
+
+        return deltas

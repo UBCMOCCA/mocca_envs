@@ -19,3 +19,9 @@ register(
     entry_point="mocca_envs.walker3d_envs:Walker3DCustomEnv",
     max_episode_steps=1000,
 )
+
+register(
+    id="Walker3DTerrainEnv-v0",
+    entry_point="mocca_envs.walker3d_envs:Walker3DTerrainEnv",
+    max_episode_steps=1000,
+)
