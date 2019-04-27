@@ -45,7 +45,7 @@ class Walker3DCustomEnv(EnvBase):
     def reset(self):
         self.done = False
         self.add_angular_progress = True
-        self.dist = 0.6
+        self.dist = self.np_random.uniform(0, 10)
 
         angle = self.np_random.uniform(-np.pi, np.pi)
         self.walk_target = np.array(

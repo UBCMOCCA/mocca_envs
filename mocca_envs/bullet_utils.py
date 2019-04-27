@@ -368,6 +368,22 @@ class Camera:
             self._cam_dist, self._cam_yaw, self._cam_pitch, pos
         )
 
+    def dump_rgb_array(self):
+
+        width, height, view_mat, proj_mat = self._p.getDebugVisualizerCamera()[0:4]
+
+        (_, _, rgb_array, _, _) = self._p.getCameraImage(
+            width=width,
+            height=height,
+            viewMatrix=view_mat,
+            projectionMatrix=proj_mat,
+            renderer=pybullet.ER_BULLET_HARDWARE_OPENGL,
+        )
+
+        rgb_array = rgb_array[:, :, :3]
+
+        return rgb_array
+
     def wait(self):
         delta = (time.perf_counter_ns() - self._ns_counter) / 1e9
         time.sleep(max(self._target_period - delta, 0))
