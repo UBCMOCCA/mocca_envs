@@ -224,7 +224,7 @@ class Walker3DTerrainEnv(EnvBase):
         # because they are used in self.create_terrain()
         self.step_radius = 0.25
         self.step_height = 0.1
-        self.rendered_step_count = 3
+        self.rendered_step_count = 4
 
         super(Walker3DTerrainEnv, self).__init__(Walker3D, render)
 
@@ -245,34 +245,45 @@ class Walker3DTerrainEnv(EnvBase):
         self.action_space = self.robot.action_space
 
     def generate_step_placements(
-        self,
-        x0=0,
-        y0=0,
-        z0=0,
-        n_steps=50,
-        min_gap=0.65,
-        max_gap=0.85,
-        phi_limit=30,
-        theta_limit=25,
+        self, n_steps=50, min_gap=0.65, max_gap=0.85, phi_limit=30, theta_limit=25
     ):
         phi_limit = phi_limit * DEG2RAD
         theta_limit = theta_limit * DEG2RAD
-        dr = self.np_random.uniform(low=min_gap, high=max_gap, size=n_steps)
-        dphi = self.np_random.uniform(low=-phi_limit, high=phi_limit, size=n_steps)
-        dtheta = self.np_random.uniform(
-            low=np.pi / 2 - theta_limit, high=np.pi / 2 + theta_limit, size=n_steps
-        )
 
-        dphi = np.cumsum(dphi)
-        x_ = dr * np.sin(dtheta) * np.cos(dphi)
-        y_ = dr * np.sin(dtheta) * np.sin(dphi)
-        z_ = dr * np.cos(dtheta)
-        x = x0 + np.cumsum(x_)
-        y = y0 + np.cumsum(y_)
-        z = z0 + np.cumsum(z_)
-        np.clip(z, a_min=0.01, a_max=None, out=z)
+        placements = np.zeros((n_steps, 4))
+        step = 0
 
-        return zip(x, y, z, dphi)
+        while step < n_steps:
+
+            dr = self.np_random.uniform(low=min_gap, high=max_gap)
+            dphi = self.np_random.uniform(low=-phi_limit, high=phi_limit)
+            dtheta = self.np_random.uniform(
+                low=np.pi / 2 - theta_limit, high=np.pi / 2 + theta_limit
+            )
+
+            dphi += placements[step, 3]
+            x = dr * np.sin(dtheta) * np.cos(dphi)
+            y = dr * np.sin(dtheta) * np.sin(dphi)
+            z = dr * np.cos(dtheta)
+
+            # Check for overlap
+
+            start = max(0, step - self.rendered_step_count)
+            prev_xy = placements[start:step, 0:2]
+            overlapped = False
+            if prev_xy.size > 0:
+                proposal_xy = placements[step - 1, 0:2] + (x, y)
+                dist = np.linalg.norm(prev_xy - proposal_xy, ord=2, axis=1)
+                overlapped = (dist < 2 * self.step_radius).any()
+
+            if not overlapped:
+                placements[step, 0:3] = placements[step - 1, 0:3] + (x, y, z)
+                placements[step, 3] = dphi
+                step += 1
+
+        np.clip(placements[:, 2], a_min=0.01, a_max=1.0, out=placements[:, 2])
+
+        return placements
 
     def create_terrain(self):
 
@@ -332,16 +343,12 @@ class Walker3DTerrainEnv(EnvBase):
         self.all_contact_object_ids = self.plank_ids | self.cover_ids | self.ground_ids
 
     def randomize_terrain(self):
-        r0 = self.np_random.uniform(0.65, 0.85)
-        phi0 = self.np_random.uniform(-30 * DEG2RAD, 30 * DEG2RAD)
-        x0 = r0 * np.cos(phi0)
-        y0 = r0 * np.sin(phi0)
-
         # Make flat terrain for now
         theta_limit = 0
+        phi_limit = 180
 
         placements = self.generate_step_placements(
-            x0=x0, y0=y0, z0=0, n_steps=self.n_steps, theta_limit=theta_limit
+            n_steps=self.n_steps, theta_limit=theta_limit, phi_limit=phi_limit
         )
 
         for index, (x, y, z, phi) in enumerate(placements):
@@ -416,14 +423,26 @@ class Walker3DTerrainEnv(EnvBase):
         reward = self.progress + self.target_bonus
         reward += self.step_bonus - self.energy_penalty
         reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
+        # Scale reward to be between -3 and +3
+        reward = reward / (1 + abs(reward)) * 3
 
         state = np.concatenate((self.robot_state, self.targets.flatten()))
 
         if self.is_render:
             self._handle_keyboard()
             self.camera.track(pos=self.robot.body_xyz)
+            self.target.set_position(pos=self.walk_target)
+            if self.distance_to_target < 0.15:
+                self.target.set_color(Colors["dodgerblue"])
+            else:
+                self.target.set_color(Colors["crimson"])
 
         return state, reward, self.done, {}
+
+    def create_target(self):
+        # Need this to create target in render mode, called by EnvBase
+        # Sphere is a visual shape, does not interact physically
+        self.target = VSphere(self._p, radius=0.15, pos=None)
 
     def calc_potential(self):
 
@@ -511,6 +530,7 @@ class Walker3DTerrainEnv(EnvBase):
 
         self.target_bonus = 0
         if self.distance_to_target < 0.15:
+            # Mostly for last step only
             self.target_bonus = 2.0
 
     def calc_env_state(self, action):
