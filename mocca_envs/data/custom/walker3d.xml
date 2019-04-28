@@ -69,7 +69,7 @@
                 <joint axis="0 1 0" name="right_shoulder_y" pos="0 0 0" range="-60 60" stiffness="0" type="hinge"/>
                 <geom fromto="0 0 0 0 -.25 0" name="right_uarm1" size="0.035" type="capsule"/>
                 <body name="right_lower_arm" pos="0 -.28 0">
-                    <joint axis="0 0 1" name="right_elbow" pos="0 0 0" range="0 140" stiffness="0" type="hinge"/>
+                    <joint axis="0 0 1" name="right_elbow" pos="0 0 0" range="0 120" stiffness="0" type="hinge"/>
                     <geom fromto="0 0 0 0 -.25 0" name="right_larm" size="0.035" type="capsule"/>
                     <geom name="right_hand" pos="0 -.30 0" size=".04" type="sphere"/>
                 </body>
@@ -80,7 +80,7 @@
                 <joint axis="0 1 0" name="left_shoulder_y" pos="0 0 0" range="-60 60" stiffness="0" type="hinge"/>
                 <geom fromto="0 0 0 0 .25 0" name="left_uarm1" size="0.035" type="capsule"/>
                 <body name="left_lower_arm" pos="0 .28 0">
-                    <joint axis="0 0 -1" name="left_elbow" pos="0 0 0" range="0 140" stiffness="0" type="hinge"/>
+                    <joint axis="0 0 -1" name="left_elbow" pos="0 0 0" range="0 120" stiffness="0" type="hinge"/>
                     <geom fromto="0 0 0 0 .25 0" name="left_larm" size="0.035" type="capsule"/>
                     <geom name="left_hand" pos="0 .30 0" size=".04" type="sphere"/>
                 </body>
