@@ -193,6 +193,13 @@ class Walker3DCustomEnv(EnvBase):
         left = np.concatenate((left, left + action_dim, [49]))
 
         # Used for creating mirrored observations
+        # 2:  vy
+        # 4:  roll
+        # 6:  abdomen_z pos
+        # 8:  abdomen_x pos
+        # 27: abdomen_z vel
+        # 29: abdomen_x vel
+        # 50: sin(-a) = -sin(a)
         negation_obs_indices = np.array([2, 4, 6, 8, 27, 29, 50], dtype=np.int64)
         right_obs_indices = right
         left_obs_indices = left
@@ -245,7 +252,7 @@ class Walker3DTerrainEnv(EnvBase):
         self.action_space = self.robot.action_space
 
     def generate_step_placements(
-        self, n_steps=50, min_gap=0.65, max_gap=0.85, phi_limit=30, theta_limit=25
+        self, n_steps=50, min_gap=0.5, max_gap=0.85, phi_limit=30, theta_limit=25
     ):
         phi_limit = phi_limit * DEG2RAD
         theta_limit = theta_limit * DEG2RAD
@@ -578,3 +585,41 @@ class Walker3DTerrainEnv(EnvBase):
         deltas /= 1 + np.abs(deltas)
 
         return deltas
+
+    def get_mirror_indices(self):
+
+        action_dim = self.robot.action_space.shape[0]
+        # _ + 6 accounting for global
+        right = self.robot._right_joint_indices + 6
+        # _ + action_dim to get velocities, 48 is right foot contact
+        right = np.concatenate((right, right + action_dim, [48]))
+        # Do the same for left, except using 49 for left foot contact
+        left = self.robot._left_joint_indices + 6
+        left = np.concatenate((left, left + action_dim, [49]))
+
+        # Used for creating mirrored observations
+        # 2:  vy
+        # 4:  roll
+        # 6:  abdomen_z pos
+        # 8:  abdomen_x pos
+        # 27: abdomen_z vel
+        # 29: abdomen_x vel
+        # 50: sin(-a) = -sin(a) of next step
+        # 53: sin(-a) = -sin(a) of next + 1 step
+        negation_obs_indices = np.array([2, 4, 6, 8, 27, 29, 50, 53], dtype=np.int64)
+        right_obs_indices = right
+        left_obs_indices = left
+
+        # Used for creating mirrored actions
+        negation_action_indices = self.robot._negation_joint_indices
+        right_action_indices = self.robot._right_joint_indices
+        left_action_indices = self.robot._left_joint_indices
+
+        return (
+            negation_obs_indices,
+            right_obs_indices,
+            left_obs_indices,
+            negation_action_indices,
+            right_action_indices,
+            left_action_indices,
+        )
