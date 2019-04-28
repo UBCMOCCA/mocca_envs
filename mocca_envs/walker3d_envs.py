@@ -222,7 +222,7 @@ class Walker3DTerrainEnv(EnvBase):
 
         # Need these before calling constructor
         # because they are used in self.create_terrain()
-        self.step_radius = 0.3
+        self.step_radius = 0.25
         self.step_height = 0.1
         self.rendered_step_count = 3
 
@@ -400,9 +400,7 @@ class Walker3DTerrainEnv(EnvBase):
         # Order is important because walk_target is set up above
         self.calc_potential()
 
-        # Normalize targets to between -1 and 1 using softsign
-        self.targets[:, 0:2] /= 1 + np.abs(self.targets[:, 0:2])
-        state = np.concatenate((self.robot_state, self.targets.flatten()[0:2]))
+        state = np.concatenate((self.robot_state, self.targets.flatten()))
 
         return state
 
@@ -418,9 +416,8 @@ class Walker3DTerrainEnv(EnvBase):
         reward = self.progress + self.target_bonus
         reward += self.step_bonus - self.energy_penalty
         reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
-        reward /= 4
 
-        state = np.concatenate((self.robot_state, self.targets.flatten()[0:2]))
+        state = np.concatenate((self.robot_state, self.targets.flatten()))
 
         if self.is_render:
             self._handle_keyboard()
@@ -443,20 +440,16 @@ class Walker3DTerrainEnv(EnvBase):
         ) ** (1 / 2)
 
         self.linear_potential = -self.distance_to_target / self.scene.dt
-        self.angular_potential = np.cos(self.angle_to_target)
 
     def calc_base_reward(self, action):
 
         # Bookkeeping stuff
         old_linear_potential = self.linear_potential
-        old_angular_potential = self.angular_potential
 
         self.calc_potential()
 
         linear_progress = self.linear_potential - old_linear_potential
-        angular_progress = self.angular_potential - old_angular_potential
-
-        self.progress = 2 * linear_progress + 100 * angular_progress
+        self.progress = 2 * linear_progress
 
         self.posture_penalty = 0
         if not -0.2 < self.robot.body_rpy[1] < 0.4:
@@ -507,7 +500,6 @@ class Walker3DTerrainEnv(EnvBase):
             self.step_bonus = 50 * 2.718 ** (-centre_distance / 0.25)
 
             self.next_step_index += 1
-            print(self.next_step_index)
             if self.next_step_index >= len(self.terrain_info):
                 self.next_step_index -= 1
                 self.last_count += 1
@@ -561,5 +553,8 @@ class Walker3DTerrainEnv(EnvBase):
             ),
             axis=1,
         )
+
+        # Normalize targets to between -1 and +1 using softsign
+        deltas /= 1 + np.abs(deltas)
 
         return deltas
