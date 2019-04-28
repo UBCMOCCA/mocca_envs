@@ -331,16 +331,16 @@ class Walker3D(WalkerBase):
     foot_names = ["right_foot", "left_foot"]
 
     power_coef = {
-        "abdomen_z": 80,
+        "abdomen_z": 60,
         "abdomen_y": 80,
-        "abdomen_x": 80,
+        "abdomen_x": 60,
         "right_hip_x": 80,
-        "right_hip_z": 80,
+        "right_hip_z": 60,
         "right_hip_y": 100,
         "right_knee": 90,
         "right_ankle": 60,
         "left_hip_x": 80,
-        "left_hip_z": 80,
+        "left_hip_z": 60,
         "left_hip_y": 100,
         "left_knee": 90,
         "left_ankle": 60,
@@ -356,7 +356,7 @@ class Walker3D(WalkerBase):
 
     def __init__(self, bc):
         self._p = bc
-        self.power = 0.8
+        self.power = 0.7
 
         self.action_dim = 21
         high = np.ones(self.action_dim)
