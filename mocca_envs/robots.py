@@ -211,11 +211,14 @@ class WalkerBase:
         self.joints_at_limit = np.count_nonzero(np.abs(self.joint_angles) > 0.99)
 
         body_pose = self.robot_body.pose()
-        parts_xyz = np.array([p.pose().xyz() for p in self.parts.values()])
 
-        self.body_xyz = parts_xyz.mean(axis=0)
-        # pelvis z is more informative than mean z
-        self.body_xyz[2] = body_pose.xyz()[2]
+        # parts_xyz = np.array([p.pose().xyz() for p in self.parts.values()])
+        # self.body_xyz = parts_xyz.mean(axis=0)
+        # # pelvis z is more informative than mean z
+        # self.body_xyz[2] = body_pose.xyz()[2]
+
+        # Faster if we don't use true CoM
+        self.body_xyz = body_pose.xyz()
 
         if self.initial_z is None:
             self.initial_z = self.body_xyz[2]
