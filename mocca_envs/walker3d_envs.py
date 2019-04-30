@@ -274,7 +274,7 @@ class Walker3DTerrainEnv(EnvBase):
                 low=np.pi / 2 - theta_limit, high=np.pi / 2 + theta_limit
             )
 
-            dphi += placements[step, 3]
+            dphi += placements[step - 1, 3]
             x = dr * np.sin(dtheta) * np.cos(dphi)
             y = dr * np.sin(dtheta) * np.sin(dphi)
             z = dr * np.cos(dtheta)
@@ -282,17 +282,16 @@ class Walker3DTerrainEnv(EnvBase):
             # Check for overlap
 
             start = max(0, step - self.rendered_step_count)
-            prev_xy = placements[start:step, 0:2]
-            overlapped = False
-            if prev_xy.size > 0:
-                proposal_xy = placements[step - 1, 0:2] + (x, y)
-                dist = np.linalg.norm(prev_xy - proposal_xy, ord=2, axis=1)
+            prev_xyz = placements[start:step, 0:3]
+            if prev_xyz.size > 0:
+                proposal_xyz = placements[step - 1, 0:3] + (x, y, z)
+                dist = np.linalg.norm((prev_xyz - proposal_xyz)[:, 0:2], ord=2, axis=1)
                 overlapped = (dist < 2 * self.step_radius).any()
 
-            if not overlapped:
-                placements[step, 0:3] = placements[step - 1, 0:3] + (x, y, z)
-                placements[step, 3] = dphi
-                step += 1
+                if not overlapped:
+                    placements[step, 0:3] = proposal_xyz
+                    placements[step, 3] = dphi
+                    step += 1
 
         np.clip(placements[:, 2], a_min=0.0, a_max=1.0, out=placements[:, 2])
 
@@ -544,7 +543,7 @@ class Walker3DTerrainEnv(EnvBase):
 
         self.miss_step_penalty = 0
         for fog, dist in zip(foot_on_ground, foot_dist_to_next_step):
-            self.miss_step_penalty += dist if fog else 0
+            self.miss_step_penalty += 0 if fog else 0
 
         self.step_bonus = 0
         if self.target_reached:
