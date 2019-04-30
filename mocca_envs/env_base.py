@@ -66,6 +66,20 @@ class EnvBase(gym.Env):
 
         self.state_id = self._p.saveState()
 
+    def set_env_params(self, params_dict):
+        for k, v in params_dict.items():
+            if hasattr(self, k):
+                setattr(self, k, v)
+
+    def set_robot_params(self, params_dict):
+        for k, v in params_dict.items():
+            if hasattr(self.robot, k):
+                setattr(self.robot, k, v)
+
+        # Right now only power can be set
+        # Make sure to recalculate torque limit
+        self.robot.calc_torque_limits()
+
     def render(self, mode="human"):
         # Taken care of by pybullet
         if not self.is_render:

@@ -272,7 +272,9 @@ class WalkerBase:
         self.feet = [self.parts[f] for f in self.foot_names]
         self.feet_contact = np.zeros(len(self.foot_names), dtype=np.float32)
         self.feet_xyz = np.zeros((len(self.foot_names), 3))
+        self.calc_torque_limits()
 
+    def calc_torque_limits(self):
         self.torque_limits = self.power * np.array(
             [self.power_coef[j.joint_name] for j in self.ordered_joints]
         )
