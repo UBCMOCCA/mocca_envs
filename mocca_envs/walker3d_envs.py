@@ -262,7 +262,7 @@ class Walker3DTerrainEnv(EnvBase):
         # Set first two planks underneath feet
         placements[0, 0:3] = self.robot.feet_xyz[0]
         placements[1, 0:3] = self.robot.feet_xyz[1]
-        placements[0:2, 2] -= 0.2  # Reset z to be flat on the ground
+        placements[0:2, 2] -= 0.13  # Reset z to be flat on the ground
 
         step = 2
 
@@ -405,7 +405,7 @@ class Walker3DTerrainEnv(EnvBase):
         self.last_count = 0
         self._p.restoreState(self.state_id)
 
-        self.robot_state = self.robot.reset(random_pose=True)
+        self.robot_state = self.robot.reset(random_pose=True, z0=2)
         self.calc_feet_state()
 
         # Randomize platforms
@@ -433,8 +433,8 @@ class Walker3DTerrainEnv(EnvBase):
         self.robot_state = self.robot.calc_state()
         self.calc_env_state(action)
 
-        reward = self.progress + self.target_bonus - self.energy_penalty
-        reward += self.step_bonus - self.miss_step_penalty
+        reward = self.progress - self.energy_penalty
+        reward += self.step_bonus + self.target_bonus
         reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
 
         state = np.concatenate((self.robot_state, self.targets.flatten()))
@@ -497,9 +497,8 @@ class Walker3DTerrainEnv(EnvBase):
             self.joints_at_limit_cost * self.robot.joints_at_limit
         )
 
-        # Calculate done
         height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
-        self.tall_bonus = 2.0 if height > 0.7 else -1.0
+        self.tall_bonus = 1.5 if height > 0.7 else -1.0
         self.done = self.done or self.tall_bonus < 0
 
     def calc_feet_state(self):
@@ -508,7 +507,6 @@ class Walker3DTerrainEnv(EnvBase):
         target_cover_id = {(self.covers[target_cover_index], -1)}
 
         target_reached = False
-        foot_on_ground = [False, False]
         foot_dist_to_next_step = [0.0, 0.0]
 
         centre_distance = float("inf")
@@ -520,30 +518,25 @@ class Walker3DTerrainEnv(EnvBase):
             in_contact = self.all_contact_object_ids & contact_ids
             self.robot.feet_contact[i] = 1.0 if in_contact else 0.0
 
-            if self.ground_ids & contact_ids and not self.cover_ids & contact_ids:
-                foot_on_ground[i] = True
-                delta = self.robot.feet_xyz[i] - p_xyz
-                distance = (delta[0] ** 2 + delta[1] ** 2) ** (1 / 2)
-                foot_dist_to_next_step[i] = distance
+            delta = self.robot.feet_xyz[i] - p_xyz
+            distance = (delta[0] ** 2 + delta[1] ** 2) ** (1 / 2)
+            foot_dist_to_next_step[i] = distance
+
+            if not target_cover_id & contact_ids and self.ground_ids & contact_ids:
+                self.done = True
 
             if target_cover_id & contact_ids:
                 target_reached = True
-                delta = self.robot.feet_xyz[i] - p_xyz
-                distance = (delta[0] ** 2 + delta[1] ** 2) ** (1 / 2)
                 if distance < centre_distance:
                     centre_distance = distance
 
-        return target_reached, centre_distance, foot_on_ground, foot_dist_to_next_step
+        return target_reached, centre_distance, foot_dist_to_next_step
 
     def calc_terrain_reward(self):
 
-        self.target_reached, centre_distance, foot_on_ground, foot_dist_to_next_step = (
+        self.target_reached, centre_distance, foot_dist_to_next_step = (
             self.calc_feet_state()
         )
-
-        self.miss_step_penalty = 0
-        for fog, dist in zip(foot_on_ground, foot_dist_to_next_step):
-            self.miss_step_penalty += 0 if fog else 0
 
         self.step_bonus = 0
         if self.target_reached:
@@ -588,7 +581,7 @@ class Walker3DTerrainEnv(EnvBase):
                 (targets, np.repeat(targets[[-1]], k - len(targets), axis=0))
             )
 
-        self.walk_target = targets[0, 0:3]
+        self.walk_target = targets[:, 0:3].mean(axis=0)
 
         deltas = targets - self.robot.body_xyz
         target_thetas = np.arctan2(deltas[:, 1], deltas[:, 0])

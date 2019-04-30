@@ -401,7 +401,7 @@ class Walker3D(WalkerBase):
         )
         self._negation_joint_indices = np.array([0, 2], dtype=np.int64)  # abdomen_[x,z]
 
-    def reset(self, random_pose=True):
+    def reset(self, random_pose=True, z0=None):
         if random_pose:
             # Flip left right
             if self.np_random.rand() < 0.5:
@@ -418,6 +418,11 @@ class Walker3D(WalkerBase):
             ps = self.to_radians(np.clip(self.to_normalized(ps), -0.95, 0.95))
             for i, j in enumerate(self.ordered_joints):
                 j.reset_current_position(ps[i], 0)
+
+        if z0 is not None:
+            self._p.resetBasePositionAndOrientation(
+                self.object_id[0], posObj=(0, 0, z0), ornObj=(0, 0, 0, 1)
+            )
 
         return super(Walker3D, self).reset()
 
