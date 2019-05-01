@@ -36,14 +36,18 @@ class Walker3DCustomEnv(EnvBase):
         # Sphere is a visual shape, does not interact physically
         self.target = VSphere(self._p, radius=0.15, pos=None)
 
+    def randomize_target(self):
+        self.dist = self.np_random.uniform(0, 10)
+        self.angle = self.np_random.uniform(-np.pi, np.pi)
+        self.stop_frames = self.np_random.choice([1.0, 75, 150])
+
     def reset(self):
         self.done = False
         self.add_angular_progress = True
-        self.dist = self.np_random.uniform(0, 10)
+        self.randomize_target()
 
-        angle = self.np_random.uniform(-np.pi, np.pi)
         self.walk_target = np.array(
-            [self.dist * np.cos(angle), self.dist * np.sin(angle), 1.0]
+            [self.dist * np.cos(self.angle), self.dist * np.sin(self.angle), 1.0]
         )
         self.close_count = 0
 
@@ -167,11 +171,11 @@ class Walker3DCustomEnv(EnvBase):
         self.calc_base_reward(action)
         self.calc_target_reward()
 
-        if self.close_count >= self.np_random.choice([75, 150]):
+        if self.close_count >= self.stop_frames:
             self.close_count = 0
             self.add_angular_progress = True
-            angle = self.np_random.uniform(-np.pi, np.pi)
-            delta = self.dist * np.array([np.cos(angle), np.sin(angle), 0.0])
+            self.randomize_target()
+            delta = self.dist * np.array([np.cos(self.angle), np.sin(self.angle), 0.0])
             self.walk_target += delta
             self.calc_potential()
 
@@ -287,7 +291,7 @@ class Walker3DTerrainEnv(EnvBase):
                     placements[step, 3] = dphi
                     step += 1
 
-        np.clip(placements[:, 2], a_min=0.0, a_max=1.0, out=placements[:, 2])
+        np.clip(placements[:, 2], a_min=0.0, a_max=0.0, out=placements[:, 2])
 
         return placements
 
@@ -399,12 +403,13 @@ class Walker3DTerrainEnv(EnvBase):
         self.last_count = 0
         self._p.restoreState(self.state_id)
 
-        self.robot_state = self.robot.reset(random_pose=True, z0=2)
+        self.robot_state = self.robot.reset(random_pose=True)
         self.calc_feet_state()
 
         # Randomize platforms
         self.randomize_terrain()
-        self.next_step_index = 0
+        # First two steps are already underneath, start at 2
+        self.next_step_index = 2
 
         # Reset camera
         if self.is_render:
@@ -500,51 +505,45 @@ class Walker3DTerrainEnv(EnvBase):
         target_cover_index = self.next_step_index % self.rendered_step_count
         target_cover_id = {(self.covers[target_cover_index], -1)}
 
-        target_reached = False
-        foot_dist_to_next_step = [0.0, 0.0]
+        foot_struck_ground = np.array([0.0, 0.0])
+        foot_dist_to_target = np.array([0.0, 0.0])
 
-        centre_distance = float("inf")
         p_xyz = self.terrain_info[self.next_step_index, [0, 1, 2]]
         for i, f in enumerate(self.robot.feet):
             self.robot.feet_xyz[i] = f.pose().xyz()
             contact_ids = set((x[2], x[4]) for x in f.contact_list())
 
             in_contact = self.all_contact_object_ids & contact_ids
+
+            if in_contact and not self.robot.feet_contact[i]:
+                foot_struck_ground[i] = 1.0
+
             self.robot.feet_contact[i] = 1.0 if in_contact else 0.0
 
             delta = self.robot.feet_xyz[i] - p_xyz
             distance = (delta[0] ** 2 + delta[1] ** 2) ** (1 / 2)
-            foot_dist_to_next_step[i] = distance
+            foot_dist_to_target[i] = distance
 
-            if not target_cover_id & contact_ids and self.ground_ids & contact_ids:
-                self.done = True
-
+            # Target reached
             if target_cover_id & contact_ids:
-                target_reached = True
-                if distance < centre_distance:
-                    centre_distance = distance
+                self.next_step_index += 1
+                if self.next_step_index >= len(self.terrain_info):
+                    self.next_step_index -= 1
+                    self.last_count += 1
 
-        return target_reached, centre_distance, foot_dist_to_next_step
+                self.update_steps()
+
+        return foot_struck_ground, foot_dist_to_target
 
     def calc_terrain_reward(self):
 
-        self.target_reached, centre_distance, foot_dist_to_next_step = (
-            self.calc_feet_state()
-        )
+        foot_struck_ground, foot_dist_to_target = self.calc_feet_state()
 
-        self.step_bonus = 0
-        if self.target_reached:
-            self.step_bonus = 50 * 2.718 ** (-centre_distance / 0.25)
+        step_bonus = foot_struck_ground * 100 * np.exp(-foot_dist_to_target / 0.1)
 
-            self.next_step_index += 1
-            if self.next_step_index >= len(self.terrain_info):
-                self.next_step_index -= 1
-                self.last_count += 1
-
-            if self.last_count > 1:
-                self.step_bonus = 0
-
-            self.update_steps()
+        self.step_bonus = step_bonus.sum()
+        if self.last_count > 1:
+            self.step_bonus = 0
 
         self.target_bonus = 0
         if self.distance_to_target < 0.15:
