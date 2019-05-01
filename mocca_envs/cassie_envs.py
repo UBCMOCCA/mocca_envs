@@ -4,7 +4,7 @@ import pickle
 import numpy as np
 
 from mocca_envs.env_base import EnvBase
-from mocca_envs.robots import Cassie
+from mocca_envs.robots import Cassie, Cassie2D
 from mocca_envs import current_dir
 
 
@@ -15,12 +15,31 @@ class CassieEnv(EnvBase):
     sim_frame_skip = 1
 
     ## PD gains:
-    kp = np.array([100, 100, 88, 96, 98, 98, 50, 100, 100, 88, 96, 98, 98, 50])
+    kp = np.array(
+        [
+            100,
+            100,
+            88,
+            96,
+            # 98,
+            # 98,
+            50,
+            #
+            100,
+            100,
+            88,
+            96,
+            # 98,
+            # 98,
+            50,
+        ]
+    )
     kd = kp / 15
-    kd[[6, 13]] /= 10
+    # kd[[6, 13]] /= 10
 
-    def __init__(self, render=False):
-        super(CassieEnv, self).__init__(Cassie, render)
+    def __init__(self, render=False, planar=False):
+        robot_class = Cassie2D if planar else Cassie
+        super(CassieEnv, self).__init__(robot_class, render)
 
         high = np.inf * np.ones(self.robot.observation_space.shape[0] + 2)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
@@ -62,8 +81,10 @@ class CassieEnv(EnvBase):
         return state
 
     def pd_control(self, target_angles, target_speeds):
-        curr_angles = self.robot.to_radians(self.robot.joint_angles)
-        curr_speeds = self.robot.joint_speeds
+        curr_angles = self.robot.to_radians(self.robot.joint_angles)[
+            self.robot.powered_joint_inds
+        ]
+        curr_speeds = self.robot.joint_speeds[self.robot.powered_joint_inds]
 
         perror = target_angles - curr_angles
         verror = np.clip(target_speeds - curr_speeds, -5, 5)
@@ -79,16 +100,16 @@ class CassieEnv(EnvBase):
         return np.array(self.robot.base_joint_angles)
 
     def step(self, a):
-        target_angles = self.base_angles()
+        target_angles = self.base_angles()[self.robot.powered_joint_inds]
         ## `knee_to_shin` and `ankle_joint` joints (both sides) do not have a motor
         ## we don't know how to set the constraints for them so we're using PD with fixed target instead
-        target_angles[[0, 1, 2, 3, 6, 7, 8, 9, 10, 13]] += a
+        target_angles += a
         # target_angles = self.robot.to_radians(target_angles)
         # target_angles +=   # self.robot.base_joint_angles
-        target_angles[4] = 0
-        target_angles[5] = -target_angles[3] + 0.227  # -q_3 + 13 deg
-        target_angles[11] = 0
-        target_angles[12] = -target_angles[10] + 0.227  # -q_10 + 13 deg
+        # target_angles[4] = 0
+        # target_angles[5] = -target_angles[3] + 0.227  # -q_3 + 13 deg
+        # target_angles[11] = 0
+        # target_angles[12] = -target_angles[10] + 0.227  # -q_10 + 13 deg
 
         for _ in range(self.llc_frame_skip):
             target_speeds = target_angles * 0

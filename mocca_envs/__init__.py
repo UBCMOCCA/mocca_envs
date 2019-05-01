@@ -28,6 +28,20 @@ register(
 )
 
 register(
+    id="Cassie2DEnv-v0",
+    entry_point="mocca_envs.cassie_envs:CassieEnv",
+    max_episode_steps=1000,
+    kwargs={"planar": True},
+)
+
+register(
+    id="CassieMocap2DEnv-v0",
+    entry_point="mocca_envs.cassie_envs:CassieMocapEnv",
+    max_episode_steps=1000,
+    kwargs={"planar": True},
+)
+
+register(
     id="Walker3DCustomEnv-v0",
     entry_point="mocca_envs.walker3d_envs:Walker3DCustomEnv",
     max_episode_steps=1000,

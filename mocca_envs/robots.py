@@ -12,7 +12,7 @@ class Cassie:
     model_path = os.path.join(
         current_dir, "data", "cassie", "urdf", "cassie_collide.urdf"
     )
-    base_position = (0.0, 0.0, 1.057)
+    base_position = (0.0, 0.0, 1.090)
     base_orientation = (0.0, 0.0, 0.0, 1.0)
 
     base_joint_angles = [
@@ -49,6 +49,8 @@ class Cassie:
         "toe_joint_right": 45.0,
     }
 
+    powered_joint_inds = [0, 1, 2, 3, 6, 7, 8, 9, 10, 13]
+
     def __init__(self, bc, power=1.0):
         self._p = bc
         self.power = power
@@ -78,6 +80,7 @@ class Cassie:
         )
 
         self.parse_joints_and_links(self.object_id)
+        self.powered_joints = np.array(self.ordered_joints)[self.powered_joint_inds].tolist()
 
         # Set Initial pose
         self._p.resetBasePositionAndOrientation(
@@ -152,9 +155,17 @@ class Cassie:
 
     def apply_action(self, a):
         assert np.isfinite(a).all()
-        for n, j in enumerate(self.ordered_joints):
+        for n, j in enumerate(self.powered_joints):
             # j.set_position(self.base_joint_angles[n])
-            j.set_motor_torque(float(np.clip(a[n], -j.torque_limit, j.torque_limit)))
+            j.set_motor_torque(
+                float(np.clip(a[n], -j.torque_limit, j.torque_limit))
+            )
+
+        self.ordered_joints[4].set_position(0)
+        self.ordered_joints[11].set_position(0)
+        angles = self.to_radians(self.joint_angles)
+        self.ordered_joints[5].set_position(-angles[3] + 0.227)  # -q_3 + 13 deg
+        self.ordered_joints[12].set_position(-angles[10] + 0.227)  # -q_10 + 13 deg
 
     def calc_state(self):
         j = np.array(
@@ -274,7 +285,6 @@ class WalkerBase:
         self.feet = [self.parts[f] for f in self.foot_names]
         self.feet_contact = np.zeros(len(self.foot_names), dtype=np.float32)
         self.feet_xyz = np.zeros((len(self.foot_names), 3))
-
 
     def make_robot_utils(self):
         # utility functions for converting from normalized to radians and vice versa
@@ -503,3 +513,9 @@ class Crab2D(WalkerBase):
         model_path = os.path.join(current_dir, "data", "custom", "crab2d.xml")
         root_link_name = "pelvis"
         super(Crab2D, self).load_robot_model(model_path, flags, root_link_name)
+
+
+class Cassie2D(Cassie):
+    model_path = os.path.join(
+        current_dir, "data", "cassie", "urdf", "cassie_collide_2d.urdf"
+    )

@@ -204,6 +204,7 @@ class Joint:
             self.jointIndex,
             pybullet.POSITION_CONTROL,
             targetPosition=position,
+            force=self.torque_limit,
         )
 
     def set_velocity(self, velocity):
