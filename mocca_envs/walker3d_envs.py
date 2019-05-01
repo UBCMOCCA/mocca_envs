@@ -2,7 +2,7 @@ import gym
 import numpy as np
 
 from mocca_envs.env_base import EnvBase
-from mocca_envs.bullet_utils import VSphere
+from mocca_envs.bullet_utils import VSphere, Pillar, Plank
 from mocca_envs.robots import Walker3D
 
 Colors = {
@@ -228,8 +228,8 @@ class Walker3DTerrainEnv(EnvBase):
         # Need these before calling constructor
         # because they are used in self.create_terrain()
         self.step_radius = 0.25
-        self.step_height = 0.1
-        self.rendered_step_count = 4
+        self.step_height = 0.2
+        self.rendered_step_count = 3
 
         super(Walker3DTerrainEnv, self).__init__(Walker3D, render)
 
@@ -250,17 +250,18 @@ class Walker3DTerrainEnv(EnvBase):
         self.action_space = self.robot.action_space
 
     def generate_step_placements(
-        self, n_steps=50, min_gap=0.5, max_gap=0.85, phi_limit=30, theta_limit=25
+        self, n_steps=50, min_gap=0.65, max_gap=0.75, phi_limit=30, theta_limit=25
     ):
         phi_limit = phi_limit * DEG2RAD
         theta_limit = theta_limit * DEG2RAD
 
         placements = np.zeros((n_steps, 4))
 
-        # Set first two planks underneath feet
-        placements[0, 0:3] = self.robot.feet_xyz[0]
-        placements[1, 0:3] = self.robot.feet_xyz[1]
-        placements[0:2, 2] -= 0.13  # Reset z to be flat on the ground
+        # Set first two step underneath feet
+        z = self.robot.feet_xyz[:, 2].min()
+        placements[0, 0:2] = self.robot.feet_xyz[0, 0:2]
+        placements[1, 0:2] = self.robot.feet_xyz[1, 0:2]
+        placements[0:2, 2] = z - 0.13
 
         step = 2
 
@@ -291,119 +292,57 @@ class Walker3DTerrainEnv(EnvBase):
                     placements[step, 3] = dphi
                     step += 1
 
-        np.clip(placements[:, 2], a_min=0.0, a_max=0.0, out=placements[:, 2])
+        np.clip(placements[:, 2], a_min=0.0, a_max=None, out=placements[:, 2])
 
         return placements
 
     def create_terrain(self):
 
-        planks = []
-        plank_ids = []
-        covers = []
-        cover_ids = []
+        self.steps = []
+        step_ids = set()
+        cover_ids = set()
 
-        plank_shape = self._p.createCollisionShape(
-            self._p.GEOM_CYLINDER, radius=self.step_radius, height=self.step_height * 2
-        )
-        cover_shape = self._p.createCollisionShape(
-            self._p.GEOM_CYLINDER, radius=self.step_radius, height=0.01
-        )
-        plank_vshape = self._p.createVisualShape(
-            self._p.GEOM_CYLINDER,
-            radius=self.step_radius,
-            length=self.step_height * 2,
-            rgbaColor=[88 / 255, 99 / 255, 110 / 255, 1],
-            specularColor=[0.4, 0.4, 0],
-        )
-        cover_vshape = self._p.createVisualShape(
-            self._p.GEOM_CYLINDER,
-            radius=self.step_radius,
-            length=0.01,
-            rgbaColor=[55 / 255, 55 / 255, 55 / 255, 1],
-            specularColor=[0.4, 0.4, 0],
-        )
-
-        x, y, z = 1, 1, 1
         for index in range(self.rendered_step_count):
-            oid = self._p.createMultiBody(
-                baseMass=0,
-                baseCollisionShapeIndex=plank_shape,
-                baseVisualShapeIndex=plank_vshape,
-                basePosition=[x, y, z - self.step_height],
-            )
-            self._p.changeDynamics(oid, -1, lateralFriction=1.0, restitution=0.1)
-            planks.append(oid)
-            plank_ids.append((oid, -1))
+            # p = Pillar(self._p, self.step_radius, self.step_height)
+            p = Plank(self._p, (self.step_radius, 2, self.step_height))
+            self.steps.append(p)
+            step_ids = step_ids | {(p.body_id, -1)}
+            cover_ids = cover_ids | {(p.cover_id, -1)}
 
-            oid = self._p.createMultiBody(
-                baseMass=0,
-                baseCollisionShapeIndex=cover_shape,
-                baseVisualShapeIndex=cover_vshape,
-                basePosition=[x, y, z],
-            )
-            self._p.changeDynamics(oid, -1, lateralFriction=1.0, restitution=0.1)
-            covers.append(oid)
-            cover_ids.append((oid, -1))
-
-        self.planks = planks
-        self.covers = covers
         # Need set for detecting contact
-        self.plank_ids = set(plank_ids)
-        self.cover_ids = set(cover_ids)
-        self.all_contact_object_ids = self.plank_ids | self.cover_ids | self.ground_ids
+        self.all_contact_object_ids = set(step_ids) | set(cover_ids) | self.ground_ids
 
     def randomize_terrain(self):
         # Make flat terrain for now
-        theta_limit = 0
-        phi_limit = 180
+        theta_limit = 15
+        phi_limit = 15
 
-        placements = self.generate_step_placements(
+        self.terrain_info = self.generate_step_placements(
             n_steps=self.n_steps, theta_limit=theta_limit, phi_limit=phi_limit
         )
 
-        for index, (x, y, z, phi) in enumerate(placements):
-            self.terrain_info[index, :] = [x, y, z, phi]
-            if index < self.rendered_step_count:
-                pid = self.planks[index]
-                cid = self.covers[index]
-                quaternion = np.array(self._p.getQuaternionFromEuler([0, 0, phi]))
-                self._p.resetBasePositionAndOrientation(
-                    pid, posObj=(x, y, z - self.step_height), ornObj=quaternion
-                )
-                self._p.resetBasePositionAndOrientation(
-                    cid, posObj=(x, y, z), ornObj=quaternion
-                )
+        for index in range(self.rendered_step_count):
+            pos = self.terrain_info[index, 0:3]
+            phi = self.terrain_info[index, 3]
+            quaternion = np.array(self._p.getQuaternionFromEuler([0, 0, phi]))
+            self.steps[index].set_position(pos=pos, quat=quaternion)
 
     def update_steps(self):
-        if self.next_step_index > self.rendered_step_count - self.lookahead:
-            i = (
-                self.next_step_index + self.lookahead - self.rendered_step_count - 1
-            ) % self.rendered_step_count
-            pid = self.planks[i]
-            cid = self.covers[i]
+        if self.next_step_index >= self.rendered_step_count:
+            p = self.steps[self.next_step_index % self.rendered_step_count]
 
-            if self.next_step_index + self.lookahead - 1 < len(self.terrain_info):
-                x, y, z, phi = self.terrain_info[
-                    self.next_step_index + self.lookahead - 1
-                ]
-            else:
-                # At the end of the course, hopefully this doesn't happen
-                x, y, z, phi = self.terrain_info[-1]
-
+            index = min(self.next_step_index, len(self.terrain_info) - 1)
+            pos = self.terrain_info[index, 0:3]
+            phi = self.terrain_info[index, 3]
             quaternion = np.array(self._p.getQuaternionFromEuler([0, 0, phi]))
-            self._p.resetBasePositionAndOrientation(
-                pid, posObj=(x, y, z - self.step_height), ornObj=quaternion
-            )
-            self._p.resetBasePositionAndOrientation(
-                cid, posObj=(x, y, z), ornObj=quaternion
-            )
+            p.set_position(pos=pos, quat=quaternion)
 
     def reset(self):
         self.done = False
         self.last_count = 0
         self._p.restoreState(self.state_id)
 
-        self.robot_state = self.robot.reset(random_pose=True)
+        self.robot_state = self.robot.reset(random_pose=True, z0=None)
         self.calc_feet_state()
 
         # Randomize platforms
@@ -501,9 +440,9 @@ class Walker3DTerrainEnv(EnvBase):
         self.done = self.done or self.tall_bonus < 0
 
     def calc_feet_state(self):
-        # Calculate contact separately for planks
+        # Calculate contact separately for step
         target_cover_index = self.next_step_index % self.rendered_step_count
-        target_cover_id = {(self.covers[target_cover_index], -1)}
+        target_cover_id = {(self.steps[target_cover_index].cover_id, -1)}
 
         foot_struck_ground = np.array([0.0, 0.0])
         foot_dist_to_target = np.array([0.0, 0.0])
@@ -539,7 +478,7 @@ class Walker3DTerrainEnv(EnvBase):
 
         foot_struck_ground, foot_dist_to_target = self.calc_feet_state()
 
-        step_bonus = foot_struck_ground * 100 * np.exp(-foot_dist_to_target / 0.1)
+        step_bonus = foot_struck_ground * 50 * np.exp(-foot_dist_to_target / 0.20)
 
         self.step_bonus = step_bonus.sum()
         if self.last_count > 1:
@@ -564,7 +503,7 @@ class Walker3DTerrainEnv(EnvBase):
         self.calc_potential()
 
     def delta_to_k_targets(self, k=1):
-        """ Return positions (relative to root) of target, and k-1 planks after """
+        """ Return positions (relative to root) of target, and k-1 step after """
         targets = self.terrain_info[
             self.next_step_index : self.next_step_index + k, [0, 1, 2]
         ]
@@ -574,7 +513,7 @@ class Walker3DTerrainEnv(EnvBase):
                 (targets, np.repeat(targets[[-1]], k - len(targets), axis=0))
             )
 
-        self.walk_target = targets[:, 0:3].mean(axis=0)
+        self.walk_target = targets[[k - 1], 0:3].mean(axis=0)
 
         deltas = targets - self.robot.body_xyz
         target_thetas = np.arctan2(deltas[:, 1], deltas[:, 0])
