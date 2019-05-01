@@ -304,7 +304,7 @@ class Walker3DTerrainEnv(EnvBase):
 
         for index in range(self.rendered_step_count):
             # p = Pillar(self._p, self.step_radius, self.step_height)
-            p = Plank(self._p, (self.step_radius, 2, self.step_height))
+            p = Plank(self._p, (self.step_radius + 0.1, 2, self.step_height))
             self.steps.append(p)
             step_ids = step_ids | {(p.body_id, -1)}
             cover_ids = cover_ids | {(p.cover_id, -1)}
@@ -530,8 +530,8 @@ class Walker3DTerrainEnv(EnvBase):
             axis=1,
         )
 
-        # Normalize targets to between -1 and +1 using softsign
-        deltas /= 1 + np.abs(deltas)
+        # Normalize targets x,y to between -1 and +1 using softsign
+        deltas[:, 0:2] /= 1 + np.abs(deltas[:, 0:2])
 
         return deltas
 
