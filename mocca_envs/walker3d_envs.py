@@ -261,12 +261,20 @@ class Walker3DTerrainEnv(EnvBase):
         )
 
         dphi = np.cumsum(dphi)
+
+        # Set initial two steps manually
+        dphi[0:2] = dr[0:2] = 0
+
         x_ = dr * np.sin(dtheta) * np.cos(dphi)
         y_ = dr * np.sin(dtheta) * np.sin(dphi)
         z_ = dr * np.cos(dtheta)
         x = np.cumsum(x_)
         y = np.cumsum(y_)
         z = np.cumsum(z_)
+
+        x[0], y[0] = self.robot.feet_xyz[0, 0:2]
+        x[1], y[1] = self.robot.feet_xyz[1, 0:2]
+        z[0] = z[1] = self.robot.feet_xyz[:, 2].min() - 0.15
 
         np.clip(z, a_min=0.0, a_max=None, out=z)
 
@@ -328,8 +336,7 @@ class Walker3DTerrainEnv(EnvBase):
 
         # Randomize platforms
         self.randomize_terrain()
-        # First two steps are already underneath, start at 2
-        self.next_step_index = 2
+        self.next_step_index = 0
 
         # Reset camera
         if self.is_render:
