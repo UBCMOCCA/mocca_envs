@@ -1,8 +1,11 @@
+import os
 import gym
+import pickle
 import numpy as np
 
 from mocca_envs.env_base import EnvBase
 from mocca_envs.robots import Cassie
+from mocca_envs import current_dir
 
 
 class CassieEnv(EnvBase):
@@ -72,13 +75,16 @@ class CassieEnv(EnvBase):
 
         return self.kp * perror + self.kd * verror
 
+    def base_angles(self):
+        return np.array(self.robot.base_joint_angles)
+
     def step(self, a):
-        target_angles = np.zeros(14)
+        target_angles = self.base_angles()
         ## `knee_to_shin` and `ankle_joint` joints (both sides) do not have a motor
         ## we don't know how to set the constraints for them so we're using PD with fixed target instead
-        target_angles[[0, 1, 2, 3, 6, 7, 8, 9, 10, 13]] = a / 2
+        target_angles[[0, 1, 2, 3, 6, 7, 8, 9, 10, 13]] += a
         # target_angles = self.robot.to_radians(target_angles)
-        target_angles += self.robot.base_joint_angles
+        # target_angles +=   # self.robot.base_joint_angles
         target_angles[4] = 0
         target_angles[5] = -target_angles[3] + 0.227  # -q_3 + 13 deg
         target_angles[11] = 0
@@ -131,3 +137,24 @@ class CassieEnv(EnvBase):
         target = np.matmul(rot, self.walk_target)
         state = np.concatenate((robot_state, target[0:2]))
         return state, sum(self.rewards), done, {}
+
+
+class CassieMocapEnv(CassieEnv):
+    mocap_path = os.path.join(current_dir, "data/cassie/mocap/", "cassie_step_data.pkl")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        with open(self.mocap_path, "rb") as datafile:
+            self.step_data = pickle.load(datafile)
+
+    def reset(self):
+        self.phase = 0
+        return super().reset()
+
+    def base_angles(self):
+        return self.step_data[self.phase * 60]  # TODO: fix time
+
+    def step(self, action):
+        self.phase = (self.phase + 1) % 28
+        return super().step(action)
+
