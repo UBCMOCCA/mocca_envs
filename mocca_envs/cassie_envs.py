@@ -80,6 +80,10 @@ class CassieEnv(EnvBase):
         state = np.concatenate((self.robot_state, target[0:2]))
         return state
 
+    def initialize_scene_and_robot(self):
+        super(CassieEnv, self).initialize_scene_and_robot()
+        self.scene.set_friction(1.0)
+
     def pd_control(self, target_angles, target_speeds):
         curr_angles = self.robot.to_radians(self.robot.joint_angles)[
             self.robot.powered_joint_inds
@@ -98,6 +102,21 @@ class CassieEnv(EnvBase):
 
     def base_angles(self):
         return np.array(self.robot.base_joint_angles)
+
+    def compute_rewards(self):
+        old_potential = self.potential
+        self.potential = self.calc_potential(self.robot.body_xyz)
+        progress = self.potential - old_potential
+
+        tall_bonus = (
+            2.0
+            if self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2]) > 0.6
+            else -1.0
+        )
+
+        dead = tall_bonus < 0
+
+        return dead, {"AliveRew": tall_bonus, "ProgressRew": progress}
 
     def step(self, a):
         target_angles = self.base_angles()[self.robot.powered_joint_inds]
@@ -123,25 +142,13 @@ class CassieEnv(EnvBase):
             print("~INF~", robot_state)
             done = True
 
-        old_potential = self.potential
-        self.potential = self.calc_potential(self.robot.body_xyz)
-        progress = self.potential - old_potential
-
-        tall_bonus = (
-            2.0
-            if self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2]) > 0.6
-            else -1.0
-        )
-
-        if tall_bonus < 0:
-            done = True
+        dead, rewards = self.compute_rewards()
+        done = done or dead
 
         if self.is_render:
             self.camera.track(pos=self.robot.body_xyz)
             self._handle_keyboard()
             done = done or self.done
-
-        self.rewards = [tall_bonus, progress]
 
         delta = self.walk_target - self.robot.body_xyz
         walk_target_theta = np.arctan2(delta[1], delta[0])
@@ -157,7 +164,7 @@ class CassieEnv(EnvBase):
 
         target = np.matmul(rot, self.walk_target)
         state = np.concatenate((robot_state, target[0:2]))
-        return state, sum(self.rewards), done, {}
+        return state, sum(rewards.values()), done, rewards
 
 
 class CassieMocapEnv(CassieEnv):
@@ -174,6 +181,20 @@ class CassieMocapEnv(CassieEnv):
 
     def base_angles(self):
         return self.step_data[self.phase * 60]  # TODO: fix time
+
+    def compute_rewards(self):
+        dead, rewards = super().compute_rewards()
+        rewards["AliveRew"] = 0
+
+        dyn_angles = self.robot.to_radians(self.robot.joint_angles)
+        kin_angles = self.base_angles()
+
+        joint_penalty = np.sqrt(
+            np.sum((kin_angles - dyn_angles)[self.robot.powered_joint_inds] ** 2)
+        )
+        rewards["ImitationRew"] = np.exp(-4 * joint_penalty)
+
+        return dead, rewards
 
     def step(self, action):
         self.phase = (self.phase + 1) % 28
