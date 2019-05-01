@@ -229,7 +229,7 @@ class Walker3DTerrainEnv(EnvBase):
         # because they are used in self.create_terrain()
         self.step_radius = 0.25
         self.step_height = 0.2
-        self.rendered_step_count = 3
+        self.rendered_step_count = 5
 
         super(Walker3DTerrainEnv, self).__init__(Walker3D, render)
 
@@ -254,47 +254,23 @@ class Walker3DTerrainEnv(EnvBase):
     ):
         phi_limit = phi_limit * DEG2RAD
         theta_limit = theta_limit * DEG2RAD
+        dr = self.np_random.uniform(low=min_gap, high=max_gap, size=n_steps)
+        dphi = self.np_random.uniform(low=-phi_limit, high=phi_limit, size=n_steps)
+        dtheta = self.np_random.uniform(
+            low=np.pi / 2 - theta_limit, high=np.pi / 2 + theta_limit, size=n_steps
+        )
 
-        placements = np.zeros((n_steps, 4))
+        dphi = np.cumsum(dphi)
+        x_ = dr * np.sin(dtheta) * np.cos(dphi)
+        y_ = dr * np.sin(dtheta) * np.sin(dphi)
+        z_ = dr * np.cos(dtheta)
+        x = np.cumsum(x_)
+        y = np.cumsum(y_)
+        z = np.cumsum(z_)
 
-        # Set first two step underneath feet
-        z = self.robot.feet_xyz[:, 2].min()
-        placements[0, 0:2] = self.robot.feet_xyz[0, 0:2]
-        placements[1, 0:2] = self.robot.feet_xyz[1, 0:2]
-        placements[0:2, 2] = z - 0.13
+        np.clip(z, a_min=0.0, a_max=None, out=z)
 
-        step = 2
-
-        while step < n_steps:
-
-            dr = self.np_random.uniform(low=min_gap, high=max_gap)
-            dphi = self.np_random.uniform(low=-phi_limit, high=phi_limit)
-            dtheta = self.np_random.uniform(
-                low=np.pi / 2 - theta_limit, high=np.pi / 2 + theta_limit
-            )
-
-            dphi += placements[step - 1, 3]
-            x = dr * np.sin(dtheta) * np.cos(dphi)
-            y = dr * np.sin(dtheta) * np.sin(dphi)
-            z = dr * np.cos(dtheta)
-
-            # Check for overlap
-
-            start = max(0, step - self.rendered_step_count)
-            prev_xyz = placements[start:step, 0:3]
-            if prev_xyz.size > 0:
-                proposal_xyz = placements[step - 1, 0:3] + (x, y, z)
-                dist = np.linalg.norm((prev_xyz - proposal_xyz)[:, 0:2], ord=2, axis=1)
-                overlapped = (dist < 2 * self.step_radius).any()
-
-                if not overlapped:
-                    placements[step, 0:3] = proposal_xyz
-                    placements[step, 3] = dphi
-                    step += 1
-
-        np.clip(placements[:, 2], a_min=0.0, a_max=None, out=placements[:, 2])
-
-        return placements
+        return np.stack((x, y, z, dphi), axis=1)
 
     def create_terrain(self):
 
@@ -304,7 +280,7 @@ class Walker3DTerrainEnv(EnvBase):
 
         for index in range(self.rendered_step_count):
             # p = Pillar(self._p, self.step_radius, self.step_height)
-            p = Plank(self._p, (self.step_radius + 0.1, 2, self.step_height))
+            p = Plank(self._p, (self.step_radius + 0.1, 10, self.step_height))
             self.steps.append(p)
             step_ids = step_ids | {(p.body_id, -1)}
             cover_ids = cover_ids | {(p.cover_id, -1)}
@@ -328,12 +304,17 @@ class Walker3DTerrainEnv(EnvBase):
             self.steps[index].set_position(pos=pos, quat=quaternion)
 
     def update_steps(self):
-        if self.next_step_index >= self.rendered_step_count:
-            p = self.steps[self.next_step_index % self.rendered_step_count]
+        threshold = int(np.ceil(self.rendered_step_count / 2))
+        if self.next_step_index >= threshold:
+            last = (self.next_step_index - threshold - 1) % self.rendered_step_count
+            p = self.steps[last]
 
-            index = min(self.next_step_index, len(self.terrain_info) - 1)
-            pos = self.terrain_info[index, 0:3]
-            phi = self.terrain_info[index, 3]
+            next = min(
+                (self.next_step_index - threshold - 1) + self.rendered_step_count,
+                len(self.terrain_info) - 1,
+            )
+            pos = self.terrain_info[next, 0:3]
+            phi = self.terrain_info[next, 3]
             quaternion = np.array(self._p.getQuaternionFromEuler([0, 0, phi]))
             p.set_position(pos=pos, quat=quaternion)
 
