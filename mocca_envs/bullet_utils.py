@@ -153,12 +153,15 @@ class BodyPart:
 
 
 class Joint:
-    def __init__(self, bullet_client, joint_name, bodies, bodyIndex, jointIndex):
+    def __init__(
+        self, bullet_client, joint_name, bodies, bodyIndex, jointIndex, torque_limit=0
+    ):
         self.bodies = bodies
         self._p = bullet_client
         self.bodyIndex = bodyIndex
         self.jointIndex = jointIndex
         self.joint_name = joint_name
+        self.torque_limit = torque_limit
 
         jointInfo = self._p.getJointInfo(self.bodies[self.bodyIndex], self.jointIndex)
         self.lowerLimit = jointInfo[8]

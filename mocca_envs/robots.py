@@ -79,10 +79,6 @@ class Cassie:
 
         self.parse_joints_and_links(self.object_id)
 
-        self.torque_limits = self.power * np.array(
-            [self.power_coef[j.joint_name] for j in self.ordered_joints]
-        )
-
         # Set Initial pose
         self._p.resetBasePositionAndOrientation(
             self.object_id[0], posObj=self.base_position, ornObj=self.base_orientation
@@ -123,7 +119,14 @@ class Cassie:
                     self.robot_body = self.parts[part_name]
 
                 if joint_name[:5] != "fixed":
-                    self.jdict[joint_name] = Joint(self._p, joint_name, bodies, i, j)
+                    self.jdict[joint_name] = Joint(
+                        self._p,
+                        joint_name,
+                        bodies,
+                        i,
+                        j,
+                        torque_limit=self.power * self.power_coef[joint_name],
+                    )
                     self.ordered_joints.append(self.jdict[joint_name])
 
     def make_robot_utils(self):
@@ -149,10 +152,9 @@ class Cassie:
 
     def apply_action(self, a):
         assert np.isfinite(a).all()
-        x = np.clip(a, -self.torque_limits, self.torque_limits)
         for n, j in enumerate(self.ordered_joints):
             # j.set_position(self.base_joint_angles[n])
-            j.set_motor_torque(float(x[n]))
+            j.set_motor_torque(float(np.clip(a[n], -j.torque_limit, j.torque_limit)))
 
     def calc_state(self):
         j = np.array(
@@ -198,7 +200,7 @@ class WalkerBase:
         assert np.isfinite(a).all()
         x = np.clip(a, -1, 1)
         for n, j in enumerate(self.ordered_joints):
-            j.set_motor_torque(self.torque_limits[n] * float(x[n]))
+            j.set_motor_torque(j.torque_limit * float(x[n]))
 
     def calc_state(self, contact_object_ids=None):
         j = np.array(
@@ -272,12 +274,7 @@ class WalkerBase:
         self.feet = [self.parts[f] for f in self.foot_names]
         self.feet_contact = np.zeros(len(self.foot_names), dtype=np.float32)
         self.feet_xyz = np.zeros((len(self.foot_names), 3))
-        self.calc_torque_limits()
 
-    def calc_torque_limits(self):
-        self.torque_limits = self.power * np.array(
-            [self.power_coef[j.joint_name] for j in self.ordered_joints]
-        )
 
     def make_robot_utils(self):
         # utility functions for converting from normalized to radians and vice versa
@@ -319,7 +316,14 @@ class WalkerBase:
                     continue
 
                 if joint_name[:8] != "jointfix":
-                    self.jdict[joint_name] = Joint(self._p, joint_name, bodies, i, j)
+                    self.jdict[joint_name] = Joint(
+                        self._p,
+                        joint_name,
+                        bodies,
+                        i,
+                        j,
+                        torque_limit=self.power * self.power_coef[joint_name],
+                    )
                     self.ordered_joints.append(self.jdict[joint_name])
 
     def reset(self):
