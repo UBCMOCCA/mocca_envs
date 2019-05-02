@@ -191,6 +191,9 @@
     </collision>
   </link>
   <link name="left_toe">
+    <contact>
+      <lateral_friction value="1"/>
+    </contact>
     <inertial>
       <origin rpy="0 0 0" xyz=".0047 .0275 -0.0001"/>
       <mass value=".15"/>
@@ -367,6 +370,9 @@
     </collision>
   </link>
   <link name="right_toe">
+    <contact>
+      <lateral_friction value="1"/>
+    </contact>
     <inertial>
       <origin rpy="0 0 0" xyz=".0047 .0275 0.0001"/>
       <mass value=".15"/>
