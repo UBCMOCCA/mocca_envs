@@ -366,6 +366,19 @@ class Walker3DTerrainEnv(EnvBase):
         reward += self.step_bonus + self.target_bonus - self.speed_penalty
         reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
 
+        # print(
+        #     "{:5.2f} {:5.2f} {:5.2f} {:5.2f} {:5.2f} {:5.2f} {:5.2f} {:5.2f}".format(
+        #         self.progress,
+        #         -self.energy_penalty,
+        #         self.step_bonus,
+        #         self.target_bonus,
+        #         -self.speed_penalty,
+        #         self.tall_bonus,
+        #         -self.posture_penalty,
+        #         -self.joints_penalty,
+        #     )
+        # )
+
         state = np.concatenate((self.robot_state, self.targets.flatten()))
 
         if self.is_render:
@@ -451,7 +464,7 @@ class Walker3DTerrainEnv(EnvBase):
         self.foot_dist_to_target = np.array([0.0, 0.0])
 
         p_xyz = self.terrain_info[self.next_step_index, [0, 1, 2]]
-        target_reached = False
+        self.target_reached = False
         for i, f in enumerate(self.robot.feet):
             self.robot.feet_xyz[i] = f.pose().xyz()
             contact_ids = set((x[2], x[4]) for x in f.contact_list())
@@ -464,10 +477,10 @@ class Walker3DTerrainEnv(EnvBase):
             self.foot_dist_to_target[i] = distance
 
             if target_cover_id & contact_ids:
-                target_reached = True
+                self.target_reached = True
 
         # At least one foot is on the plank
-        if target_reached:
+        if self.target_reached:
             self.target_reached_count += 1
 
             # Make target stationary for a bit
@@ -484,7 +497,7 @@ class Walker3DTerrainEnv(EnvBase):
     def calc_step_reward(self):
 
         self.step_bonus = 0
-        if self.target_reached_count == 1:
+        if self.target_reached and self.target_reached_count == 1:
             self.step_bonus = 50 * np.exp(-self.foot_dist_to_target.min() / 0.25)
 
         # print(
@@ -501,7 +514,7 @@ class Walker3DTerrainEnv(EnvBase):
         # For last step only
         self.target_bonus = 0
         if (
-            self.next_step_index == len(self.terrain_info)
+            self.next_step_index == len(self.terrain_info) - 1
             and self.distance_to_target < 0.15
         ):
             self.target_bonus = 2.0
