@@ -263,18 +263,18 @@ class Walker3DTerrainEnv(EnvBase):
         dphi = np.cumsum(dphi)
 
         # Set initial two steps manually
-        dphi[0:2] = dr[0:2] = 0
+        # dphi[0:2] = dr[0:2] = 0
 
         x_ = dr * np.sin(dtheta) * np.cos(dphi)
         y_ = dr * np.sin(dtheta) * np.sin(dphi)
         z_ = dr * np.cos(dtheta)
-        x = np.cumsum(x_)
+        x = 4 + np.cumsum(x_)
         y = np.cumsum(y_)
         z = np.cumsum(z_)
 
-        x[0], y[0] = self.robot.feet_xyz[0, 0:2]
-        x[1], y[1] = self.robot.feet_xyz[1, 0:2]
-        z[0] = z[1] = self.robot.feet_xyz[:, 2].min() - 0.15
+        # x[0], y[0] = self.robot.feet_xyz[0, 0:2]
+        # x[1], y[1] = self.robot.feet_xyz[1, 0:2]
+        # z[0] = z[1] = self.robot.feet_xyz[:, 2].min() - 0.15
 
         np.clip(z, a_min=0.0, a_max=None, out=z)
 
@@ -288,7 +288,7 @@ class Walker3DTerrainEnv(EnvBase):
 
         for index in range(self.rendered_step_count):
             # p = Pillar(self._p, self.step_radius, self.step_height)
-            p = Plank(self._p, (self.step_radius + 0.1, 10, self.step_height))
+            p = Plank(self._p, (self.step_radius + 0.1, 4, self.step_height))
             self.steps.append(p)
             step_ids = step_ids | {(p.body_id, -1)}
             cover_ids = cover_ids | {(p.cover_id, -1)}
@@ -298,8 +298,8 @@ class Walker3DTerrainEnv(EnvBase):
 
     def randomize_terrain(self):
         # Make flat terrain for now
-        theta_limit = 15
-        phi_limit = 15
+        theta_limit = 25
+        phi_limit = 25
 
         self.terrain_info = self.generate_step_placements(
             n_steps=self.n_steps, theta_limit=theta_limit, phi_limit=phi_limit
@@ -432,8 +432,8 @@ class Walker3DTerrainEnv(EnvBase):
         target_cover_index = self.next_step_index % self.rendered_step_count
         target_cover_id = {(self.steps[target_cover_index].cover_id, -1)}
 
-        foot_struck_ground = np.array([0.0, 0.0])
         foot_dist_to_target = np.array([0.0, 0.0])
+        target_reached = False
 
         p_xyz = self.terrain_info[self.next_step_index, [0, 1, 2]]
         for i, f in enumerate(self.robot.feet):
@@ -441,10 +441,6 @@ class Walker3DTerrainEnv(EnvBase):
             contact_ids = set((x[2], x[4]) for x in f.contact_list())
 
             in_contact = self.all_contact_object_ids & contact_ids
-
-            if in_contact and not self.robot.feet_contact[i]:
-                foot_struck_ground[i] = 1.0
-
             self.robot.feet_contact[i] = 1.0 if in_contact else 0.0
 
             delta = self.robot.feet_xyz[i] - p_xyz
@@ -453,6 +449,7 @@ class Walker3DTerrainEnv(EnvBase):
 
             # Target reached
             if target_cover_id & contact_ids:
+                target_reached = True
                 self.next_step_index += 1
                 if self.next_step_index >= len(self.terrain_info):
                     self.next_step_index -= 1
@@ -460,15 +457,16 @@ class Walker3DTerrainEnv(EnvBase):
 
                 self.update_steps()
 
-        return foot_struck_ground, foot_dist_to_target
+        return target_reached, foot_dist_to_target
 
     def calc_terrain_reward(self):
 
-        foot_struck_ground, foot_dist_to_target = self.calc_feet_state()
+        target_reached, foot_dist_to_target = self.calc_feet_state()
 
-        step_bonus = foot_struck_ground * 50 * np.exp(-foot_dist_to_target / 0.20)
+        self.step_bonus = 0
+        if target_reached:
+            self.step_bonus = 50 * np.exp(-foot_dist_to_target.min() / 0.25)
 
-        self.step_bonus = step_bonus.sum()
         if self.last_count > 1:
             self.step_bonus = 0
 
