@@ -498,7 +498,7 @@ class Plank:
     def __init__(self, bc, xyz, pos=None, c_rgba=None, p_rgba=None):
         self._p = bc
 
-        b_xyz = np.array([xyz[0], xyz[1], xyz[2] - 0.01]) / 2
+        b_xyz = np.array([xyz[0], xyz[1] / 2, (xyz[2] - 0.01) / 2])
         c_xyz = np.concatenate((b_xyz[0:2], [0.01]))
 
         pos = np.array([1.0, 1.0, 1.0]) if pos is None else pos

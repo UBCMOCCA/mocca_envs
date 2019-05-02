@@ -263,18 +263,18 @@ class Walker3DTerrainEnv(EnvBase):
         dphi = np.cumsum(dphi)
 
         # Set initial two steps manually
-        # dphi[0:2] = dr[0:2] = 0
+        dphi[0:2] = dr[0:2] = 0
 
         x_ = dr * np.sin(dtheta) * np.cos(dphi)
         y_ = dr * np.sin(dtheta) * np.sin(dphi)
         z_ = dr * np.cos(dtheta)
-        x = 4 + np.cumsum(x_)
+        x = np.cumsum(x_)
         y = np.cumsum(y_)
         z = np.cumsum(z_)
 
-        # x[0], y[0] = self.robot.feet_xyz[0, 0:2]
-        # x[1], y[1] = self.robot.feet_xyz[1, 0:2]
-        # z[0] = z[1] = self.robot.feet_xyz[:, 2].min() - 0.15
+        x[0], y[0] = self.robot.feet_xyz[0, 0:2]
+        x[1], y[1] = self.robot.feet_xyz[1, 0:2]
+        z[0] = z[1] = self.robot.feet_xyz[:, 2].min() - 0.15
 
         np.clip(z, a_min=0.0, a_max=None, out=z)
 
@@ -288,7 +288,7 @@ class Walker3DTerrainEnv(EnvBase):
 
         for index in range(self.rendered_step_count):
             # p = Pillar(self._p, self.step_radius, self.step_height)
-            p = Plank(self._p, (self.step_radius + 0.1, 4, self.step_height))
+            p = Plank(self._p, (self.step_radius, 6, self.step_height))
             self.steps.append(p)
             step_ids = step_ids | {(p.body_id, -1)}
             cover_ids = cover_ids | {(p.cover_id, -1)}
@@ -298,8 +298,8 @@ class Walker3DTerrainEnv(EnvBase):
 
     def randomize_terrain(self):
         # Make flat terrain for now
-        theta_limit = 25
-        phi_limit = 25
+        theta_limit = 15
+        phi_limit = 15
 
         self.terrain_info = self.generate_step_placements(
             n_steps=self.n_steps, theta_limit=theta_limit, phi_limit=phi_limit
@@ -328,7 +328,10 @@ class Walker3DTerrainEnv(EnvBase):
 
     def reset(self):
         self.done = False
-        self.last_count = 0
+        self.target_reached_count = 0
+        self.stop_frames = self.np_random.randint(2, 60)
+        self.add_angular_progress = True
+
         self._p.restoreState(self.state_id)
 
         self.robot_state = self.robot.reset(random_pose=True, z0=None)
@@ -360,7 +363,7 @@ class Walker3DTerrainEnv(EnvBase):
         self.calc_env_state(action)
 
         reward = self.progress - self.energy_penalty
-        reward += self.step_bonus + self.target_bonus
+        reward += self.step_bonus + self.target_bonus - self.speed_penalty
         reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
 
         state = np.concatenate((self.robot_state, self.targets.flatten()))
@@ -396,16 +399,25 @@ class Walker3DTerrainEnv(EnvBase):
         ) ** (1 / 2)
 
         self.linear_potential = -self.distance_to_target / self.scene.dt
+        self.angular_potential = np.cos(self.angle_to_target) / self.scene.dt
 
     def calc_base_reward(self, action):
 
         # Bookkeeping stuff
         old_linear_potential = self.linear_potential
+        old_angular_potential = self.angular_potential
 
         self.calc_potential()
 
+        if self.distance_to_target < 1:
+            self.add_angular_progress = False
+
         linear_progress = self.linear_potential - old_linear_potential
-        self.progress = 2 * linear_progress
+        angular_progress = self.angular_potential - old_angular_potential
+
+        self.progress = linear_progress
+        if self.add_angular_progress:
+            self.progress += angular_progress
 
         self.posture_penalty = 0
         if not -0.2 < self.robot.body_rpy[1] < 0.4:
@@ -413,6 +425,10 @@ class Walker3DTerrainEnv(EnvBase):
 
         if not -0.4 < self.robot.body_rpy[0] < 0.4:
             self.posture_penalty += abs(self.robot.body_rpy[0])
+
+        v = self.robot.body_vel
+        speed = (v[0] ** 2 + v[1] ** 2 + v[2] ** 2) ** (1 / 2)
+        self.speed_penalty = max(speed - 1.6, 0)
 
         self.energy_penalty = self.electricity_cost * float(
             np.abs(action * self.robot.joint_speeds).mean()
@@ -432,10 +448,10 @@ class Walker3DTerrainEnv(EnvBase):
         target_cover_index = self.next_step_index % self.rendered_step_count
         target_cover_id = {(self.steps[target_cover_index].cover_id, -1)}
 
-        foot_dist_to_target = np.array([0.0, 0.0])
-        target_reached = False
+        self.foot_dist_to_target = np.array([0.0, 0.0])
 
         p_xyz = self.terrain_info[self.next_step_index, [0, 1, 2]]
+        target_reached = False
         for i, f in enumerate(self.robot.feet):
             self.robot.feet_xyz[i] = f.pose().xyz()
             contact_ids = set((x[2], x[4]) for x in f.contact_list())
@@ -445,34 +461,49 @@ class Walker3DTerrainEnv(EnvBase):
 
             delta = self.robot.feet_xyz[i] - p_xyz
             distance = (delta[0] ** 2 + delta[1] ** 2) ** (1 / 2)
-            foot_dist_to_target[i] = distance
+            self.foot_dist_to_target[i] = distance
 
-            # Target reached
             if target_cover_id & contact_ids:
                 target_reached = True
-                self.next_step_index += 1
-                if self.next_step_index >= len(self.terrain_info):
-                    self.next_step_index -= 1
-                    self.last_count += 1
 
+        # At least one foot is on the plank
+        if target_reached:
+            self.target_reached_count += 1
+
+            # Make target stationary for a bit
+            if self.target_reached_count >= self.stop_frames:
+                self.next_step_index += 1
+                self.stop_frames = self.np_random.randint(2, 60)
+                self.target_reached_count = 0
                 self.update_steps()
 
-        return target_reached, foot_dist_to_target
+            # Prevent out of bound
+            if self.next_step_index >= len(self.terrain_info):
+                self.next_step_index -= 1
 
-    def calc_terrain_reward(self):
-
-        target_reached, foot_dist_to_target = self.calc_feet_state()
+    def calc_step_reward(self):
 
         self.step_bonus = 0
-        if target_reached:
-            self.step_bonus = 50 * np.exp(-foot_dist_to_target.min() / 0.25)
+        if self.target_reached_count == 1:
+            self.step_bonus = 50 * np.exp(-self.foot_dist_to_target.min() / 0.25)
 
-        if self.last_count > 1:
-            self.step_bonus = 0
+        # print(
+        #     "{:2d} {:2d} {:2d} {:2d} {:5.2f} {:5.2f}".format(
+        #         self.next_step_index,
+        #         len(self.terrain_info),
+        #         self.target_reached_count,
+        #         self.stop_frames,
+        #         self.step_bonus,
+        #         self.distance_to_target,
+        #     )
+        # )
 
+        # For last step only
         self.target_bonus = 0
-        if self.distance_to_target < 0.15:
-            # Mostly for last step only
+        if (
+            self.next_step_index == len(self.terrain_info)
+            and self.distance_to_target < 0.15
+        ):
             self.target_bonus = 2.0
 
     def calc_env_state(self, action):
@@ -480,13 +511,18 @@ class Walker3DTerrainEnv(EnvBase):
             print("~INF~", self.robot_state)
             self.done = True
 
-        self.calc_base_reward(action)
+        cur_step_index = self.next_step_index
+
         # detects contact and set next step
-        self.calc_terrain_reward()
+        self.calc_feet_state()
+        self.calc_base_reward(action)
+        self.calc_step_reward()
         # use next step to calculate next k steps
         self.targets = self.delta_to_k_targets(k=self.lookahead)
-        # Order is important because walk_target is set up above
-        self.calc_potential()
+
+        if cur_step_index != self.next_step_index:
+            self.add_angular_progress = True
+            self.calc_potential()
 
     def delta_to_k_targets(self, k=1):
         """ Return positions (relative to root) of target, and k-1 step after """
@@ -504,20 +540,20 @@ class Walker3DTerrainEnv(EnvBase):
         deltas = targets - self.robot.body_xyz
         target_thetas = np.arctan2(deltas[:, 1], deltas[:, 0])
 
-        self.angle_to_targets = target_thetas - self.robot.body_rpy[2]
-        self.distance_to_targets = np.linalg.norm(deltas[:, 0:2], ord=2, axis=1)
+        angle_to_targets = target_thetas - self.robot.body_rpy[2]
+        distance_to_targets = np.linalg.norm(deltas[:, 0:2], ord=2, axis=1)
 
         deltas = np.stack(
             (
-                np.sin(self.angle_to_targets) * self.distance_to_targets,
-                np.cos(self.angle_to_targets) * self.distance_to_targets,
+                np.sin(angle_to_targets) * distance_to_targets,
+                np.cos(angle_to_targets) * distance_to_targets,
                 deltas[:, 2],
             ),
             axis=1,
         )
 
         # Normalize targets x,y to between -1 and +1 using softsign
-        deltas[:, 0:2] /= 1 + np.abs(deltas[:, 0:2])
+        # deltas[:, 0:2] /= 1 + np.abs(deltas[:, 0:2])
 
         return deltas
 
