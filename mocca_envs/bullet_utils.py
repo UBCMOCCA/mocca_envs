@@ -354,7 +354,7 @@ class Camera:
 
         self._fps = fps
         self._target_period = 1 / (fps * 1.02)
-        self._ns_counter = time.perf_counter_ns()
+        self._counter = time.perf_counter()
 
     def track(self, pos, smooth_coef=None):
 
@@ -393,11 +393,11 @@ class Camera:
         return rgb_array
 
     def wait(self):
-        delta = (time.perf_counter_ns() - self._ns_counter) / 1e9
+        delta = time.perf_counter() - self._counter
         time.sleep(max(self._target_period - delta, 0))
-        now = time.perf_counter_ns()
-        self._fps = 0.99 * self._fps + 0.01 * 1e9 / (now - self._ns_counter)
-        self._ns_counter = now
+        now = time.perf_counter()
+        self._fps = 0.99 * self._fps + 0.01 / (now - self._counter)
+        self._counter = now
 
 
 class VSphere:

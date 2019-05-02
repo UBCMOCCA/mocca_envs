@@ -497,7 +497,7 @@ class Walker3DTerrainEnv(EnvBase):
         )
 
         height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
-        self.tall_bonus = 1.5 if height > 0.7 else -1.0
+        self.tall_bonus = 2.0 if height > 0.7 else -1.0
         self.done = self.done or self.tall_bonus < 0
 
     def calc_feet_state(self):
