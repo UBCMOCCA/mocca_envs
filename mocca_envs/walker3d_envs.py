@@ -329,8 +329,7 @@ class Walker3DTerrainEnv(EnvBase):
     def reset(self):
         self.done = False
         self.target_reached_count = 0
-        self.stop_frames = self.np_random.randint(2, 60)
-        self.add_angular_progress = True
+        self.stop_frames = 30
 
         self._p.restoreState(self.state_id)
 
@@ -412,25 +411,16 @@ class Walker3DTerrainEnv(EnvBase):
         ) ** (1 / 2)
 
         self.linear_potential = -self.distance_to_target / self.scene.dt
-        self.angular_potential = np.cos(self.angle_to_target) / self.scene.dt
 
     def calc_base_reward(self, action):
 
         # Bookkeeping stuff
         old_linear_potential = self.linear_potential
-        old_angular_potential = self.angular_potential
 
         self.calc_potential()
 
-        if self.distance_to_target < 1:
-            self.add_angular_progress = False
-
         linear_progress = self.linear_potential - old_linear_potential
-        angular_progress = self.angular_potential - old_angular_potential
-
         self.progress = linear_progress
-        if self.add_angular_progress:
-            self.progress += angular_progress
 
         self.posture_penalty = 0
         if not -0.2 < self.robot.body_rpy[1] < 0.4:
@@ -486,7 +476,6 @@ class Walker3DTerrainEnv(EnvBase):
             # Make target stationary for a bit
             if self.target_reached_count >= self.stop_frames:
                 self.next_step_index += 1
-                self.stop_frames = self.np_random.randint(2, 60)
                 self.target_reached_count = 0
                 self.update_steps()
 
@@ -534,7 +523,6 @@ class Walker3DTerrainEnv(EnvBase):
         self.targets = self.delta_to_k_targets(k=self.lookahead)
 
         if cur_step_index != self.next_step_index:
-            self.add_angular_progress = True
             self.calc_potential()
 
     def delta_to_k_targets(self, k=1):
