@@ -227,7 +227,7 @@ class Walker3DTerrainEnv(EnvBase):
 
         # Need these before calling constructor
         # because they are used in self.create_terrain()
-        self.step_radius = 0.25
+        self.step_radius = 0.3
         self.step_height = 0.2
         self.rendered_step_count = 5
 
@@ -287,8 +287,8 @@ class Walker3DTerrainEnv(EnvBase):
         cover_ids = set()
 
         for index in range(self.rendered_step_count):
-            # p = Pillar(self._p, self.step_radius, self.step_height)
-            p = Plank(self._p, (self.step_radius, 6, self.step_height))
+            p = Pillar(self._p, self.step_radius, self.step_height)
+            # p = Plank(self._p, (self.step_radius, 6, self.step_height))
             self.steps.append(p)
             step_ids = step_ids | {(p.body_id, -1)}
             cover_ids = cover_ids | {(p.cover_id, -1)}
@@ -298,8 +298,8 @@ class Walker3DTerrainEnv(EnvBase):
 
     def randomize_terrain(self):
         # Make flat terrain for now
-        theta_limit = 15
-        phi_limit = 15
+        theta_limit = 20
+        phi_limit = 20
 
         self.terrain_info = self.generate_step_placements(
             n_steps=self.n_steps, theta_limit=theta_limit, phi_limit=phi_limit
