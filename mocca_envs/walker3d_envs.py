@@ -237,12 +237,16 @@ class Walker3DTerrainEnv(EnvBase):
         self.stall_torque_cost = 0.225
         self.joints_at_limit_cost = 0.1
 
-        # Terrain info
         self.n_steps = 24
-        self.next_step_index = 0
         self.lookahead = 2
-        # x, y, z, phi
-        self.terrain_info = np.zeros((self.n_steps, 4))
+        self.next_step_index = 0
+
+        # Terrain info
+        self.pitch_limit = 20
+        self.yaw_limit = 20
+        self.tilt_limit = 15
+        # x, y, z, phi, tilt
+        self.terrain_info = np.zeros((self.n_steps, 5))
 
         # (2 targets) * (x, y, z)
         high = np.inf * np.ones(self.robot.observation_space.shape[0] + 2 * 3)
@@ -250,20 +254,29 @@ class Walker3DTerrainEnv(EnvBase):
         self.action_space = self.robot.action_space
 
     def generate_step_placements(
-        self, n_steps=50, min_gap=0.65, max_gap=0.75, phi_limit=30, theta_limit=25
+        self,
+        n_steps=50,
+        min_gap=0.65,
+        max_gap=0.75,
+        yaw_limit=30,
+        pitch_limit=25,
+        tilt_limit=10,
     ):
-        phi_limit = phi_limit * DEG2RAD
-        theta_limit = theta_limit * DEG2RAD
-        dr = self.np_random.uniform(low=min_gap, high=max_gap, size=n_steps)
-        dphi = self.np_random.uniform(low=-phi_limit, high=phi_limit, size=n_steps)
-        dtheta = self.np_random.uniform(
-            low=np.pi / 2 - theta_limit, high=np.pi / 2 + theta_limit, size=n_steps
-        )
+
+        r_range = np.array([min_gap, max_gap])
+        y_range = np.array([-yaw_limit, yaw_limit]) * DEG2RAD
+        p_range = np.array([90 - pitch_limit, 90 + pitch_limit]) * DEG2RAD
+        t_range = np.array([-tilt_limit, tilt_limit]) * DEG2RAD
+
+        dr = self.np_random.uniform(*r_range, size=n_steps)
+        dphi = self.np_random.uniform(*y_range, size=n_steps)
+        dtheta = self.np_random.uniform(*p_range, size=n_steps)
+        tilt = self.np_random.uniform(*t_range, size=n_steps)
 
         dphi = np.cumsum(dphi)
 
         # Set initial two steps manually
-        dphi[0:2] = dr[0:2] = 0
+        # dphi[0:2] = dr[0:2] = tilt[0:2] = 0
 
         x_ = dr * np.sin(dtheta) * np.cos(dphi)
         y_ = dr * np.sin(dtheta) * np.sin(dphi)
@@ -272,13 +285,14 @@ class Walker3DTerrainEnv(EnvBase):
         y = np.cumsum(y_)
         z = np.cumsum(z_)
 
-        x[0], y[0] = self.robot.feet_xyz[0, 0:2]
-        x[1], y[1] = self.robot.feet_xyz[1, 0:2]
-        z[0] = z[1] = self.robot.feet_xyz[:, 2].min() - 0.15
+        # x[0], y[0] = self.robot.feet_xyz[0, 0:2]
+        # x[1], y[1] = self.robot.feet_xyz[1, 0:2]
+        # z[0] = z[1] = self.robot.feet_xyz[:, 2].min() - 0.15
 
-        np.clip(z, a_min=0.0, a_max=None, out=z)
+        min_z = self.step_radius * np.sin(self.tilt_limit * DEG2RAD)
+        np.clip(z, a_min=min_z, a_max=None, out=z)
 
-        return np.stack((x, y, z, dphi), axis=1)
+        return np.stack((x, y, z, dphi, tilt), axis=1)
 
     def create_terrain(self):
 
@@ -297,18 +311,19 @@ class Walker3DTerrainEnv(EnvBase):
         self.all_contact_object_ids = set(step_ids) | set(cover_ids) | self.ground_ids
 
     def randomize_terrain(self):
-        # Make flat terrain for now
-        theta_limit = 20
-        phi_limit = 20
 
         self.terrain_info = self.generate_step_placements(
-            n_steps=self.n_steps, theta_limit=theta_limit, phi_limit=phi_limit
+            n_steps=self.n_steps,
+            pitch_limit=self.pitch_limit,
+            yaw_limit=self.yaw_limit,
+            tilt_limit=self.tilt_limit,
         )
 
         for index in range(self.rendered_step_count):
             pos = self.terrain_info[index, 0:3]
             phi = self.terrain_info[index, 3]
-            quaternion = np.array(self._p.getQuaternionFromEuler([0, 0, phi]))
+            tilt = self.terrain_info[index, 4]
+            quaternion = np.array(self._p.getQuaternionFromEuler([0, tilt, phi]))
             self.steps[index].set_position(pos=pos, quat=quaternion)
 
     def update_steps(self):
@@ -323,7 +338,8 @@ class Walker3DTerrainEnv(EnvBase):
             )
             pos = self.terrain_info[next, 0:3]
             phi = self.terrain_info[next, 3]
-            quaternion = np.array(self._p.getQuaternionFromEuler([0, 0, phi]))
+            tilt = self.terrain_info[next, 4]
+            quaternion = np.array(self._p.getQuaternionFromEuler([0, tilt, phi]))
             p.set_position(pos=pos, quat=quaternion)
 
     def reset(self):
