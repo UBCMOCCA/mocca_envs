@@ -245,11 +245,11 @@ class Walker3DTerrainEnv(EnvBase):
         self.pitch_limit = 20
         self.yaw_limit = 20
         self.tilt_limit = 15
-        # x, y, z, phi, tilt
-        self.terrain_info = np.zeros((self.n_steps, 5))
+        # x, y, z, phi, x_tilt, y_tilt
+        self.terrain_info = np.zeros((self.n_steps, 6))
 
-        # (2 targets) * (x, y, z)
-        high = np.inf * np.ones(self.robot.observation_space.shape[0] + 2 * 3)
+        # (2 targets) * (x, y, z, x_tilt, y_tilt)
+        high = np.inf * np.ones(self.robot.observation_space.shape[0] + 2 * 5)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.action_space = self.robot.action_space
 
@@ -271,7 +271,9 @@ class Walker3DTerrainEnv(EnvBase):
         dr = self.np_random.uniform(*r_range, size=n_steps)
         dphi = self.np_random.uniform(*y_range, size=n_steps)
         dtheta = self.np_random.uniform(*p_range, size=n_steps)
-        tilt = self.np_random.uniform(*t_range, size=n_steps)
+
+        x_tilt = self.np_random.uniform(*t_range, size=n_steps)
+        y_tilt = self.np_random.uniform(*t_range, size=n_steps)
 
         dphi = np.cumsum(dphi)
 
@@ -292,7 +294,7 @@ class Walker3DTerrainEnv(EnvBase):
         min_z = self.step_radius * np.sin(self.tilt_limit * DEG2RAD)
         np.clip(z, a_min=min_z, a_max=None, out=z)
 
-        return np.stack((x, y, z, dphi, tilt), axis=1)
+        return np.stack((x, y, z, dphi, x_tilt, y_tilt), axis=1)
 
     def create_terrain(self):
 
@@ -321,26 +323,23 @@ class Walker3DTerrainEnv(EnvBase):
 
         for index in range(self.rendered_step_count):
             pos = self.terrain_info[index, 0:3]
-            phi = self.terrain_info[index, 3]
-            tilt = self.terrain_info[index, 4]
-            quaternion = np.array(self._p.getQuaternionFromEuler([0, tilt, phi]))
+            phi, x_tilt, y_tilt = self.terrain_info[index, 3:6]
+            quaternion = np.array(self._p.getQuaternionFromEuler([x_tilt, y_tilt, phi]))
             self.steps[index].set_position(pos=pos, quat=quaternion)
 
     def update_steps(self):
         threshold = int(np.ceil(self.rendered_step_count / 2))
         if self.next_step_index >= threshold:
-            last = (self.next_step_index - threshold - 1) % self.rendered_step_count
-            p = self.steps[last]
+            oldest = (self.next_step_index - threshold - 1) % self.rendered_step_count
 
             next = min(
                 (self.next_step_index - threshold - 1) + self.rendered_step_count,
                 len(self.terrain_info) - 1,
             )
             pos = self.terrain_info[next, 0:3]
-            phi = self.terrain_info[next, 3]
-            tilt = self.terrain_info[next, 4]
-            quaternion = np.array(self._p.getQuaternionFromEuler([0, tilt, phi]))
-            p.set_position(pos=pos, quat=quaternion)
+            phi, x_tilt, y_tilt = self.terrain_info[next, 3:6]
+            quaternion = np.array(self._p.getQuaternionFromEuler([x_tilt, y_tilt, phi]))
+            self.steps[oldest].set_position(pos=pos, quat=quaternion)
 
     def reset(self):
         self.done = False
@@ -543,9 +542,7 @@ class Walker3DTerrainEnv(EnvBase):
 
     def delta_to_k_targets(self, k=1):
         """ Return positions (relative to root) of target, and k-1 step after """
-        targets = self.terrain_info[
-            self.next_step_index : self.next_step_index + k, [0, 1, 2]
-        ]
+        targets = self.terrain_info[self.next_step_index : self.next_step_index + k]
         if len(targets) < k:
             # If running out of targets, repeat last target
             targets = np.concatenate(
@@ -554,7 +551,7 @@ class Walker3DTerrainEnv(EnvBase):
 
         self.walk_target = targets[[k - 1], 0:3].mean(axis=0)
 
-        deltas = targets - self.robot.body_xyz
+        deltas = targets[:, 0:3] - self.robot.body_xyz
         target_thetas = np.arctan2(deltas[:, 1], deltas[:, 0])
 
         angle_to_targets = target_thetas - self.robot.body_rpy[2]
@@ -562,9 +559,11 @@ class Walker3DTerrainEnv(EnvBase):
 
         deltas = np.stack(
             (
-                np.sin(angle_to_targets) * distance_to_targets,
-                np.cos(angle_to_targets) * distance_to_targets,
-                deltas[:, 2],
+                np.sin(angle_to_targets) * distance_to_targets,  # x
+                np.cos(angle_to_targets) * distance_to_targets,  # y
+                deltas[:, 2],  # z
+                targets[:, 4],  # x_tilt
+                targets[:, 5],  # y_tilt
             ),
             axis=1,
         )
@@ -593,8 +592,12 @@ class Walker3DTerrainEnv(EnvBase):
         # 27: abdomen_z vel
         # 29: abdomen_x vel
         # 50: sin(-a) = -sin(a) of next step
-        # 53: sin(-a) = -sin(a) of next + 1 step
-        negation_obs_indices = np.array([2, 4, 6, 8, 27, 29, 50, 53], dtype=np.int64)
+        # 53: x_tilt of next step
+        # 55: sin(-a) = -sin(a) of next + 1 step
+        # 58: x_tilt of next + 1 step
+        negation_obs_indices = np.array(
+            [2, 4, 6, 8, 27, 29, 50, 53, 55, 58], dtype=np.int64
+        )
         right_obs_indices = right
         left_obs_indices = left
 
