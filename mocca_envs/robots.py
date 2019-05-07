@@ -383,9 +383,9 @@ class Walker3D(WalkerBase):
         "left_elbow": 60,
     }
 
-    def __init__(self, bc):
+    def __init__(self, bc, power=1.0):
         self._p = bc
-        self.power = 1.0
+        self.power = power
 
         self.action_dim = 21
         high = np.ones(self.action_dim)
@@ -467,9 +467,9 @@ class Walker2D(WalkerBase):
         "foot_left_joint": 50,
     }
 
-    def __init__(self, bc):
+    def __init__(self, bc, power=1.0):
         self._p = bc
-        self.power = 1.0
+        self.power = power
 
         self.action_dim = 7
         high = np.ones(self.action_dim)
