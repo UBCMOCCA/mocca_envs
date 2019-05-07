@@ -230,8 +230,8 @@ class CassieMocapEnv(CassieEnv):
 class CassieMocapPhaseEnv(CassieMocapEnv):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.kp[[0, 5]] *= 8
-        self.kd[[0, 5]] *= 4
+        self.kp[[0, 5]] *= 2
+        self.kd[[0, 5]] *= 2
         high = np.concatenate([self.observation_space.high, [1]])
         self.observation_space = gym.spaces.Box(-1 * high, high, dtype=np.float32)
 
