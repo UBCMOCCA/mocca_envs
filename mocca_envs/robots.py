@@ -375,7 +375,7 @@ class Walker3D(WalkerBase):
 
     def __init__(self, bc):
         self._p = bc
-        self.power = 0.7
+        self.power = 1.0
 
         self.action_dim = 21
         high = np.ones(self.action_dim)
