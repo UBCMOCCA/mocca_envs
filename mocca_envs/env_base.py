@@ -1,16 +1,23 @@
 import gym
 import gym.utils.seeding
+import numpy as np
 import pybullet
 
 from mocca_envs.bullet_utils import BulletClient, Camera, SinglePlayerStadiumScene
 
 
 class EnvBase(gym.Env):
+    metadata = {"render.modes": ["human", "rgb_array"]}
+    _render_width = 320 * 3
+    _render_height = 240 * 3
+
     def __init__(self, robot_class, render=False):
         self.scene = None
         self.physics_client_id = -1
         self.owns_physics_client = 0
         self.state_id = -1
+
+        self.metadata["video.frames_per_second"] = int(1 / self.control_step)
 
         self.is_render = render
         self.robot_class = robot_class
@@ -81,6 +88,40 @@ class EnvBase(gym.Env):
             self._p.disconnect()
             self.initialize_scene_and_robot()
             self.reset()
+
+        if mode != "rgb_array":
+            return np.array([])
+
+        yaw, pitch, dist, lookat = self._p.getDebugVisualizerCamera()[-4:]
+
+        view_matrix = self._p.computeViewMatrixFromYawPitchRoll(
+            cameraTargetPosition=lookat,
+            distance=dist,
+            yaw=yaw,
+            pitch=pitch,
+            roll=0,
+            upAxisIndex=2,
+        )
+        proj_matrix = self._p.computeProjectionMatrixFOV(
+            fov=60,
+            aspect=float(self._render_width) / self._render_height,
+            nearVal=0.1,
+            farVal=100.0,
+        )
+        (_, _, px, _, _) = self._p.getCameraImage(
+            width=self._render_width,
+            height=self._render_height,
+            viewMatrix=view_matrix,
+            projectionMatrix=proj_matrix,
+            renderer=pybullet.ER_BULLET_HARDWARE_OPENGL,
+        )
+        rgb_array = np.array(px)
+        rgb_array = np.reshape(
+            np.array(px), (self._render_height, self._render_width, -1)
+        )
+        rgb_array = rgb_array[:, :, :3]
+        return rgb_array
+
 
     def reset(self):
         raise NotImplementedError
