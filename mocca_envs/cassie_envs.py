@@ -200,6 +200,7 @@ class CassieMocapEnv(CassieEnv):
 
     def compute_rewards(self, action, torques):
         dead, rewards = super(CassieMocapEnv, self).compute_rewards(action, torques)
+        # TODO: use self.initial_velocity
         vel_error = (self.robot.body_velocity[0] - 0.8) ** 2
 
         dyn_angles = self.robot.to_radians(self.robot.joint_angles)
@@ -208,6 +209,8 @@ class CassieMocapEnv(CassieEnv):
         joint_penalty = np.sqrt(
             np.sum((kin_angles - dyn_angles)[self.robot.powered_joint_inds] ** 2)
         )
+        orientation_penalty = np.sum(np.power(self.robot.body_rpy, 2))
+        com_penalty = np.sum(np.subtract(self.robot.body_xyz[1:], self.robot.base_position[1:])**2)
 
         rewards = {}
         # rewards["AliveRew"] = 0
@@ -218,7 +221,9 @@ class CassieMocapEnv(CassieEnv):
         # TODO: add orientation reward if not 2D
 
         rewards["SpeedRew"] = 0.1 * np.exp(-4 * vel_error)
-        rewards["ImitationRew"] = 0.9 * np.exp(-4 * joint_penalty)
+        rewards["ImitationRew"] = 0.65 * np.exp(-4 * joint_penalty)
+        rewards["OrientationRew"] = 0.1 * np.exp(-4 * orientation_penalty)
+        rewards["CoMRew"] = 0.15 * np.exp(-4 * com_penalty)
 
         return dead, rewards
 
