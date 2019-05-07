@@ -39,9 +39,9 @@ class CassieEnv(EnvBase):
 
     initial_velocity = [0, 0, 0]
 
-    def __init__(self, render=False, planar=False):
+    def __init__(self, render=False, planar=False, power_coef=1.0):
         robot_class = Cassie2D if planar else Cassie
-        super(CassieEnv, self).__init__(robot_class, render)
+        super(CassieEnv, self).__init__(robot_class, render, power=power_coef)
 
         high = np.inf * np.ones(self.robot.observation_space.shape[0] + 2)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)

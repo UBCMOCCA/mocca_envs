@@ -6,14 +6,16 @@ from mocca_envs.bullet_utils import BulletClient, Camera, SinglePlayerStadiumSce
 
 
 class EnvBase(gym.Env):
-    def __init__(self, robot_class, render=False):
+    def __init__(self, robot_class, render=False, **kwargs):
+        self.robot_kwargs = kwargs
+        self.robot_class = robot_class
+        
         self.scene = None
         self.physics_client_id = -1
         self.owns_physics_client = 0
         self.state_id = -1
 
         self.is_render = render
-        self.robot_class = robot_class
 
         self.seed()
         self.initialize_scene_and_robot()
@@ -50,7 +52,7 @@ class EnvBase(gym.Env):
         self.ground_ids = {(self.scene.ground_plane_mjcf[0], -1)}
 
         # Create robot object
-        self.robot = self.robot_class(self._p)
+        self.robot = self.robot_class(self._p, **self.robot_kwargs)
         self.robot.initialize()
         self.robot.np_random = self.np_random
 
