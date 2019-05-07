@@ -28,6 +28,13 @@ register(
 )
 
 register(
+    id="CassieMocapPhaseRSIEnv-v0",
+    entry_point="mocca_envs.cassie_envs:CassieMocapPhaseEnv",
+    max_episode_steps=1000,
+    kwargs={"rsi": True},
+)
+
+register(
     id="Cassie2DEnv-v0",
     entry_point="mocca_envs.cassie_envs:CassieEnv",
     max_episode_steps=1000,

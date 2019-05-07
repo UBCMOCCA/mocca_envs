@@ -12,7 +12,7 @@ class Cassie:
     model_path = os.path.join(
         current_dir, "data", "cassie", "urdf", "cassie_collide.urdf"
     )
-    base_position = (0.0, 0.0, 1.090)
+    base_position = (0.0, 0.0, 1.085)
     base_orientation = (0.0, 0.0, 0.0, 1.0)
 
     base_joint_angles = [
@@ -80,15 +80,20 @@ class Cassie:
         )
 
         self.parse_joints_and_links(self.object_id)
-        self.powered_joints = np.array(self.ordered_joints)[self.powered_joint_inds].tolist()
+        self.powered_joints = np.array(self.ordered_joints)[
+            self.powered_joint_inds
+        ].tolist()
 
         # Set Initial pose
         self._p.resetBasePositionAndOrientation(
             self.object_id[0], posObj=self.base_position, ornObj=self.base_orientation
         )
 
-        for j, q in zip(self.ordered_joints, self.base_joint_angles):
-            j.reset_current_position(q, 0)
+        self.reset_joint_positions(self.base_joint_angles, [0 for _ in self.base_joint_angles])
+    
+    def reset_joint_positions(self, positions, velocities):
+        for j, q, v in zip(self.ordered_joints, positions, velocities):
+            j.reset_current_position(q, v)
 
     def parse_joints_and_links(self, bodies):
         self.parts = {}
@@ -131,6 +136,13 @@ class Cassie:
                         torque_limit=self.power * self.power_coef[joint_name],
                     )
                     self.ordered_joints.append(self.jdict[joint_name])
+                    self._p.changeDynamics(
+                        bodies[i],
+                        j,
+                        jointDamping=1,
+                        linearDamping=1,
+                        angularDamping=1,
+                    )
 
     def make_robot_utils(self):
         # Make utility functions for converting from normalized to radians and vice versa
@@ -157,9 +169,7 @@ class Cassie:
         assert np.isfinite(a).all()
         for n, j in enumerate(self.powered_joints):
             # j.set_position(self.base_joint_angles[n])
-            j.set_motor_torque(
-                float(np.clip(a[n], -j.torque_limit, j.torque_limit))
-            )
+            j.set_motor_torque(float(np.clip(a[n], -j.torque_limit, j.torque_limit)))
 
         self.ordered_joints[4].set_position(0)
         self.ordered_joints[11].set_position(0)

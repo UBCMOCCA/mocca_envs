@@ -332,7 +332,7 @@ class StadiumScene(Scene):
         for i in self.ground_plane_mjcf:
             self._p.changeDynamics(i, -1, lateralFriction=0.8, restitution=0.5)
             self._p.changeVisualShape(i, -1, rgbaColor=[1, 1, 1, 0.8])
-    
+
     def set_friction(self, lateral_friction):
         for i in self.ground_plane_mjcf:
             self._p.changeDynamics(i, -1, lateralFriction=lateral_friction)

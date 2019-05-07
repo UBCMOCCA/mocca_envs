@@ -31,7 +31,7 @@ class EnvBase(gym.Env):
         self._p = BulletClient(connection_mode=bc_mode)
 
         if self.is_render:
-            self.camera = Camera(self._p, 1 / self.control_step)
+            self.camera = Camera(self._p, 1 / self.control_step * self.llc_frame_skip)
             if hasattr(self, "create_target"):
                 self.create_target()
 
