@@ -70,12 +70,17 @@ class Cassie:
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
     def load_robot_model(self):
+        flags = (
+            self._p.URDF_USE_SELF_COLLISION
+            | self._p.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
+        )
         self.object_id = (
             self._p.loadURDF(
                 self.model_path,
                 basePosition=self.base_position,
                 baseOrientation=self.base_orientation,
                 useFixedBase=False,
+                flags=flags,
             ),
         )
 
@@ -89,8 +94,10 @@ class Cassie:
             self.object_id[0], posObj=self.base_position, ornObj=self.base_orientation
         )
 
-        self.reset_joint_positions(self.base_joint_angles, [0 for _ in self.base_joint_angles])
-    
+        self.reset_joint_positions(
+            self.base_joint_angles, [0 for _ in self.base_joint_angles]
+        )
+
     def reset_joint_positions(self, positions, velocities):
         for j, q, v in zip(self.ordered_joints, positions, velocities):
             j.reset_current_position(q, v)
@@ -136,13 +143,7 @@ class Cassie:
                         torque_limit=self.power * self.power_coef[joint_name],
                     )
                     self.ordered_joints.append(self.jdict[joint_name])
-                    self._p.changeDynamics(
-                        bodies[i],
-                        j,
-                        jointDamping=1,
-                        linearDamping=1,
-                        angularDamping=1,
-                    )
+                    self._p.changeDynamics(bodies[i], j, jointDamping=1)
 
     def make_robot_utils(self):
         # Make utility functions for converting from normalized to radians and vice versa

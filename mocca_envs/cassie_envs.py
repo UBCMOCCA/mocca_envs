@@ -210,7 +210,9 @@ class CassieMocapEnv(CassieEnv):
             np.sum((kin_angles - dyn_angles)[self.robot.powered_joint_inds] ** 2)
         )
         orientation_penalty = np.sum(np.power(self.robot.body_rpy, 2))
-        com_penalty = np.sum(np.subtract(self.robot.body_xyz[1:], self.robot.base_position[1:])**2)
+        com_penalty = np.sum(
+            np.subtract(self.robot.body_xyz[1:], self.robot.base_position[1:]) ** 2
+        )
 
         rewards = {}
         # rewards["AliveRew"] = 0
