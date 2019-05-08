@@ -243,7 +243,7 @@ class Walker3DTerrainEnv(EnvBase):
 
         # Terrain info
         self.pitch_limit = 20
-        self.yaw_limit = 20
+        self.yaw_limit = 60
         self.tilt_limit = 15
         # x, y, z, phi, x_tilt, y_tilt
         self.terrain_info = np.zeros((self.n_steps, 6))
