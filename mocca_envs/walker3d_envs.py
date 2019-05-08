@@ -229,7 +229,7 @@ class Walker3DTerrainEnv(EnvBase):
         # because they are used in self.create_terrain()
         self.step_radius = 0.3
         self.step_height = 0.2
-        self.rendered_step_count = 5
+        self.rendered_step_count = 3
 
         super(Walker3DTerrainEnv, self).__init__(Walker3D, render)
 
@@ -328,7 +328,7 @@ class Walker3DTerrainEnv(EnvBase):
             self.steps[index].set_position(pos=pos, quat=quaternion)
 
     def update_steps(self):
-        threshold = int(np.ceil(self.rendered_step_count / 2))
+        threshold = int(self.rendered_step_count // 2)
         if self.next_step_index >= threshold:
             oldest = (self.next_step_index - threshold - 1) % self.rendered_step_count
 

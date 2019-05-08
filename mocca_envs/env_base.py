@@ -122,7 +122,6 @@ class EnvBase(gym.Env):
         rgb_array = rgb_array[:, :, :3]
         return rgb_array
 
-
     def reset(self):
         raise NotImplementedError
 
