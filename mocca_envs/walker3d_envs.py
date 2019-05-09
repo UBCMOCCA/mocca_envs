@@ -237,7 +237,7 @@ class Walker3DChairEnv(EnvBase):
     def create_terrain(self):
 
         self.chair = Rectangle(
-            self._p, hdx=0.1, hdy=2, hdz=2, pos=np.array([-0.6, 0.0, 1.0])
+            self._p, hdx=0.1, hdy=2, hdz=2, pos=np.array([-0.2, 0.0, 1.0])
         )
 
         self.angle = -15 * DEG2RAD
@@ -249,27 +249,14 @@ class Walker3DChairEnv(EnvBase):
 
         self._p.restoreState(self.state_id)
 
-        self.robot_state = self.robot.reset(random_pose=True)
-
-        force = np.array([-100, 0, 100], dtype=np.float32)
-        self._p.applyExternalForce(
-            self.robot.object_id[0],
-            -1,
-            forceObj=force,
-            posObj=(0, 0, 0),
-            flags=self._p.LINK_FRAME,
+        # Disable random pose for now
+        # How to set on chair with random pose?
+        self.robot.reset(random_pose=False)
+        quaternion = np.array(self._p.getQuaternionFromEuler([0.0, self.angle, 0.0]))
+        self._p.resetBasePositionAndOrientation(
+            self.robot.object_id[0], posObj=(0, 0, 1.25), ornObj=quaternion
         )
-
-        no_action = np.zeros(self.robot.action_space.shape)
-        for _ in range(100):
-            self._p.applyExternalForce(
-                self.robot.object_id[0],
-                -1,
-                forceObj=force,
-                posObj=(0, 0, 0),
-                flags=self._p.LINK_FRAME,
-            )
-            self.step(no_action)
+        self.robot_state = self.robot.calc_state()
 
         # Reset camera
         if self.is_render:
