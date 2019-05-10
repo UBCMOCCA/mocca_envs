@@ -2,7 +2,7 @@ import gym
 import numpy as np
 
 from mocca_envs.env_base import EnvBase
-from mocca_envs.bullet_utils import VSphere, Pillar, Plank
+from mocca_envs.bullet_objects import VSphere, Pillar, Plank, Rectangle
 from mocca_envs.robots import Walker3D
 
 Colors = {
@@ -215,6 +215,66 @@ class Walker3DCustomEnv(EnvBase):
             right_action_indices,
             left_action_indices,
         )
+
+
+class Walker3DChairEnv(EnvBase):
+
+    control_step = 1 / 60
+    llc_frame_skip = 1
+    sim_frame_skip = 4
+
+    def __init__(self, render=False):
+        super().__init__(Walker3D, render)
+
+        self.electricity_cost = 4.5
+        self.stall_torque_cost = 0.225
+        self.joints_at_limit_cost = 0.1
+
+        high = np.inf * np.ones(self.robot.observation_space.shape[0] + 2)
+        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
+        self.action_space = self.robot.action_space
+
+    def create_terrain(self):
+
+        self.chair = Rectangle(
+            self._p, hdx=0.1, hdy=2, hdz=2, pos=np.array([-0.2, 0.0, 1.0])
+        )
+
+        self.angle = -15 * DEG2RAD
+        quaternion = np.array(self._p.getQuaternionFromEuler([0.0, self.angle, 0.0]))
+        self.chair.set_position(pos=self.chair._pos, quat=quaternion)
+
+    def reset(self):
+        self.done = False
+
+        self._p.restoreState(self.state_id)
+
+        # Disable random pose for now
+        # How to set on chair with random pose?
+        self.robot.reset(random_pose=False)
+        quaternion = np.array(self._p.getQuaternionFromEuler([0.0, self.angle, 0.0]))
+        self._p.resetBasePositionAndOrientation(
+            self.robot.object_id[0], posObj=(0, 0, 1.25), ornObj=quaternion
+        )
+        self.robot_state = self.robot.calc_state()
+
+        # Reset camera
+        if self.is_render:
+            self.camera.lookat(self.robot.body_xyz)
+
+        return self.robot_state
+
+    def step(self, action):
+        self.robot.apply_action(action)
+        self.scene.global_step()
+
+        self.robot_state = self.robot.calc_state(self.ground_ids)
+
+        if self.is_render:
+            self._handle_keyboard()
+            self.camera.track(pos=self.robot.body_xyz)
+
+        return self.robot_state, 0, self.done, {}
 
 
 class Walker3DTerrainEnv(EnvBase):
