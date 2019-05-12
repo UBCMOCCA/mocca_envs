@@ -3,7 +3,7 @@ import numpy as np
 
 from mocca_envs.env_base import EnvBase
 from mocca_envs.bullet_objects import VSphere, Pillar, Plank, Rectangle
-from mocca_envs.robots import Walker3D
+from mocca_envs.robots import Child3D, Walker3D
 
 Colors = {
     "dodgerblue": (0.11764705882352941, 0.5647058823529412, 1.0, 1.0),
@@ -215,6 +215,19 @@ class Walker3DCustomEnv(EnvBase):
             right_action_indices,
             left_action_indices,
         )
+
+
+class Child3DCustomEnv(Walker3DCustomEnv):
+    def __init__(self, render=False):
+        super(Walker3DCustomEnv, self).__init__(Child3D, render)
+
+        self.electricity_cost = 4.5
+        self.stall_torque_cost = 0.225
+        self.joints_at_limit_cost = 0.1
+
+        high = np.inf * np.ones(self.robot.observation_space.shape[0] + 2)
+        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
+        self.action_space = self.robot.action_space
 
 
 class Walker3DChairEnv(EnvBase):

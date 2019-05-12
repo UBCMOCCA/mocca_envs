@@ -429,6 +429,43 @@ class Walker3D(WalkerBase):
         return super(Walker3D, self).reset()
 
 
+class Child3D(Walker3D):
+    def __init__(self, bc):
+        super().__init__(bc)
+        self.power = 0.4
+
+    def load_robot_model(self):
+        flags = (
+            self._p.MJCF_COLORS_FROM_FILE
+            | self._p.URDF_USE_SELF_COLLISION
+            | self._p.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
+        )
+        model_path = os.path.join(current_dir, "data", "custom", "infant3d.xml")
+        root_link_name = None
+
+        # Need to call this first to parse body
+        super(Walker3D, self).load_robot_model(model_path, flags, root_link_name)
+
+        # Set pose to a good initial pose
+        self.base_joint_angles = np.zeros(self.action_dim)
+        self.base_joint_angles[[5, 6]] = -np.pi / 8  # Right leg
+        self.base_joint_angles[10] = np.pi / 10  # Left leg back
+        self.base_joint_angles[[13, 17]] = np.pi / 3  # Shoulder x
+        self.base_joint_angles[[14]] = -np.pi / 6  # Right shoulder back
+        self.base_joint_angles[[18]] = np.pi / 6  # Left shoulder forward
+        self.base_joint_angles[[16, 20]] = np.pi / 3  # Elbow
+
+        # Need this to set pose and mirroring
+        # hip_[x,z,y], knee, ankle, shoulder_[x,z,y], elbow
+        self._right_joint_indices = np.array(
+            [3, 4, 5, 6, 7, 13, 14, 15, 16], dtype=np.int64
+        )
+        self._left_joint_indices = np.array(
+            [8, 9, 10, 11, 12, 17, 18, 19, 20], dtype=np.int64
+        )
+        self._negation_joint_indices = np.array([0, 2], dtype=np.int64)  # abdomen_[x,z]
+
+
 class Walker2D(WalkerBase):
 
     foot_names = ["foot", "foot_left"]

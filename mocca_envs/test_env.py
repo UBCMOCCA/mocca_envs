@@ -7,7 +7,7 @@ import mocca_envs
 DEG2RAD = np.pi / 180
 
 
-env_name = "Walker3DChairEnv-v0"
+env_name = "Child3DCustomEnv-v0"
 env = gym.make(env_name, render=True)
 action_dim = env.action_space.shape[0]
 offset = 6
