@@ -37,9 +37,9 @@ class Walker3DCustomEnv(EnvBase):
         self.target = VSphere(self._p, radius=0.15, pos=None)
 
     def randomize_target(self):
-        self.dist = self.np_random.uniform(0, 10)
+        self.dist = self.np_random.uniform(1, 2)
         self.angle = self.np_random.uniform(-np.pi, np.pi)
-        self.stop_frames = self.np_random.choice([1.0, 75, 150])
+        self.stop_frames = self.np_random.choice([1.0, 2.0])
 
     def reset(self):
         self.done = False
