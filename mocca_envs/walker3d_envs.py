@@ -229,6 +229,84 @@ class Child3DCustomEnv(Walker3DCustomEnv):
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.action_space = self.robot.action_space
 
+    def create_target(self):
+        # Need this to create target in render mode, called by EnvBase
+        # Sphere is a visual shape, does not interact physically
+        self.target = VSphere(self._p, radius=0.1, pos=np.array([0, 0, 0.5]))
+
+    def reset(self):
+        self.done = False
+        self.add_angular_progress = True
+        self.randomize_target()
+
+        self.walk_target = np.array(
+            [self.dist * np.cos(self.angle), self.dist * np.sin(self.angle), 0.0]
+        )
+        self.close_count = 0
+
+        self._p.restoreState(self.state_id)
+        self.robot.reset(random_pose=True)
+
+        for _ in range(100):
+            self.scene.global_step()
+
+        self.robot_state = self.robot.calc_state()
+
+        # Reset camera
+        if self.is_render:
+            self.camera.lookat(self.robot.body_xyz)
+            self.target.set_position(pos=self.walk_target)
+
+        self.calc_potential()
+
+        sin_ = self.distance_to_target * np.sin(self.angle_to_target)
+        sin_ = sin_ / (1 + abs(sin_))
+        cos_ = self.distance_to_target * np.cos(self.angle_to_target)
+        cos_ = cos_ / (1 + abs(cos_))
+
+        state = np.concatenate((self.robot_state, [sin_], [cos_]))
+
+        return state
+
+    def calc_base_reward(self, action):
+
+        # Bookkeeping stuff
+        old_linear_potential = self.linear_potential
+        old_angular_potential = self.angular_potential
+
+        self.calc_potential()
+
+        if self.distance_to_target < 1:
+            self.add_angular_progress = False
+
+        linear_progress = self.linear_potential - old_linear_potential
+        angular_progress = self.angular_potential - old_angular_potential
+
+        self.progress = 2 * linear_progress
+        if self.add_angular_progress:
+            self.progress += 100 * angular_progress
+
+        self.posture_penalty = 0
+        if not -0.2 < self.robot.body_rpy[1] < 0.4:
+            self.posture_penalty = abs(self.robot.body_rpy[1])
+
+        if not -0.4 < self.robot.body_rpy[0] < 0.4:
+            self.posture_penalty += abs(self.robot.body_rpy[0])
+
+        self.energy_penalty = self.electricity_cost * float(
+            np.abs(action * self.robot.joint_speeds).mean()
+        )
+        self.energy_penalty += self.stall_torque_cost * float(np.square(action).mean())
+
+        self.joints_penalty = float(
+            self.joints_at_limit_cost * self.robot.joints_at_limit
+        )
+
+        # Calculate done
+        height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
+        self.tall_bonus = 2.0 if height > 0.4 else -1.0
+        self.done = self.done
+
 
 class Walker3DChairEnv(EnvBase):
 

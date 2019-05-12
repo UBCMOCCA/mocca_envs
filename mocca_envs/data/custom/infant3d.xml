@@ -13,7 +13,7 @@
         <map fogend="5" fogstart="3"/>
     </visual>
     <worldbody>
-        <body name="walker3d" pos="0 1 1">
+        <body name="walker3d" pos="0 0 0.9">
             <body name="head" pos="0 0 .25">
                 <geom name="head" pos="0 0 0" size=".1" type="sphere" user="258"/>
             </body>
