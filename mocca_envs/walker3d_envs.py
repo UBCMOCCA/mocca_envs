@@ -22,6 +22,7 @@ class Walker3DCustomEnv(EnvBase):
 
     def __init__(self, render=False):
         super(Walker3DCustomEnv, self).__init__(Walker3D, render)
+        self.robot.set_base_pose(pose="running_start")
 
         self.electricity_cost = 4.5
         self.stall_torque_cost = 0.225
@@ -220,6 +221,7 @@ class Walker3DCustomEnv(EnvBase):
 class Child3DCustomEnv(Walker3DCustomEnv):
     def __init__(self, render=False):
         super(Walker3DCustomEnv, self).__init__(Child3D, render)
+        self.robot.set_base_pose(pose="crawl")
 
         self.electricity_cost = 4.5
         self.stall_torque_cost = 0.225
@@ -245,10 +247,7 @@ class Child3DCustomEnv(Walker3DCustomEnv):
         self.close_count = 0
 
         self._p.restoreState(self.state_id)
-        self.robot.reset(random_pose=True)
-
-        for _ in range(100):
-            self.scene.global_step()
+        self.robot.reset(random_pose=True, pos=(0, 0, 0.4))
 
         self.robot_state = self.robot.calc_state()
 
@@ -316,6 +315,7 @@ class Walker3DChairEnv(EnvBase):
 
     def __init__(self, render=False):
         super().__init__(Walker3D, render)
+        self.robot.set_base_pose(pose="sit")
 
         self.electricity_cost = 4.5
         self.stall_torque_cost = 0.225
@@ -328,10 +328,10 @@ class Walker3DChairEnv(EnvBase):
     def create_terrain(self):
 
         self.chair = Rectangle(
-            self._p, hdx=0.1, hdy=2, hdz=2, pos=np.array([-0.2, 0.0, 1.0])
+            self._p, hdx=0.25, hdy=0.5, hdz=0.25, pos=np.array([0.0, 0.0, 0.25])
         )
 
-        self.angle = -15 * DEG2RAD
+        self.angle = 0 * DEG2RAD
         quaternion = np.array(self._p.getQuaternionFromEuler([0.0, self.angle, 0.0]))
         self.chair.set_position(pos=self.chair._pos, quat=quaternion)
 
@@ -342,11 +342,7 @@ class Walker3DChairEnv(EnvBase):
 
         # Disable random pose for now
         # How to set on chair with random pose?
-        self.robot.reset(random_pose=False)
-        quaternion = np.array(self._p.getQuaternionFromEuler([0.0, self.angle, 0.0]))
-        self._p.resetBasePositionAndOrientation(
-            self.robot.object_id[0], posObj=(0, 0, 1.25), ornObj=quaternion
-        )
+        self.robot.reset(random_pose=False, pos=(0, 0, 0.98))
         self.robot_state = self.robot.calc_state()
 
         # Reset camera
@@ -378,11 +374,12 @@ class Walker3DTerrainEnv(EnvBase):
 
         # Need these before calling constructor
         # because they are used in self.create_terrain()
-        self.step_radius = 0.3
+        self.step_radius = 0.2
         self.step_height = 0.2
         self.rendered_step_count = 3
 
         super(Walker3DTerrainEnv, self).__init__(Walker3D, render)
+        self.robot.set_base_pose(pose="running_start")
 
         self.electricity_cost = 4.5
         self.stall_torque_cost = 0.225
@@ -454,8 +451,8 @@ class Walker3DTerrainEnv(EnvBase):
         cover_ids = set()
 
         for index in range(self.rendered_step_count):
-            p = Pillar(self._p, self.step_radius, self.step_height)
-            # p = Plank(self._p, (self.step_radius, 6, self.step_height))
+            # p = Pillar(self._p, self.step_radius, self.step_height)
+            p = Plank(self._p, (self.step_radius, 1, self.step_height))
             self.steps.append(p)
             step_ids = step_ids | {(p.body_id, -1)}
             cover_ids = cover_ids | {(p.cover_id, -1)}
@@ -499,7 +496,7 @@ class Walker3DTerrainEnv(EnvBase):
 
         self._p.restoreState(self.state_id)
 
-        self.robot_state = self.robot.reset(random_pose=True, z0=None)
+        self.robot_state = self.robot.reset(random_pose=True)
         self.calc_feet_state()
 
         # Randomize platforms

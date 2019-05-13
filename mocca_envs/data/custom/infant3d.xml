@@ -40,8 +40,8 @@
                             <geom fromto="0 0 0 0 0 -.2" name="right_shin1" size="0.045" type="capsule"/>
                             <body name="right_foot" pos="0 0 -0.35">
                                 <joint axis="0 1 0" name="right_ankle" pos="0 0 0.07" range="-20 40" stiffness="0" type="hinge"/>
-                                <geom fromto="-0.025 0.02 0.07 0.16 0.03 0.07" name="right_foot_1" type="capsule" size="0.035"/>
-                                <geom fromto="-0.025 -0.02 0.07 0.16 -0.03 0.07" name="right_foot_2" type="capsule" size="0.035"/>
+                                <geom fromto="-0.025 0.02 0.07 0.1 0.03 0.07" name="right_foot_1" type="capsule" size="0.035"/>
+                                <geom fromto="-0.025 -0.02 0.07 0.1 -0.03 0.07" name="right_foot_2" type="capsule" size="0.035"/>
                             </body>
                         </body>
                     </body>
@@ -56,8 +56,8 @@
                             <geom fromto="0 0 0 0 0 -.2" name="left_shin1" size="0.045" type="capsule"/>
                             <body name="left_foot" pos="0 0 -0.35">
                                 <joint axis="0 1 0" name="left_ankle" pos="0 0 0.07" range="-20 40" stiffness="0" type="hinge"/>
-                                <geom fromto="-0.025 0.02 0.07 0.16 0.03 0.07" name="left_foot_1" type="capsule" size="0.035"/>
-                                <geom fromto="-0.025 -0.02 0.07 0.16 -0.03 0.07" name="left_foot_2" type="capsule" size="0.035"/>
+                                <geom fromto="-0.025 0.02 0.07 0.1 0.03 0.07" name="left_foot_1" type="capsule" size="0.035"/>
+                                <geom fromto="-0.025 -0.02 0.07 0.1 -0.03 0.07" name="left_foot_2" type="capsule" size="0.035"/>
                             </body>
                         </body>
                     </body>
