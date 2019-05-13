@@ -357,7 +357,7 @@ class Walker3DChairEnv(Walker3DCustomEnv):
         return state
 
 
-class Walker3DTerrainEnv(EnvBase):
+class Walker3DStepperEnv(EnvBase):
 
     control_step = 1 / 60
     llc_frame_skip = 1
@@ -371,7 +371,7 @@ class Walker3DTerrainEnv(EnvBase):
         self.step_height = 0.2
         self.rendered_step_count = 3
 
-        super(Walker3DTerrainEnv, self).__init__(Walker3D, render)
+        super(Walker3DStepperEnv, self).__init__(Walker3D, render)
         self.robot.set_base_pose(pose="running_start")
 
         self.electricity_cost = 4.5
