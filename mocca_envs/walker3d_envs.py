@@ -307,23 +307,10 @@ class Child3DCustomEnv(Walker3DCustomEnv):
         self.done = self.done
 
 
-class Walker3DChairEnv(EnvBase):
-
-    control_step = 1 / 60
-    llc_frame_skip = 1
-    sim_frame_skip = 4
-
+class Walker3DChairEnv(Walker3DCustomEnv):
     def __init__(self, render=False):
-        super().__init__(Walker3D, render)
+        super().__init__(render)
         self.robot.set_base_pose(pose="sit")
-
-        self.electricity_cost = 4.5
-        self.stall_torque_cost = 0.225
-        self.joints_at_limit_cost = 0.1
-
-        high = np.inf * np.ones(self.robot.observation_space.shape[0] + 2)
-        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
-        self.action_space = self.robot.action_space
 
     def create_terrain(self):
 
@@ -331,12 +318,20 @@ class Walker3DChairEnv(EnvBase):
             self._p, hdx=0.25, hdy=0.5, hdz=0.25, pos=np.array([0.0, 0.0, 0.25])
         )
 
-        self.angle = 0 * DEG2RAD
-        quaternion = np.array(self._p.getQuaternionFromEuler([0.0, self.angle, 0.0]))
-        self.chair.set_position(pos=self.chair._pos, quat=quaternion)
+    def randomize_target(self):
+        self.dist = 10.0
+        self.angle = 0
+        self.stop_frames = 1000
 
     def reset(self):
         self.done = False
+        self.add_angular_progress = True
+        self.randomize_target()
+
+        self.walk_target = np.array(
+            [self.dist * np.cos(self.angle), self.dist * np.sin(self.angle), 1.0]
+        )
+        self.close_count = 0
 
         self._p.restoreState(self.state_id)
 
@@ -348,20 +343,18 @@ class Walker3DChairEnv(EnvBase):
         # Reset camera
         if self.is_render:
             self.camera.lookat(self.robot.body_xyz)
+            self.target.set_position(pos=self.walk_target)
 
-        return self.robot_state
+        self.calc_potential()
 
-    def step(self, action):
-        self.robot.apply_action(action)
-        self.scene.global_step()
+        sin_ = self.distance_to_target * np.sin(self.angle_to_target)
+        sin_ = sin_ / (1 + abs(sin_))
+        cos_ = self.distance_to_target * np.cos(self.angle_to_target)
+        cos_ = cos_ / (1 + abs(cos_))
 
-        self.robot_state = self.robot.calc_state(self.ground_ids)
+        state = np.concatenate((self.robot_state, [sin_], [cos_]))
 
-        if self.is_render:
-            self._handle_keyboard()
-            self.camera.track(pos=self.robot.body_xyz)
-
-        return self.robot_state, 0, self.done, {}
+        return state
 
 
 class Walker3DTerrainEnv(EnvBase):

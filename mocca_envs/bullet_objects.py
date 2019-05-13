@@ -27,11 +27,7 @@ class VSphere:
 
         pos = self._pos if pos is None else pos
 
-        if (pos != self._pos).any():
-            self._p.resetBasePositionAndOrientation(
-                self.id, posObj=pos, ornObj=self._quat
-            )
-            self._pos = tuple(pos)
+        self._p.resetBasePositionAndOrientation(self.id, posObj=pos, ornObj=self._quat)
 
     def set_color(self, rgba):
         t_rgba = tuple(rgba)
@@ -97,17 +93,16 @@ class Pillar:
         pos = self._pos if pos is None else pos
         quat = self._quat if quat is None else quat
 
-        if (pos != self._pos).any() or (quat != self._quat).any():
-            self._pos = pos
-            self._quat = quat
+        self._pos = pos
+        self._quat = quat
 
-            self._p.resetBasePositionAndOrientation(
-                self.body_id, posObj=self._pos - self._offset, ornObj=self._quat
-            )
+        self._p.resetBasePositionAndOrientation(
+            self.body_id, posObj=self._pos - self._offset, ornObj=self._quat
+        )
 
-            self._p.resetBasePositionAndOrientation(
-                self.cover_id, posObj=self._pos, ornObj=self._quat
-            )
+        self._p.resetBasePositionAndOrientation(
+            self.cover_id, posObj=self._pos, ornObj=self._quat
+        )
 
 
 class Plank:
@@ -159,17 +154,16 @@ class Plank:
         self._p.changeDynamics(self.cover_id, -1, lateralFriction=1.0, restitution=0.1)
 
     def set_position(self, pos, quat):
-        if (pos != self._pos).any() or (quat != self._quat).any():
-            self._pos = pos
-            self._quat = quat
+        self._pos = pos
+        self._quat = quat
 
-            self._p.resetBasePositionAndOrientation(
-                self.body_id, posObj=self._pos - self._offset, ornObj=self._quat
-            )
+        self._p.resetBasePositionAndOrientation(
+            self.body_id, posObj=self._pos - self._offset, ornObj=self._quat
+        )
 
-            self._p.resetBasePositionAndOrientation(
-                self.cover_id, posObj=self._pos, ornObj=self._quat
-            )
+        self._p.resetBasePositionAndOrientation(
+            self.cover_id, posObj=self._pos, ornObj=self._quat
+        )
 
 
 class Rectangle:
@@ -210,10 +204,9 @@ class Rectangle:
         pos = self._pos if pos is None else pos
         quat = self._quat if quat is None else quat
 
-        if (pos != self._pos).any() or (quat != self._quat).any():
-            self._pos = pos
-            self._quat = quat
+        self._pos = pos
+        self._quat = quat
 
-            self._p.resetBasePositionAndOrientation(
-                self.body_id, posObj=self._pos, ornObj=self._quat
-            )
+        self._p.resetBasePositionAndOrientation(
+            self.body_id, posObj=self._pos, ornObj=self._quat
+        )
