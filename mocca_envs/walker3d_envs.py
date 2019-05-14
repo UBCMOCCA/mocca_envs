@@ -315,7 +315,7 @@ class Walker3DChairEnv(Walker3DCustomEnv):
     def create_terrain(self):
 
         self.chair = Rectangle(
-            self._p, hdx=0.25, hdy=0.5, hdz=0.25, pos=np.array([0.0, 0.0, 0.25])
+            self._p, hdx=0.25, hdy=0.5, hdz=0.5, pos=np.array([0.0, 0.0, 0.5])
         )
 
     def randomize_target(self):
@@ -337,7 +337,7 @@ class Walker3DChairEnv(Walker3DCustomEnv):
 
         # Disable random pose for now
         # How to set on chair with random pose?
-        self.robot.reset(random_pose=False, pos=(0, 0, 0.98))
+        self.robot.reset(random_pose=False, pos=(0, 0, 1.46))
         self.robot_state = self.robot.calc_state()
 
         # Reset camera
