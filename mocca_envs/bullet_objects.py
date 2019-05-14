@@ -168,7 +168,7 @@ class Plank:
 
 class Rectangle:
     def __init__(
-        self, bc, hdx, hdy, hdz, mass=0, lateral_friction=0.8, pos=None, rgba=None
+        self, bc, hdx, hdy, hdz, mass=0.0, lateral_friction=0.8, pos=None, rgba=None
     ):
         self._p = bc
 
@@ -188,15 +188,11 @@ class Rectangle:
             specularColor=(0.4, 0.4, 0),
         )
 
-        self.body_id = self._p.createMultiBody(
+        self.id = self._p.createMultiBody(
             baseMass=mass,
             baseCollisionShapeIndex=box_shape,
             baseVisualShapeIndex=box_vshape,
             basePosition=self._pos,
-        )
-
-        self._p.changeDynamics(
-            self.body_id, -1, lateralFriction=lateral_friction, restitution=0.1
         )
 
     def set_position(self, pos=None, quat=None):
@@ -208,5 +204,69 @@ class Rectangle:
         self._quat = quat
 
         self._p.resetBasePositionAndOrientation(
-            self.body_id, posObj=self._pos, ornObj=self._quat
+            self.id, posObj=self._pos, ornObj=self._quat
+        )
+
+
+class Sofa:
+    """ Just a chair with cushion on top """
+
+    def __init__(self, bc, hdx, hdy, hdz, mass=0.0, lateral_friction=0.8, pos=None):
+        self._p = bc
+
+        pos = np.array([1.0, 1.0, 1.0]) if pos is None else pos
+
+        self._pos = pos
+        self._quat = np.array([0.0, 0.0, 0.0, 1.0])
+
+        box_dims = np.array([hdx, hdy, 4 * hdz / 5], dtype=np.float32)
+        cushion_dims = np.array([hdx, hdy, hdz / 5], dtype=np.float32)
+
+        self._offset = np.array([0, 0, cushion_dims[2]], dtype=np.float32)
+
+        box_shape = self._p.createCollisionShape(self._p.GEOM_BOX, halfExtents=box_dims)
+        box_vshape = self._p.createVisualShape(
+            self._p.GEOM_BOX,
+            halfExtents=box_dims,
+            rgbaColor=(88 / 255, 99 / 255, 110 / 255, 1),
+            specularColor=(0.4, 0.4, 0),
+        )
+
+        cushion_shape = self._p.createCollisionShape(
+            self._p.GEOM_BOX, halfExtents=cushion_dims
+        )
+        cushion_vshape = self._p.createVisualShape(
+            self._p.GEOM_BOX,
+            halfExtents=cushion_dims,
+            rgbaColor=(55 / 255, 66 / 255, 77 / 255, 1),
+            specularColor=(0.4, 0.4, 0),
+        )
+
+        cushion_offset = np.array([0, 0, cushion_dims[2] + box_dims[2]])
+
+        self.id = self._p.createMultiBody(
+            baseMass=4 * mass / 5,
+            baseCollisionShapeIndex=box_shape,
+            baseVisualShapeIndex=box_vshape,
+            basePosition=self._pos - self._offset,
+            linkMasses=[mass / 5],
+            linkCollisionShapeIndices=[cushion_shape],
+            linkVisualShapeIndices=[cushion_vshape],
+            linkPositions=[cushion_offset],
+            linkOrientations=[(0, 0, 0, 1)],
+            linkInertialFramePositions=[(0, 0, 0)],
+            linkInertialFrameOrientations=[(0, 0, 0, 1)],
+            linkParentIndices=[0],
+            linkJointTypes=[self._p.JOINT_FIXED],
+            linkJointAxis=[(0, 0, 1)],
+        )
+
+        # Add softness to cushion
+        self._p.changeDynamics(
+            self.id,
+            0,
+            lateralFriction=lateral_friction,
+            restitution=0.5,
+            contactStiffness=1000,
+            contactDamping=1000,
         )
