@@ -101,6 +101,15 @@ class BodyPart:
             self.bodies[self.bodyIndex], self.bodyPartIndex
         )
 
+    def angular_speed(self):
+        if self.bodyPartIndex == -1:
+            _, (vr, vp, vy) = self._p.getBaseVelocity(self.bodies[self.bodyIndex])
+        else:
+            _, _, _, _, _, _, _, (vr, vp, vy) = self._p.getLinkState(
+                self.bodies[self.bodyIndex], self.bodyPartIndex, computeLinkVelocity=1
+            )
+        return np.array([vr, vp, vy])
+
     def speed(self):
         if self.bodyPartIndex == -1:
             (vx, vy, vz), _ = self._p.getBaseVelocity(self.bodies[self.bodyIndex])
@@ -331,7 +340,7 @@ class StadiumScene(Scene):
 
         for i in self.ground_plane_mjcf:
             self._p.changeDynamics(i, -1, lateralFriction=0.8, restitution=0.5)
-            self._p.changeVisualShape(i, -1, rgbaColor=[1, 1, 1, 0.8])
+            # self._p.changeVisualShape(i, -1, rgbaColor=[1, 1, 1, 0.8])
 
     def set_friction(self, lateral_friction):
         for i in self.ground_plane_mjcf:

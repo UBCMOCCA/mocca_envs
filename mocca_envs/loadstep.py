@@ -1,0 +1,104 @@
+import numpy as np
+import random
+import os
+
+
+class CassieTrajectory:
+    filepath = os.path.join(
+        os.path.dirname(__file__), "data", "cassie", "mocap", "stepdata.bin"
+    )
+
+    # pos_index = np.array(
+    #     [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 21, 22, 23, 24, 25, 26, 27]
+    # )
+    pos_index = np.array(
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 14, 15, 16, 20, 21, 22, 23, 28, 29, 30, 34]
+    )
+    """
+        1, 2                   -> pelvis pos y, z
+        3, 4, 5, 6             -> pelvis orientation (quaternion)
+        7                      -> hip abduction
+        8                      -> hip yaw
+        9                      -> hip rotation?
+        10                     -> left_knee_spring
+        11                     -> left_knee  ---> should be close to 0
+        12                     -> left_ankle ---> should be -left_knee_spring + 13deg
+        13                     -> left_toe
+
+        21                     -> hip abduction
+        22                     -> hip yaw
+        23                     -> hip rotation?
+        24                     -> left_knee_spring
+        25                     -> left_knee
+        26                     -> left_ankle
+        27                     -> left_toe
+    """
+    # vel_index = np.array(
+    #     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 19, 20, 21, 22, 23, 24, 25]
+    # )
+    vel_index = np.array(
+        [0, 1, 2, 3, 4, 5, 6, 7, 8, 12, 13, 14, 18, 19, 20, 21, 25, 26, 27, 31]
+    )
+    """
+        0, 1, 2                -> translation
+        3, 4, 5                -> orientation
+        6                      -> hip abduction
+        7                      -> hip yaw
+        8                      -> hip rotation?
+        9                      -> left_knee_spring
+        10                     -> left_knee
+        11                     -> left_ankle
+        12                     -> left_toe
+
+        19                     -> hip abduction
+        20                     -> hip yaw
+        21                     -> hip rotation?
+        22                     -> left_knee_spring
+        23                     -> left_knee
+        24                     -> left_ankle
+        25                     -> left_toe
+    """
+
+    def __init__(self):
+        n = 1 + 35 + 32 + 10 + 10 + 10
+        data = np.fromfile(self.filepath, dtype=np.double).reshape((-1, n))
+        self.time = data[:, 0]
+        self.qpos = data[:, 1:36]
+        self.qvel = data[:, 36:68]
+        self.torque = data[:, 68:78]
+        self.mpos = data[:, 78:88]
+        self.mvel = data[:, 88:98]
+
+    def _sec_to_ind(self, t):
+        tmax = self.time[-1]
+        return int((t % tmax) / tmax * len(self.time))
+
+    def state(self, t):
+        """
+            :params t: time in seconds
+            :returns full state of size 40
+        """
+        i = self._sec_to_ind(t)
+        return np.concatenate(
+            (self.qpos[i][self.pos_index], self.qvel[i][self.vel_index])
+        )
+
+    def joint_angles(self, t):
+        # signs = np.ones(14)
+        # signs[]
+        # 2 (y,z) + 4 (ori quaternion)
+        return self.qpos[self._sec_to_ind(t)][self.pos_index[6:]]
+
+    def joint_speeds(self, t):
+        # 3 (x,y,z) + 3 (angular vel)
+        return self.qvel[self._sec_to_ind(t)][self.vel_index[6:]]
+
+    def action(self, t):
+        tmax = self.time[-1]
+        i = int((t % tmax) / tmax * len(self.time))
+        return (self.mpos[i], self.mvel[i], self.torque[i])
+
+    def sample(self):
+        i = random.randrange(len(self.time))
+        return (self.time[i], self.qpos[i], self.qvel[i])
+

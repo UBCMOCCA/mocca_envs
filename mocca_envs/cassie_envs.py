@@ -7,6 +7,10 @@ from mocca_envs.env_base import EnvBase
 from mocca_envs.robots import Cassie, Cassie2D
 from mocca_envs import current_dir
 
+from mocca_envs.cassie.loadstep import CassieTrajectory
+from mocca_envs.cassie.CassieParams import CassieParams
+from mocca_envs.cassie.robot_data import RobotData
+
 
 class CassieEnv(EnvBase):
 
@@ -35,11 +39,18 @@ class CassieEnv(EnvBase):
         ]
     )
     kp = kp / 2
+    # kp[[4, 9]] /= 2
     kd = kp / 10
 
     initial_velocity = [0, 0, 0]
 
     def __init__(self, render=False, planar=False, power_coef=1.0):
+        """
+            :params render: enables GUI rendering
+            :params planar: constrains the robot movement to a 2D plane (rather than the full 3D motion)
+            :params power_coef: multiplying factor that determines the torque limit
+        """
+        self.planar = planar
         robot_class = Cassie2D if planar else Cassie
         super(CassieEnv, self).__init__(robot_class, render, power=power_coef)
 
@@ -58,9 +69,9 @@ class CassieEnv(EnvBase):
     def resetJoints(self):
         self.robot.reset_joint_positions(self.base_angles(), self.base_velocities())
 
-    def reset(self):
+    def reset(self, istep=0):
         self.done = False
-        self.istep = 0
+        self.istep = istep
         self.walk_target = np.array([1000.0, 0.0, 0.0])
 
         self._p.restoreState(self.state_id)
@@ -133,6 +144,8 @@ class CassieEnv(EnvBase):
         ## `knee_to_shin` and `ankle_joint` joints (both sides) do not have a motor
         ## we don't know how to set the constraints for them so we're using PD with fixed target instead
         target_angles += a
+        # target_angles[[0, 5]] = 0
+        # print(target_angles[0], a[0])
         # target_angles = self.robot.to_radians(target_angles)
         # target_angles +=   # self.robot.base_joint_angles
         # target_angles[4] = 0
@@ -217,14 +230,15 @@ class CassieMocapEnv(CassieEnv):
         rewards = {}
         # rewards["AliveRew"] = 0
         # rewards["ProgressRew"] /= 4
-        # rewards["EnergyUseRew"] = -0.0002 * np.mean(np.power(torques, 2))
+        rewards["EnergyUseRew"] = -0.00005 * np.mean(np.power(torques, 2))
         # rewards["DeviationRew"] = -0.1 * np.mean(np.power(action, 2))
 
         # TODO: add orientation reward if not 2D
 
         rewards["SpeedRew"] = 0.1 * np.exp(-4 * vel_error)
         rewards["ImitationRew"] = 0.65 * np.exp(-4 * joint_penalty)
-        rewards["OrientationRew"] = 0.1 * np.exp(-4 * orientation_penalty)
+        if not self.planar:
+            rewards["OrientationRew"] = 0.1 * np.exp(-4 * orientation_penalty)
         rewards["CoMRew"] = 0.15 * np.exp(-4 * com_penalty)
 
         return dead, rewards
@@ -232,6 +246,64 @@ class CassieMocapEnv(CassieEnv):
     def step(self, action):
         self.phase = (self.phase + 1) % self.mocap_cycle_length
         return super().step(action)
+
+
+class CassieOSUEnv(CassieEnv):
+    initial_velocity = [0, 0, 0]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # self.traj = RobotData()  # CassieTrajectory()  # CassieParams()
+        self.traj = CassieTrajectory()  # CassieParams()
+        # self.traj = CassieParams()
+
+    def reset(self):
+        istep = self.np_random.randint(0, 10000)  # 6388 # 9052
+        return super().reset(istep=istep)
+
+    def base_angles(self):
+        t = (self.istep) * self.control_step / self.llc_frame_skip
+        # print("pos time:", t, "step:", self.istep)
+        # print(t)  # , self.traj.joint_angles(t))
+        return self.traj.joint_angles(t)
+
+    def base_velocities(self):
+        t = self.istep * self.control_step / self.llc_frame_skip
+        # print("vel time:", t, "step:", self.istep)
+        return self.traj.joint_speeds(t)
+
+    def get_obs(self, _):
+        t = (self.istep + 1) * self.control_step / self.llc_frame_skip
+        kin_state = self.traj.state(t)
+
+        joint_angles = np.array(
+            [j.get_position() for j in self.robot.ordered_joints], dtype=np.float32
+        )
+        # joint_angles[0] +=
+        joint_speeds = np.array(
+            [j.get_velocity() for j in self.robot.ordered_joints], dtype=np.float32
+        )
+        quaternion = self._p.getQuaternionFromEuler(self.robot.body_rpy)
+
+        dyn_state = np.concatenate(
+            [
+                ## pos
+                self.robot.body_xyz[1:],
+                [quaternion[-1]],
+                quaternion[:-1],
+                # [1, 0, 0, 0],
+                joint_angles,
+                ## vel
+                self.robot.body_velocity,
+                self.robot.robot_body.angular_speed(),
+                # [0, 0, 0],
+                joint_speeds,
+            ]
+        )
+
+        kin_state[0] = 0
+
+        return np.concatenate([dyn_state, kin_state])
 
 
 class CassieMocapPhaseEnv(CassieMocapEnv):
