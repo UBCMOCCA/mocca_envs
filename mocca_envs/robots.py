@@ -37,15 +37,15 @@ class Cassie:
         "hip_rotation_left": 112.5,
         "hip_flexion_left": 195.2,
         "knee_joint_left": 195.2,
-        "knee_to_shin_right": 100,  # not sure how to set, using PD instead of a constraint
-        "ankle_joint_right": 100,  # not sure how to set, using PD instead of a constraint
+        "knee_to_shin_right": 200,  # not sure how to set, using PD instead of a constraint
+        "ankle_joint_right": 200,  # not sure how to set, using PD instead of a constraint
         "toe_joint_left": 45.0,
         "hip_abduction_right": 112.5,
         "hip_rotation_right": 112.5,
         "hip_flexion_right": 195.2,
         "knee_joint_right": 195.2,
-        "knee_to_shin_left": 100,  # not sure how to set, using PD instead of a constraint
-        "ankle_joint_left": 100,  # not sure how to set, using PD instead of a constraint
+        "knee_to_shin_left": 200,  # not sure how to set, using PD instead of a constraint
+        "ankle_joint_left": 200,  # not sure how to set, using PD instead of a constraint
         "toe_joint_right": 45.0,
     }
 
@@ -73,6 +73,7 @@ class Cassie:
         flags = (
             self._p.URDF_USE_SELF_COLLISION
             | self._p.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
+            # | self._p.URDF_USE_INERTIA_FROM_FILE
         )
         self.object_id = (
             self._p.loadURDF(
@@ -168,15 +169,15 @@ class Cassie:
 
     def apply_action(self, a):
         assert np.isfinite(a).all()
-        for n, j in enumerate(self.powered_joints):
+        for n, j in enumerate(self.ordered_joints):
             # j.set_position(self.base_joint_angles[n])
             j.set_motor_torque(float(np.clip(a[n], -j.torque_limit, j.torque_limit)))
 
-        self.ordered_joints[4].set_position(0)
-        self.ordered_joints[11].set_position(0)
-        angles = self.to_radians(self.joint_angles)
-        self.ordered_joints[5].set_position(-angles[3] + 0.227)  # -q_3 + 13 deg
-        self.ordered_joints[12].set_position(-angles[10] + 0.227)  # -q_10 + 13 deg
+        # self.ordered_joints[4].set_position(0)
+        # self.ordered_joints[11].set_position(0)
+        # angles = self.to_radians(self.joint_angles)
+        # self.ordered_joints[5].set_position(-angles[3] + 0.227)  # -q_3 + 13 deg
+        # self.ordered_joints[12].set_position(-angles[10] + 0.227)  # -q_10 + 13 deg
 
     def calc_state(self):
         j = np.array(
@@ -185,6 +186,7 @@ class Cassie:
         )
 
         self.joint_angles = j[:, 0]
+        self.rad_joint_angles = self.to_radians(self.joint_angles)
         self.joint_speeds = j[:, 1]
         self.joints_at_limit = np.count_nonzero(np.abs(self.joint_angles) > 0.99)
 
