@@ -315,7 +315,7 @@ class Walker3DChairEnv(Walker3DCustomEnv):
     def create_terrain(self):
 
         self.chair = Rectangle(
-            self._p, hdx=0.25, hdy=0.5, hdz=0.5, pos=np.array([0.0, 0.0, 0.5])
+            self._p, mass=20, hdx=0.25, hdy=0.5, hdz=0.5, pos=np.array([0.0, 0.0, 0.5])
         )
 
     def randomize_target(self):
