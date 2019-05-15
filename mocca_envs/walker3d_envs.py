@@ -2,7 +2,7 @@ import gym
 import numpy as np
 
 from mocca_envs.env_base import EnvBase
-from mocca_envs.bullet_objects import VSphere, Pillar, Plank, Rectangle
+from mocca_envs.bullet_objects import VSphere, Pillar, Plank, Rectangle, Sofa
 from mocca_envs.robots import Child3D, Walker3D
 
 Colors = {
@@ -314,8 +314,13 @@ class Walker3DChairEnv(Walker3DCustomEnv):
 
     def create_terrain(self):
 
-        self.chair = Rectangle(
-            self._p, mass=20, hdx=0.25, hdy=0.5, hdz=0.5, pos=np.array([0.0, 0.0, 0.5])
+        self.chair = Sofa(
+            self._p,
+            mass=20.0,
+            hdx=0.25,
+            hdy=0.5,
+            hdz=0.5,
+            pos=np.array([0.0, 0.0, 0.5]),
         )
 
     def randomize_target(self):
