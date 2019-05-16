@@ -1,4 +1,10 @@
+import os
+
+current_dir = os.path.dirname(os.path.realpath(__file__))
+
 import numpy as np
+
+DEG2RAD = np.pi / 180
 
 
 class VSphere:
@@ -269,4 +275,48 @@ class Sofa:
             restitution=0.5,
             contactStiffness=1000,
             contactDamping=1000,
+        )
+
+
+class Chair:
+    def __init__(self, bc, angle=-30, pos=None, quat=None):
+        self._p = bc
+
+        filename = os.path.join(current_dir, "data", "objects", "chairs", "chair.urdf")
+        pos = np.zeros(3) if pos is None else pos
+        quat = np.array([0, 0, 0, 1]) if quat is None else quat
+
+        self.id = self._p.loadURDF(
+            filename, basePosition=pos, baseOrientation=quat, useFixedBase=False
+        )
+        self.set_angle(angle)
+
+    def set_angle(self, angle):
+        angle *= DEG2RAD
+
+        # Set angle so it doesn't apply too much force
+        self._p.resetJointState(self.id, 0, targetValue=angle, targetVelocity=0)
+        # Maintain angle
+        self._p.setJointMotorControl2(
+            self.id,
+            0,
+            controlMode=self._p.POSITION_CONTROL,
+            targetPosition=angle,
+            targetVelocity=0,
+            positionGain=1.0,
+            velocityGain=0.1,
+            force=1000,
+        )
+
+
+class Bench:
+    def __init__(self, bc, pos=None, quat=None):
+        self._p = bc
+
+        filename = os.path.join(current_dir, "data", "objects", "chairs", "bench.urdf")
+        pos = np.zeros(3) if pos is None else pos
+        quat = np.array([0, 0, 0, 1]) if quat is None else quat
+
+        self.id = self._p.loadURDF(
+            filename, basePosition=pos, baseOrientation=quat, useFixedBase=False
         )

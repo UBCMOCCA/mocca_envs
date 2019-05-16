@@ -2,7 +2,7 @@ import gym
 import numpy as np
 
 from mocca_envs.env_base import EnvBase
-from mocca_envs.bullet_objects import VSphere, Pillar, Plank, Rectangle, Sofa
+from mocca_envs.bullet_objects import VSphere, Pillar, Plank, Chair, Bench
 from mocca_envs.robots import Child3D, Walker3D
 
 Colors = {
@@ -314,14 +314,8 @@ class Walker3DChairEnv(Walker3DCustomEnv):
 
     def create_terrain(self):
 
-        self.chair = Sofa(
-            self._p,
-            mass=20.0,
-            hdx=0.25,
-            hdy=0.5,
-            hdz=0.5,
-            pos=np.array([0.0, 0.0, 0.5]),
-        )
+        self.chair = Chair(self._p)
+        self.bench = Bench(self._p, pos=np.array([3, 0, 0]))
 
     def randomize_target(self):
         self.dist = 10.0
@@ -342,7 +336,7 @@ class Walker3DChairEnv(Walker3DCustomEnv):
 
         # Disable random pose for now
         # How to set on chair with random pose?
-        self.robot.reset(random_pose=False, pos=(0, 0, 1.46))
+        self.robot.reset(random_pose=False, pos=(0, 0, 1.1))
         self.robot_state = self.robot.calc_state()
 
         # Reset camera
