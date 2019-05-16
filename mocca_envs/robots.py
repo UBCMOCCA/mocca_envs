@@ -474,7 +474,7 @@ class Child3D(Walker3D):
             | self._p.URDF_USE_SELF_COLLISION
             | self._p.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
         )
-        model_path = os.path.join(current_dir, "data", "custom", "infant3d.xml")
+        model_path = os.path.join(current_dir, "data", "custom", "child3d.xml")
         root_link_name = None
 
         # Need to call this first to parse body
