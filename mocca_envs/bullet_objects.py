@@ -286,10 +286,30 @@ class Chair:
         pos = np.zeros(3) if pos is None else pos
         quat = np.array([0, 0, 0, 1]) if quat is None else quat
 
+        flags = (
+            self._p.URDF_USE_SELF_COLLISION
+            | self._p.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
+        )
+
         self.id = self._p.loadURDF(
-            filename, basePosition=pos, baseOrientation=quat, useFixedBase=False
+            filename,
+            basePosition=pos,
+            baseOrientation=quat,
+            useFixedBase=False,
+            flags=flags,
         )
         self.set_angle(angle)
+
+        # Add some softness to prevent from blowing up
+        for link_id in range(-1, self._p.getNumJoints(self.id)):
+            self._p.changeDynamics(
+                self.id,
+                link_id,
+                lateralFriction=0.8,
+                restitution=0.2,
+                contactStiffness=30000,
+                contactDamping=1000,
+            )
 
     def set_angle(self, angle):
         angle *= DEG2RAD
@@ -317,6 +337,26 @@ class Bench:
         pos = np.zeros(3) if pos is None else pos
         quat = np.array([0, 0, 0, 1]) if quat is None else quat
 
-        self.id = self._p.loadURDF(
-            filename, basePosition=pos, baseOrientation=quat, useFixedBase=False
+        flags = (
+            self._p.URDF_USE_SELF_COLLISION
+            | self._p.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
         )
+
+        self.id = self._p.loadURDF(
+            filename,
+            basePosition=pos,
+            baseOrientation=quat,
+            useFixedBase=False,
+            flags=flags,
+        )
+
+        # Add some softness to prevent from blowing up
+        for link_id in range(-1, self._p.getNumJoints(self.id)):
+            self._p.changeDynamics(
+                self.id,
+                link_id,
+                lateralFriction=0.8,
+                restitution=0.2,
+                contactStiffness=30000,
+                contactDamping=1000,
+            )
