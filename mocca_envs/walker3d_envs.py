@@ -318,7 +318,7 @@ class Walker3DChairEnv(Walker3DCustomEnv):
         self.bench = Bench(self._p, pos=np.array([3, 0, 0]))
 
     def randomize_target(self):
-        self.dist = 10.0
+        self.dist = 3.0
         self.angle = 0
         self.stop_frames = 1000
 
