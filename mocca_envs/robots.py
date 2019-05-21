@@ -48,12 +48,14 @@ class Cassie:
         "ankle_joint_left": 200,  # not sure how to set, using PD instead of a constraint
         "toe_joint_right": 45.0,
     }
+    joint_damping = [1, 1, 1, 1, 0.1, 0, 1, 1, 1, 1, 1, 0.1, 0, 1]
 
     powered_joint_inds = [0, 1, 2, 3, 6, 7, 8, 9, 10, 13]
 
     def __init__(self, bc, power=1.0):
         self._p = bc
         self.power = power
+        self.rod_joints = {}
 
         self.parts = None
         self.jdict = None
@@ -73,7 +75,7 @@ class Cassie:
         flags = (
             self._p.URDF_USE_SELF_COLLISION
             | self._p.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
-            # | self._p.URDF_USE_INERTIA_FROM_FILE
+            | self._p.URDF_USE_INERTIA_FROM_FILE
         )
         self.object_id = (
             self._p.loadURDF(
@@ -98,6 +100,43 @@ class Cassie:
         self.reset_joint_positions(
             self.base_joint_angles, [0 for _ in self.base_joint_angles]
         )
+
+        self._p.createConstraint(
+            self.object_id[self.parts["left_tarsus"].bodyIndex],
+            self.parts["left_tarsus"].bodyPartIndex,
+            self.object_id[self.parts["left_achilles_rod"].bodyIndex],
+            self.parts["left_achilles_rod"].bodyPartIndex,
+            jointType=self._p.JOINT_POINT2POINT,
+            jointAxis=[0, 0, 0],
+            parentFramePosition=[-0.22735404, 0.05761813, 0.00711836],
+            childFramePosition=[0.254001, 0, 0],
+            parentFrameOrientation=[0.000000, 0.000000, 0.000000, 1.000000],
+            childFrameOrientation=[0.000000, 0.000000, 0.000000, 1.000000],
+        )
+        self._p.createConstraint(
+            self.object_id[self.parts["right_tarsus"].bodyIndex],
+            self.parts["right_tarsus"].bodyPartIndex,
+            self.object_id[self.parts["right_achilles_rod"].bodyIndex],
+            self.parts["right_achilles_rod"].bodyPartIndex,
+            jointType=self._p.JOINT_POINT2POINT,
+            jointAxis=[0, 0, 0],
+            parentFramePosition=[-0.22735404, 0.05761813, -0.00711836],
+            childFramePosition=[0.254001, 0, 0],
+            parentFrameOrientation=[0.000000, 0.000000, 0.000000, 1.000000],
+            childFrameOrientation=[0.000000, 0.000000, 0.000000, 1.000000],
+        )
+        for part_name in [
+            "left_achilles_rod",
+            "left_achilles_rod_y",
+            "right_achilles_rod",
+            "right_achilles_rod_y",
+        ]:
+            self._p.setCollisionFilterGroupMask(
+                self.object_id[self.parts[part_name].bodyIndex],
+                self.parts[part_name].bodyPartIndex,
+                0,
+                0,
+            )
 
     def reset_joint_positions(self, positions, velocities):
         for j, q, v in zip(self.ordered_joints, positions, velocities):
@@ -134,6 +173,11 @@ class Cassie:
                 if part_name == "pelvis":
                     self.robot_body = self.parts[part_name]
 
+                joint = Joint(self._p, joint_name, bodies, i, j, torque_limit=0)
+
+                if "achilles" in joint_name:
+                    self.rod_joints[joint_name] = joint
+
                 if joint_name[:5] != "fixed":
                     self.jdict[joint_name] = Joint(
                         self._p,
@@ -143,8 +187,12 @@ class Cassie:
                         j,
                         torque_limit=self.power * self.power_coef[joint_name],
                     )
+                    self._p.changeDynamics(
+                        bodies[i],
+                        j,
+                        jointDamping=self.joint_damping[len(self.ordered_joints)],
+                    )
                     self.ordered_joints.append(self.jdict[joint_name])
-                    self._p.changeDynamics(bodies[i], j, jointDamping=1)
 
     def make_robot_utils(self):
         # Make utility functions for converting from normalized to radians and vice versa
@@ -169,7 +217,8 @@ class Cassie:
 
     def apply_action(self, a):
         assert np.isfinite(a).all()
-        for n, j in enumerate(self.ordered_joints):
+        # for n, j in enumerate(self.ordered_joints):
+        for n, j in enumerate(self.powered_joints):
             # j.set_position(self.base_joint_angles[n])
             j.set_motor_torque(float(np.clip(a[n], -j.torque_limit, j.torque_limit)))
 

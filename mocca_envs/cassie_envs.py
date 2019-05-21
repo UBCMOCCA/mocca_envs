@@ -16,7 +16,7 @@ from .loadstep import CassieTrajectory
 class CassieEnv(EnvBase):
 
     control_step = 0.03
-    llc_frame_skip = 50
+    llc_frame_skip = 100
     sim_frame_skip = 1
 
     ## PD gains:
@@ -26,20 +26,20 @@ class CassieEnv(EnvBase):
             100,
             88,
             96,
-            150,
-            150,
+            # 500,
+            # 450,
             50,
             #
             100,
             100,
             88,
             96,
-            150,
-            150,
+            # 500,
+            # 450,
             50,
         ]
     )
-    kp = kp / 2
+    # kp = kp / 2
     # kp[[4, 9]] /= 2
     kd = kp / 10
 
@@ -89,8 +89,8 @@ class CassieEnv(EnvBase):
 
     def pd_control(self, target_angles, target_speeds):
         self.istep += 1
-        curr_angles = self.robot.to_radians(self.robot.joint_angles)
-        curr_speeds = self.robot.joint_speeds
+        curr_angles = self.robot.rad_joint_angles[self.robot.powered_joint_inds]
+        curr_speeds = self.robot.joint_speeds[self.robot.powered_joint_inds]
 
         perror = target_angles - curr_angles
         verror = np.clip(target_speeds - curr_speeds, -5, 5)
@@ -139,19 +139,10 @@ class CassieEnv(EnvBase):
         return state
 
     def step(self, a):
-        target_angles = self.base_angles()
+        target_angles = self.base_angles()[self.robot.powered_joint_inds]
         ## `knee_to_shin` and `ankle_joint` joints (both sides) do not have a motor
         ## we don't know how to set the constraints for them so we're using PD with fixed target instead
-        target_angles[self.robot.powered_joint_inds] += a
-        # target_angles[[0, 5]] = 0
-        # print(target_angles[0], a[0])
-        # target_angles = self.robot.to_radians(target_angles)
-        # target_angles +=   # self.robot.base_joint_angles
-        cangles = self.robot.rad_joint_angles  # current angles
-        target_angles[4] = 0
-        target_angles[5] = -cangles[3] + 0.227  # -q_3 + 13 deg
-        target_angles[11] = 0
-        target_angles[12] = -cangles[10] + 0.227  # -q_10 + 13 deg
+        target_angles += a
 
         torques = []
         done = False
@@ -261,9 +252,23 @@ class CassieOSUEnv(CassieMocapRewEnv):
         # self.traj = RobotData()
         # self.traj = CassieParams()
 
-    def reset(self):
-        istep = self.np_random.randint(0, 10000)  # 6388 # 9052
-        return super().reset(istep=istep)
+    def reset(self, istep=None):
+        if istep is None:
+            istep = self.np_random.randint(0, 10000)  # 3971 # 5152
+        obs = super().reset(istep=istep)
+
+        t = (self.istep) * self.control_step / self.llc_frame_skip
+        rod_joint_names = [
+            "fixed_right_achilles_rod_joint_z",
+            "fixed_right_achilles_rod_joint_y",
+            "fixed_left_achilles_rod_joint_z",
+            "fixed_left_achilles_rod_joint_y",
+        ]
+        # print(self.traj.rod_joint_angles(t))
+        for jname, angle in zip(rod_joint_names, self.traj.rod_joint_angles(t)):
+            self.robot.rod_joints[jname].reset_current_position(angle, 0)
+
+        return obs
 
     def base_angles(self):
         t = (self.istep) * self.control_step / self.llc_frame_skip

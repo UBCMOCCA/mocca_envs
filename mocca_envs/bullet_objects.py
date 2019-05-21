@@ -40,6 +40,44 @@ class VSphere:
             self._rgba = t_rgba
 
 
+class Sphere:
+    def __init__(self, bc, radius=None, mass=0, pos=None, rgba=None):
+        self._p = bc
+
+        radius = 0.3 if radius is None else radius
+        pos = (0, 0, 1) if pos is None else pos
+        rgba = (219 / 255, 72 / 255, 72 / 255, 1.0) if rgba is None else rgba
+
+        vshape = self._p.createVisualShape(
+            self._p.GEOM_SPHERE,
+            radius=radius,
+            rgbaColor=rgba,
+            specularColor=[0.4, 0.4, 0],
+        )
+
+        cshape = self._p.createCollisionShape(self._p.GEOM_SPHERE, radius=radius)
+
+        self.id = self._p.createMultiBody(
+            baseMass=mass,
+            baseCollisionShapeIndex=cshape,
+            baseVisualShapeIndex=vshape,
+            basePosition=pos,
+        )
+        self._pos = pos
+        self._quat = (0, 0, 0, 1)
+        self._rgba = rgba
+
+    def get_position(self):
+        return self._p.getBasePositionAndOrientation(self.id)[0]
+
+    def set_position(self, pos=None):
+
+        pos = self._pos if pos is None else pos
+
+        self._p.resetBasePositionAndOrientation(self.id, posObj=pos, ornObj=self._quat)
+        self._pos = tuple(pos)
+
+
 class Pillar:
     def __init__(self, bc, radius, length, pos=None, c_rgba=None, p_rgba=None):
         self._p = bc

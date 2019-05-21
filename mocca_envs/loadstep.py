@@ -1,4 +1,7 @@
 import numpy as np
+import gym
+import math
+import pybullet
 import random
 import os
 
@@ -33,6 +36,16 @@ class CassieTrajectory:
         26                     -> left_ankle
         27                     -> left_toe
     """
+    rod_joints_index = np.array(
+        [
+            10,
+            11,
+            # 12, 13,
+            24,
+            25,
+            # 26, 27
+        ]
+    )
     # vel_index = np.array(
     #     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 19, 20, 21, 22, 23, 24, 25]
     # )
@@ -58,16 +71,23 @@ class CassieTrajectory:
         24                     -> left_ankle
         25                     -> left_toe
     """
+    # tarsus_v_index
 
-    def __init__(self):
-        n = 1 + 35 + 32 + 10 + 10 + 10
-        data = np.fromfile(self.filepath, dtype=np.double).reshape((-1, n))
-        self.time = data[:, 0]
-        self.qpos = data[:, 1:36]
-        self.qvel = data[:, 36:68]
-        self.torque = data[:, 68:78]
-        self.mpos = data[:, 78:88]
-        self.mvel = data[:, 88:98]
+    def __init__(self, data=None):
+        if data is None:
+            n = 1 + 35 + 32 + 10 + 10 + 10
+            self.data = np.fromfile(self.filepath, dtype=np.double).reshape((-1, n))
+        else:
+            self.data = data
+        self.time = self.data[:, 0]
+        self.qpos = self.data[:, 1:36]
+        self.qvel = self.data[:, 36:68]
+        self.torque = self.data[:, 68:78]
+        self.mpos = self.data[:, 78:88]
+        self.mvel = self.data[:, 88:98]
+
+    def __len__(self):
+        return len(self.time)
 
     def _sec_to_ind(self, t):
         tmax = self.time[-1]
@@ -89,6 +109,9 @@ class CassieTrajectory:
         # 2 (y,z) + 4 (ori quaternion)
         return self.qpos[self._sec_to_ind(t)][self.pos_index[6:]]
 
+    def rod_joint_angles(self, t):
+        return self.qpos[self._sec_to_ind(t)][self.rod_joints_index]
+
     def joint_speeds(self, t):
         # 3 (x,y,z) + 3 (angular vel)
         return self.qvel[self._sec_to_ind(t)][self.vel_index[6:]]
@@ -102,3 +125,126 @@ class CassieTrajectory:
         i = random.randrange(len(self.time))
         return (self.time[i], self.qpos[i], self.qvel[i])
 
+
+def fix_rod_angles():
+    # TODO: clean up, this is a mess ...
+
+    print("IMPORTANT: set gravity to 0 and fix the base before using this")
+    # TODO: do the above programatically
+
+    env_name = "CassieOSUEnv-v0"
+    env = gym.make(env_name, render=False).unwrapped
+
+    for i in range(len(env.traj)):
+        obs = env.reset(istep=i)
+
+        ###################
+        mat = env.unwrapped.robot._p.getMatrixFromQuaternion(
+            env.unwrapped.robot.parts["right_tarsus"].current_orientation()
+        )
+        mat = np.array(mat).reshape((3, 3))
+        gdelta = np.matmul(mat, [-0.22735404, 0.05761813, -0.00711836])
+
+        gpoint = np.add(
+            env.unwrapped.robot.parts["right_tarsus"].current_position(), gdelta
+        )
+
+        jointglobal = env.unwrapped.robot.parts[
+            "right_achilles_rod_y"
+        ].current_position()
+
+        lpoint = np.subtract(gpoint, jointglobal)
+
+        mat = env.unwrapped.robot._p.getMatrixFromQuaternion(
+            env.unwrapped.robot.parts["right_thigh"].current_orientation()
+        )
+        mat = np.array(mat).reshape((3, 3))
+        lcpoint = np.matmul(mat.transpose(), lpoint)
+
+        rot = math.atan2(lcpoint[1], lcpoint[0])
+
+        env.unwrapped.robot.rod_joints[
+            "fixed_right_achilles_rod_joint_z"
+        ].reset_position(rot, 0)
+
+        mat = env.unwrapped.robot._p.getMatrixFromQuaternion(
+            env.unwrapped.robot.parts["right_achilles_rod_y"].current_orientation()
+        )
+        mat = np.array(mat).reshape((3, 3))
+        lcpoint = np.matmul(mat.transpose(), lpoint)
+
+        rot = math.atan2(lcpoint[2], lcpoint[0])
+        env.unwrapped.robot.rod_joints[
+            "fixed_right_achilles_rod_joint_y"
+        ].reset_position(-rot, 0)
+        ######################
+        ###################
+        mat = env.unwrapped.robot._p.getMatrixFromQuaternion(
+            env.unwrapped.robot.parts["left_tarsus"].current_orientation()
+        )
+        mat = np.array(mat).reshape((3, 3))
+        gdelta = np.matmul(mat, [-0.22735404, 0.05761813, 0.00711836])
+
+        gpoint = np.add(
+            env.unwrapped.robot.parts["left_tarsus"].current_position(), gdelta
+        )
+
+        jointglobal = env.unwrapped.robot.parts[
+            "left_achilles_rod_y"
+        ].current_position()
+
+        lpoint = np.subtract(gpoint, jointglobal)
+
+        mat = env.unwrapped.robot._p.getMatrixFromQuaternion(
+            env.unwrapped.robot.parts["left_thigh"].current_orientation()
+        )
+        mat = np.array(mat).reshape((3, 3))
+        lcpoint = np.matmul(mat.transpose(), lpoint)
+
+        rot = math.atan2(lcpoint[1], lcpoint[0])
+
+        env.unwrapped.robot.rod_joints[
+            "fixed_left_achilles_rod_joint_z"
+        ].reset_position(rot, 0)
+
+        mat = env.unwrapped.robot._p.getMatrixFromQuaternion(
+            env.unwrapped.robot.parts["left_achilles_rod_y"].current_orientation()
+        )
+        mat = np.array(mat).reshape((3, 3))
+        lcpoint = np.matmul(mat.transpose(), lpoint)
+
+        rot = math.atan2(lcpoint[2], lcpoint[0])
+        env.unwrapped.robot.rod_joints[
+            "fixed_left_achilles_rod_joint_y"
+        ].reset_position(-rot, 0)
+        ######################
+
+        rod_joint_names = [
+            "fixed_right_achilles_rod_joint_z",
+            "fixed_right_achilles_rod_joint_y",
+            "fixed_left_achilles_rod_joint_z",
+            "fixed_left_achilles_rod_joint_y",
+        ]
+
+        for _ in range(20):
+            env.scene.global_step()
+            for jname in rod_joint_names:
+                env.unwrapped.robot.rod_joints[jname].reset_position(
+                    env.unwrapped.robot.rod_joints[jname].get_position(), 0
+                )
+            for j in env.unwrapped.robot.ordered_joints:
+                j.reset_position(j.get_position(), 0)
+
+        env.traj.data[i, 1 + env.traj.pos_index[6:]] = [
+            j.get_position() for j in env.unwrapped.robot.ordered_joints
+        ]
+        env.traj.data[i, 1 + env.traj.rod_joints_index] = [
+            env.unwrapped.robot.rod_joints[jname].get_position()
+            for jname in rod_joint_names
+        ]
+
+    env.traj.data.tofile("loadstep2.bin")
+
+
+if __name__ == "__main__":
+    fix_rod_angles()
