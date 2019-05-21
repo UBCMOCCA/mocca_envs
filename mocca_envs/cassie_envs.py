@@ -255,8 +255,10 @@ class CassieOSUEnv(CassieMocapRewEnv):
     def reset(self, istep=None):
         if istep is None:
             istep = self.np_random.randint(0, 10000)  # 3971 # 5152
-        obs = super().reset(istep=istep)
+        return super().reset(istep=istep)
 
+    def resetJoints(self):
+        super().resetJoints()
         t = (self.istep) * self.control_step / self.llc_frame_skip
         rod_joint_names = [
             "fixed_right_achilles_rod_joint_z",
@@ -267,8 +269,6 @@ class CassieOSUEnv(CassieMocapRewEnv):
         # print(self.traj.rod_joint_angles(t))
         for jname, angle in zip(rod_joint_names, self.traj.rod_joint_angles(t)):
             self.robot.rod_joints[jname].reset_current_position(angle, 0)
-
-        return obs
 
     def base_angles(self):
         t = (self.istep) * self.control_step / self.llc_frame_skip

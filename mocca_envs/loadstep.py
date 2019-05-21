@@ -133,10 +133,12 @@ def fix_rod_angles():
     # TODO: do the above programatically
 
     env_name = "CassieOSUEnv-v0"
-    env = gym.make(env_name, render=False).unwrapped
+    env = gym.make(env_name, render=True).unwrapped
+    traj = CassieTrajectory()
 
-    for i in range(len(env.traj)):
-        obs = env.reset(istep=i)
+    for i in range(len(traj)):
+        jpos = traj.qpos[i][traj.pos_index[6:]]
+        env.robot.reset_joint_positions(jpos, jpos * 0)
 
         ###################
         mat = env.unwrapped.robot._p.getMatrixFromQuaternion(
@@ -235,15 +237,15 @@ def fix_rod_angles():
             for j in env.unwrapped.robot.ordered_joints:
                 j.reset_position(j.get_position(), 0)
 
-        env.traj.data[i, 1 + env.traj.pos_index[6:]] = [
+        traj.data[i, 1 + traj.pos_index[6:]] = [
             j.get_position() for j in env.unwrapped.robot.ordered_joints
         ]
-        env.traj.data[i, 1 + env.traj.rod_joints_index] = [
+        traj.data[i, 1 + traj.rod_joints_index] = [
             env.unwrapped.robot.rod_joints[jname].get_position()
             for jname in rod_joint_names
         ]
 
-    env.traj.data.tofile("loadstep2.bin")
+    traj.data.tofile("loadstep2.bin")
 
 
 if __name__ == "__main__":
