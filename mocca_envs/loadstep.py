@@ -236,10 +236,13 @@ def fix_rod_angles():
                 )
             for j in env.unwrapped.robot.ordered_joints:
                 j.reset_position(j.get_position(), 0)
+       
+        # no reason to change the angle of the feet
+        mask = np.array([0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12])
 
-        traj.data[i, 1 + traj.pos_index[6:]] = [
+        traj.data[i, 1 + traj.pos_index[6:][mask]] = [
             j.get_position() for j in env.unwrapped.robot.ordered_joints
-        ]
+        ][mask]
         traj.data[i, 1 + traj.rod_joints_index] = [
             env.unwrapped.robot.rod_joints[jname].get_position()
             for jname in rod_joint_names
