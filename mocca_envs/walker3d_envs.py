@@ -366,9 +366,9 @@ class Walker3DStepperEnv(EnvBase):
 
         # Need these before calling constructor
         # because they are used in self.create_terrain()
-        self.step_radius = 0.2
+        self.step_radius = 0.25
         self.step_height = 0.2
-        self.rendered_step_count = 3
+        self.rendered_step_count = 4
 
         super(Walker3DStepperEnv, self).__init__(Walker3D, render)
         self.robot.set_base_pose(pose="running_start")
@@ -382,9 +382,9 @@ class Walker3DStepperEnv(EnvBase):
         self.next_step_index = 0
 
         # Terrain info
-        self.pitch_limit = 40
-        self.yaw_limit = 0
-        self.tilt_limit = 0
+        self.pitch_limit = 20
+        self.yaw_limit = 60
+        self.tilt_limit = 15
         # x, y, z, phi, x_tilt, y_tilt
         self.terrain_info = np.zeros((self.n_steps, 6))
 
@@ -443,8 +443,8 @@ class Walker3DStepperEnv(EnvBase):
         cover_ids = set()
 
         for index in range(self.rendered_step_count):
-            # p = Pillar(self._p, self.step_radius, self.step_height)
-            p = Plank(self._p, (self.step_radius, 1, self.step_height))
+            p = Pillar(self._p, self.step_radius, self.step_height)
+            # p = Plank(self._p, (self.step_radius, 1, self.step_height))
             self.steps.append(p)
             step_ids = step_ids | {(p.body_id, -1)}
             cover_ids = cover_ids | {(p.cover_id, -1)}
