@@ -1,3 +1,5 @@
+import os
+
 import gym
 import numpy as np
 import torch
@@ -763,9 +765,11 @@ class Walker3DPlannerEnv(Walker3DStepperEnv):
     llc_frame_skip = 1
     sim_frame_skip = 4
 
-    def __init__(self, stepper, render=False):
+    def __init__(self, render=False):
+        current_dir = os.path.dirname(os.path.realpath(__file__))
+        stepper_path = os.path.join(current_dir, "models", "stepper.pt")
+        self.stepper = torch.load(stepper_path).actor
 
-        self.stepper = stepper
         super().__init__(render)
 
         # Override
