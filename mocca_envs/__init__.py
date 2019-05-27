@@ -44,3 +44,10 @@ register(
     entry_point="mocca_envs.walker3d_envs:Walker3DStepperEnv",
     max_episode_steps=1000,
 )
+
+
+register(
+    id="Walker3DPlannerEnv-v0",
+    entry_point="mocca_envs.walker3d_envs:Walker3DPlannerEnv",
+    max_episode_steps=1000,
+)

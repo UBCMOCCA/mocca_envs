@@ -1,5 +1,6 @@
 import gym
 import numpy as np
+import torch
 
 from mocca_envs.env_base import EnvBase
 from mocca_envs.bullet_objects import VSphere, Pillar, Plank, Chair, Bench
@@ -366,9 +367,9 @@ class Walker3DStepperEnv(EnvBase):
 
         # Need these before calling constructor
         # because they are used in self.create_terrain()
-        self.step_radius = 0.25
+        self.step_radius = 0.3
         self.step_height = 0.2
-        self.rendered_step_count = 4
+        self.rendered_step_count = 3
 
         super(Walker3DStepperEnv, self).__init__(Walker3D, render)
         self.robot.set_base_pose(pose="running_start")
@@ -689,7 +690,7 @@ class Walker3DStepperEnv(EnvBase):
                 (targets, np.repeat(targets[[-1]], k - len(targets), axis=0))
             )
 
-        self.walk_target = targets[[k - 1], 0:3].mean(axis=0)
+        self.walk_target = targets[[1], 0:3].mean(axis=0)
 
         deltas = targets[:, 0:3] - self.robot.body_xyz
         target_thetas = np.arctan2(deltas[:, 1], deltas[:, 0])
@@ -754,3 +755,104 @@ class Walker3DStepperEnv(EnvBase):
             right_action_indices,
             left_action_indices,
         )
+
+
+class Walker3DPlannerEnv(Walker3DStepperEnv):
+
+    control_step = 1 / 60
+    llc_frame_skip = 1
+    sim_frame_skip = 4
+
+    def __init__(self, stepper, render=False):
+
+        self.stepper = stepper
+        super().__init__(render)
+
+        # Override
+        self.lookahead = 4
+        self.n_steps = 12
+
+        # global states + (num of targets) * (x, y, z, x_tilt, y_tilt)
+        high = np.inf * np.ones(6 + self.lookahead * 5)
+        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
+
+        # Usually (always?) the steps are not more than one meter away
+        high = 1.0 * np.ones(2 * 5)
+        self.action_space = gym.spaces.Box(-high, high, dtype=np.float32)
+
+    def reset(self):
+        self.done = False
+        self.target_reached_count = 0
+        self.stop_frames = 30
+
+        self._p.restoreState(self.state_id)
+
+        self.robot_state = self.robot.reset(random_pose=True)
+        self.calc_feet_state()
+
+        # Randomize platforms
+        self.randomize_terrain()
+        self.next_step_index = 0
+
+        # Reset camera
+        if self.is_render:
+            self.camera.lookat(self.robot.body_xyz)
+
+        self.targets = self.delta_to_k_targets(k=self.lookahead)
+        self.calc_potential()
+
+        # State should contain global and terrains
+        state = np.concatenate((self.robot_state[0:6], self.targets.flatten()))
+
+        return state
+
+    def step(self, stepper_targets):
+        # stepper_state = np.concatenate(
+        #     (self.robot_state, self.targets.flatten()[0:10])
+        # ).astype(np.float32)
+        stepper_state = np.concatenate((self.robot_state, stepper_targets))
+
+        with torch.no_grad():
+            normalized_torques = self.stepper(torch.from_numpy(stepper_state)).numpy()
+
+        self.robot.apply_action(normalized_torques)
+        self.scene.global_step()
+
+        self.robot_state = self.robot.calc_state()
+        self.calc_env_state()
+
+        reward = self.step_reward
+
+        if self.is_render:
+            self._handle_keyboard()
+            self.camera.track(pos=self.robot.body_xyz)
+            self.target.set_position(pos=self.walk_target)
+            if self.distance_to_target < 0.15:
+                self.target.set_color(Colors["dodgerblue"])
+            else:
+                self.target.set_color(Colors["crimson"])
+
+        # State should contain global and terrains
+        state = np.concatenate((self.robot_state[0:6], self.targets.flatten()))
+
+        return state, reward, self.done, {}
+
+    def calc_env_state(self):
+        if not np.isfinite(self.robot_state).all():
+            print("~INF~", self.robot_state)
+            self.done = True
+
+        cur_step_index = self.next_step_index
+
+        # detects contact and set next step
+        self.calc_feet_state()
+        height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
+        self.done = self.done or height < 0.7
+
+        # use next step to calculate next k steps
+        self.targets = self.delta_to_k_targets(k=self.lookahead)
+
+        self.step_reward = 0
+        if cur_step_index != self.next_step_index:
+            self.step_reward = 1
+            self.calc_potential()

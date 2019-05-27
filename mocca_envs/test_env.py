@@ -1,14 +1,25 @@
+import os
+
 import gym
 import numpy as np
+import torch
 
 import mocca_envs
 
 
 DEG2RAD = np.pi / 180
 
+env_name = "Walker3DPlannerEnv-v0"
 
-env_name = "Walker3DChairEnv-v0"
-env = gym.make(env_name, render=True)
+current_dir = os.path.dirname(os.path.realpath(__file__))
+parent_dir = os.path.dirname(current_dir)
+root_dir = os.path.dirname(parent_dir)
+model_path = os.path.join(
+    root_dir, "stepping_stone", "stepper", "models", "Walker3DStepperEnv-v0_best.pt"
+)
+stepper = torch.load(model_path).actor
+
+env = gym.make(env_name, stepper=stepper, render=True)
 action_dim = env.action_space.shape[0]
 offset = 6
 

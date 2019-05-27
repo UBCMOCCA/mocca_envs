@@ -11,6 +11,7 @@ setup(
         "pybullet",
         "gym>=0.10.10",
         "numpy",
+        "torch>=1.1.0",
         # And any other dependencies
     ],
     packages=find_packages(include="mocca_envs*"),
