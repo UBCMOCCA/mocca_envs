@@ -681,17 +681,17 @@ class Walker3DStepperEnv(EnvBase):
 
         self.walk_target = targets[[1], 0:3].mean(axis=0)
 
-        deltas = targets[:, 0:3] - self.robot.body_xyz
-        target_thetas = np.arctan2(deltas[:, 1], deltas[:, 0])
+        delta_pos = targets[:, 0:3] - self.robot.body_xyz
+        target_thetas = np.arctan2(delta_pos[:, 1], delta_pos[:, 0])
 
         angle_to_targets = target_thetas - self.robot.body_rpy[2]
-        distance_to_targets = np.linalg.norm(deltas[:, 0:2], ord=2, axis=1)
+        distance_to_targets = np.linalg.norm(delta_pos[:, 0:2], ord=2, axis=1)
 
         deltas = np.stack(
             (
                 np.sin(angle_to_targets) * distance_to_targets,  # x
                 np.cos(angle_to_targets) * distance_to_targets,  # y
-                deltas[:, 2],  # z
+                delta_pos[:, 2],  # z
                 targets[:, 4],  # x_tilt
                 targets[:, 5],  # y_tilt
             ),
@@ -703,30 +703,71 @@ class Walker3DStepperEnv(EnvBase):
     def get_mirror_indices(self):
 
         action_dim = self.robot.action_space.shape[0]
-        # _ + 6 accounting for global
-        right = self.robot._right_joint_indices + 6
-        # _ + action_dim to get velocities, 48 is right foot contact
-        right = np.concatenate((right, right + action_dim, [48]))
-        # Do the same for left, except using 49 for left foot contact
-        left = self.robot._left_joint_indices + 6
-        left = np.concatenate((left, left + action_dim, [49]))
+        observation_dim = self.robot.observation_space.shape[0]
 
-        # Used for creating mirrored observations
-        # 2:  vy
-        # 4:  roll
-        # 6:  abdomen_z pos
-        # 8:  abdomen_x pos
-        # 27: abdomen_z vel
-        # 29: abdomen_x vel
-        # 50: sin(-a) = -sin(a) of next step
-        # 53: x_tilt of next step
-        # 55: sin(-a) = -sin(a) of next + 1 step
-        # 58: x_tilt of next + 1 step
-        negation_obs_indices = np.array(
-            [2, 4, 6, 8, 27, 29, 50, 53, 55, 58], dtype=np.int64
+        # _ + 6 accounting for global
+        right_obs_indices = np.concatenate(
+            (
+                # history
+                # joint angle indices acounting for global
+                6 + self.robot._right_joint_indices,
+                # joint velocity indices
+                6 + self.robot._right_joint_indices + action_dim,
+                # right foot contact
+                [6 + 2 * action_dim],
+                # current
+                # joint angle indices
+                observation_dim + 6 + self.robot._right_joint_indices,
+                # joint velocity indices
+                observation_dim + 6 + self.robot._right_joint_indices + action_dim,
+                # right foot contact
+                [observation_dim + 6 + 2 * action_dim],
+            )
         )
-        right_obs_indices = right
-        left_obs_indices = left
+
+        # Do the same for left, except using +1 for left foot contact
+        left_obs_indices = np.concatenate(
+            (
+                # history
+                # joint angle indices acounting for global
+                6 + self.robot._left_joint_indices,
+                # joint velocity indices
+                6 + self.robot._left_joint_indices + action_dim,
+                # left foot contact
+                [6 + 2 * action_dim + 1],
+                # current
+                # joint angle indices
+                observation_dim + 6 + self.robot._left_joint_indices,
+                # joint velocity indices
+                observation_dim + 6 + self.robot._left_joint_indices + action_dim,
+                # left foot contact
+                [observation_dim + 6 + 2 * action_dim + 1],
+            )
+        )
+
+        negation_obs_indices = np.array(
+            [
+                # history
+                2,  # vy
+                4,  # roll
+                6,  # abdomen_z pos
+                8,  # abdomen_x pos
+                27,  # abdomen_z vel
+                29,  # abdomen_x vel
+                # current
+                2 + observation_dim,
+                4 + observation_dim,
+                6 + observation_dim,
+                8 + observation_dim,
+                27 + observation_dim,
+                29 + observation_dim,
+                100,  # sin(-a) = -sin(a) of next step
+                103,  # x_tilt of next step
+                105,  # sin(-a) = -sin(a) of next + 1 step
+                108,  # x_tilt of next + 1 step
+            ],
+            dtype=np.int64,
+        )
 
         # Used for creating mirrored actions
         negation_action_indices = self.robot._negation_joint_indices

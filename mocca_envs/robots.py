@@ -433,18 +433,15 @@ class Walker3D(WalkerBase):
 
         joint_angles = self.base_joint_angles
 
+        # Flip left right
+        if self.np_random.rand() < 0.5:
+            rl = np.concatenate((self._right_joint_indices, self._left_joint_indices))
+            lr = np.concatenate((self._left_joint_indices, self._right_joint_indices))
+            joint_angles[rl] = joint_angles[lr]
+
         if random_pose:
-            # Flip left right
-            if self.np_random.rand() < 0.5:
-                rl = np.concatenate(
-                    (self._right_joint_indices, self._left_joint_indices)
-                )
-                lr = np.concatenate(
-                    (self._left_joint_indices, self._right_joint_indices)
-                )
-                self.base_joint_angles[rl] = self.base_joint_angles[lr]
             # Add small deviations
-            ds = self.np_random.uniform(low=-0.1, high=0.1, size=self.action_dim)
+            ds = self.np_random.uniform(low=-0.025, high=0.025, size=self.action_dim)
             joint_angles += ds
             joint_angles = self.to_radians(
                 np.clip(self.to_normalized(joint_angles), -0.95, 0.95)
