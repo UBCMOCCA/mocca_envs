@@ -1,4 +1,5 @@
 import os
+from collections import deque
 
 import gym
 import numpy as np
@@ -376,23 +377,26 @@ class Walker3DStepperEnv(EnvBase):
         super(Walker3DStepperEnv, self).__init__(Walker3D, render)
         self.robot.set_base_pose(pose="running_start")
 
+        # Robot settings
         self.electricity_cost = 4.5
         self.stall_torque_cost = 0.225
         self.joints_at_limit_cost = 0.1
+        self.history_states = deque(maxlen=10)
 
+        # Env settings
         self.n_steps = 24
         self.lookahead = 2
         self.next_step_index = 0
 
         # Terrain info
-        self.pitch_limit = 20
-        self.yaw_limit = 60
+        self.pitch_limit = 30
+        self.yaw_limit = 50
         self.tilt_limit = 15
         # x, y, z, phi, x_tilt, y_tilt
         self.terrain_info = np.zeros((self.n_steps, 6))
 
-        # (2 targets) * (x, y, z, x_tilt, y_tilt)
-        high = np.inf * np.ones(self.robot.observation_space.shape[0] + 2 * 5)
+        # robot_state + history_state + (2 targets) * (x, y, z, x_tilt, y_tilt)
+        high = np.inf * np.ones(self.robot.observation_space.shape[0] * 2 + 2 * 5)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.action_space = self.robot.action_space
 
@@ -400,7 +404,7 @@ class Walker3DStepperEnv(EnvBase):
         self,
         n_steps=50,
         min_gap=0.65,
-        max_gap=0.75,
+        max_gap=0.85,
         yaw_limit=30,
         pitch_limit=25,
         tilt_limit=10,
@@ -415,13 +419,15 @@ class Walker3DStepperEnv(EnvBase):
         dphi = self.np_random.uniform(*y_range, size=n_steps)
         dtheta = self.np_random.uniform(*p_range, size=n_steps)
 
+        # make first step slightly further to accommodate different starting poses
+        dr[0] = 0.7
+        dphi[0] = 0.0
+        dtheta[0] = np.pi / 2
+
         x_tilt = self.np_random.uniform(*t_range, size=n_steps)
         y_tilt = self.np_random.uniform(*t_range, size=n_steps)
 
         dphi = np.cumsum(dphi)
-
-        # Set initial two steps manually
-        # dphi[0:2] = dr[0:2] = tilt[0:2] = 0
 
         x_ = dr * np.sin(dtheta) * np.cos(dphi)
         y_ = dr * np.sin(dtheta) * np.sin(dphi)
@@ -429,10 +435,6 @@ class Walker3DStepperEnv(EnvBase):
         x = np.cumsum(x_)
         y = np.cumsum(y_)
         z = np.cumsum(z_)
-
-        # x[0], y[0] = self.robot.feet_xyz[0, 0:2]
-        # x[1], y[1] = self.robot.feet_xyz[1, 0:2]
-        # z[0] = z[1] = self.robot.feet_xyz[:, 2].min() - 0.15
 
         min_z = self.step_radius * np.sin(self.tilt_limit * DEG2RAD)
         np.clip(z, a_min=min_z, a_max=None, out=z)
@@ -494,6 +496,10 @@ class Walker3DStepperEnv(EnvBase):
         self.robot_state = self.robot.reset(random_pose=True)
         self.calc_feet_state()
 
+        # 0 is oldest, -1 is newest
+        for _ in range(self.history_states.maxlen):
+            self.history_states.append(self.robot_state)
+
         # Randomize platforms
         self.randomize_terrain()
         self.next_step_index = 0
@@ -506,7 +512,9 @@ class Walker3DStepperEnv(EnvBase):
         # Order is important because walk_target is set up above
         self.calc_potential()
 
-        state = np.concatenate((self.robot_state, self.targets.flatten()))
+        state = np.concatenate(
+            (self.robot_state, self.robot_state, self.targets.flatten())
+        )
 
         return state
 
@@ -518,25 +526,15 @@ class Walker3DStepperEnv(EnvBase):
         # Don't calculate the contacts for now
         self.robot_state = self.robot.calc_state()
         self.calc_env_state(action)
+        self.history_states.append(self.robot_state)
 
         reward = self.progress - self.energy_penalty
         reward += self.step_bonus + self.target_bonus - self.speed_penalty
         reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
 
-        # print(
-        #     "{:5.2f} {:5.2f} {:5.2f} {:5.2f} {:5.2f} {:5.2f} {:5.2f} {:5.2f}".format(
-        #         self.progress,
-        #         -self.energy_penalty,
-        #         self.step_bonus,
-        #         self.target_bonus,
-        #         -self.speed_penalty,
-        #         self.tall_bonus,
-        #         -self.posture_penalty,
-        #         -self.joints_penalty,
-        #     )
-        # )
-
-        state = np.concatenate((self.robot_state, self.targets.flatten()))
+        state = np.concatenate(
+            (self.history_states[0], self.history_states[-1], self.targets.flatten())
+        )
 
         if self.is_render:
             self._handle_keyboard()
@@ -647,17 +645,6 @@ class Walker3DStepperEnv(EnvBase):
         if self.target_reached and self.target_reached_count == 1:
             self.step_bonus = 50 * np.exp(-self.foot_dist_to_target.min() / 0.25)
 
-        # print(
-        #     "{:2d} {:2d} {:2d} {:2d} {:5.2f} {:5.2f}".format(
-        #         self.next_step_index,
-        #         len(self.terrain_info),
-        #         self.target_reached_count,
-        #         self.stop_frames,
-        #         self.step_bonus,
-        #         self.distance_to_target,
-        #     )
-        # )
-
         # For last step only
         self.target_bonus = 0
         if (
@@ -710,9 +697,6 @@ class Walker3DStepperEnv(EnvBase):
             ),
             axis=1,
         )
-
-        # Normalize targets x,y to between -1 and +1 using softsign
-        # deltas[:, 0:2] /= 1 + np.abs(deltas[:, 0:2])
 
         return deltas
 
