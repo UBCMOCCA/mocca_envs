@@ -6,7 +6,7 @@ import numpy as np
 import torch
 
 from mocca_envs.env_base import EnvBase
-from mocca_envs.bullet_objects import VSphere, Pillar, Plank, Chair, Bench
+from mocca_envs.bullet_objects import VSphere, Pillar, Plank, LargePlank, Chair, Bench
 from mocca_envs.robots import Child3D, Walker3D
 
 Colors = {
@@ -370,8 +370,7 @@ class Walker3DStepperEnv(EnvBase):
 
         # Need these before calling constructor
         # because they are used in self.create_terrain()
-        self.step_radius = 0.3
-        self.step_height = 0.2
+        self.step_radius = 0.25
         self.rendered_step_count = 3
 
         super(Walker3DStepperEnv, self).__init__(Walker3D, render)
@@ -389,9 +388,9 @@ class Walker3DStepperEnv(EnvBase):
         self.next_step_index = 0
 
         # Terrain info
-        self.pitch_limit = 30
-        self.yaw_limit = 50
-        self.tilt_limit = 15
+        self.pitch_limit = 20
+        self.yaw_limit = 0
+        self.tilt_limit = 0
         # x, y, z, phi, x_tilt, y_tilt
         self.terrain_info = np.zeros((self.n_steps, 6))
 
@@ -436,7 +435,7 @@ class Walker3DStepperEnv(EnvBase):
         y = np.cumsum(y_)
         z = np.cumsum(z_)
 
-        min_z = self.step_radius * np.sin(self.tilt_limit * DEG2RAD)
+        min_z = self.step_radius * np.sin(self.tilt_limit * DEG2RAD) + 0.01
         np.clip(z, a_min=min_z, a_max=None, out=z)
 
         return np.stack((x, y, z, dphi, x_tilt, y_tilt), axis=1)
@@ -448,11 +447,12 @@ class Walker3DStepperEnv(EnvBase):
         cover_ids = set()
 
         for index in range(self.rendered_step_count):
-            p = Pillar(self._p, self.step_radius, self.step_height)
-            # p = Plank(self._p, (self.step_radius, 1, self.step_height))
+            # p = Pillar(self._p, self.step_radius)
+            # p = Plank(self._p, self.step_radius)
+            p = LargePlank(self._p, self.step_radius)
             self.steps.append(p)
-            step_ids = step_ids | {(p.body_id, -1)}
-            cover_ids = cover_ids | {(p.cover_id, -1)}
+            step_ids = step_ids | {(p.id, p.base_id)}
+            cover_ids = cover_ids | {(p.id, p.cover_id)}
 
         # Need set for detecting contact
         self.all_contact_object_ids = set(step_ids) | set(cover_ids) | self.ground_ids
@@ -605,7 +605,8 @@ class Walker3DStepperEnv(EnvBase):
     def calc_feet_state(self):
         # Calculate contact separately for step
         target_cover_index = self.next_step_index % self.rendered_step_count
-        target_cover_id = {(self.steps[target_cover_index].cover_id, -1)}
+        next_step = self.steps[target_cover_index]
+        target_cover_id = {(next_step.id, next_step.cover_id)}
 
         self.foot_dist_to_target = np.array([0.0, 0.0])
 
