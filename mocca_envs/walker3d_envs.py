@@ -370,7 +370,8 @@ class Walker3DStepperEnv(EnvBase):
         # Need these before calling constructor
         # because they are used in self.create_terrain()
         self.step_radius = 0.25
-        self.rendered_step_count = 3
+        self.rendered_step_count = 5
+        self.stop_frames = 30
 
         super(Walker3DStepperEnv, self).__init__(Walker3D, render)
         self.robot.set_base_pose(pose="running_start")
@@ -382,7 +383,7 @@ class Walker3DStepperEnv(EnvBase):
 
         # Env settings
         self.n_steps = 24
-        self.lookahead = 2
+        self.lookahead = 4
         self.next_step_index = 0
 
         # Terrain info
@@ -393,7 +394,9 @@ class Walker3DStepperEnv(EnvBase):
         self.terrain_info = np.zeros((self.n_steps, 6))
 
         # robot_state + (2 targets) * (x, y, z, x_tilt, y_tilt)
-        high = np.inf * np.ones(self.robot.observation_space.shape[0] + 2 * 5)
+        high = np.inf * np.ones(
+            self.robot.observation_space.shape[0] + self.lookahead * 5
+        )
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.action_space = self.robot.action_space
 
@@ -429,6 +432,10 @@ class Walker3DStepperEnv(EnvBase):
         x_ = dr * np.sin(dtheta) * np.cos(dphi)
         y_ = dr * np.sin(dtheta) * np.sin(dphi)
         z_ = dr * np.cos(dtheta)
+
+        # Prevent steps from overlapping
+        np.clip(x_, a_min=self.step_radius * 2.5, a_max=max_gap, out=x_)
+
         x = np.cumsum(x_)
         y = np.cumsum(y_)
         z = np.cumsum(z_)
@@ -487,7 +494,6 @@ class Walker3DStepperEnv(EnvBase):
     def reset(self):
         self.done = False
         self.target_reached_count = 0
-        self.stop_frames = 30
 
         self._p.restoreState(self.state_id)
 
@@ -605,8 +611,9 @@ class Walker3DStepperEnv(EnvBase):
             self.robot.feet_xyz[i] = f.pose().xyz()
             contact_ids = set((x[2], x[4]) for x in f.contact_list())
 
-            in_contact = self.all_contact_object_ids & contact_ids
-            self.robot.feet_contact[i] = 1.0 if in_contact else 0.0
+            # in_contact = self.all_contact_object_ids & contact_ids
+            # if contact_ids is not empty, then foot is in contact
+            self.robot.feet_contact[i] = 1.0 if contact_ids else 0.0
 
             delta = self.robot.feet_xyz[i] - p_xyz
             distance = (delta[0] ** 2 + delta[1] ** 2) ** (1 / 2)
