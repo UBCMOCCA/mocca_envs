@@ -1,5 +1,4 @@
 import os
-from collections import deque
 
 import gym
 import numpy as np
@@ -380,7 +379,6 @@ class Walker3DStepperEnv(EnvBase):
         self.electricity_cost = 4.5
         self.stall_torque_cost = 0.225
         self.joints_at_limit_cost = 0.1
-        self.history_states = deque(maxlen=10)
 
         # Env settings
         self.n_steps = 24
@@ -388,14 +386,14 @@ class Walker3DStepperEnv(EnvBase):
         self.next_step_index = 0
 
         # Terrain info
-        self.pitch_limit = 20
+        self.pitch_limit = 40
         self.yaw_limit = 0
         self.tilt_limit = 0
         # x, y, z, phi, x_tilt, y_tilt
         self.terrain_info = np.zeros((self.n_steps, 6))
 
-        # robot_state + history_state + (2 targets) * (x, y, z, x_tilt, y_tilt)
-        high = np.inf * np.ones(self.robot.observation_space.shape[0] * 2 + 2 * 5)
+        # robot_state + (2 targets) * (x, y, z, x_tilt, y_tilt)
+        high = np.inf * np.ones(self.robot.observation_space.shape[0] + 2 * 5)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.action_space = self.robot.action_space
 
@@ -496,10 +494,6 @@ class Walker3DStepperEnv(EnvBase):
         self.robot_state = self.robot.reset(random_pose=True)
         self.calc_feet_state()
 
-        # 0 is oldest, -1 is newest
-        for _ in range(self.history_states.maxlen):
-            self.history_states.append(self.robot_state)
-
         # Randomize platforms
         self.randomize_terrain()
         self.next_step_index = 0
@@ -512,9 +506,7 @@ class Walker3DStepperEnv(EnvBase):
         # Order is important because walk_target is set up above
         self.calc_potential()
 
-        state = np.concatenate(
-            (self.robot_state, self.robot_state, self.targets.flatten())
-        )
+        state = np.concatenate((self.robot_state, self.targets.flatten()))
 
         return state
 
@@ -526,15 +518,12 @@ class Walker3DStepperEnv(EnvBase):
         # Don't calculate the contacts for now
         self.robot_state = self.robot.calc_state()
         self.calc_env_state(action)
-        self.history_states.append(self.robot_state)
 
         reward = self.progress - self.energy_penalty
         reward += self.step_bonus + self.target_bonus - self.speed_penalty
         reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
 
-        state = np.concatenate(
-            (self.history_states[0], self.history_states[-1], self.targets.flatten())
-        )
+        state = np.concatenate((self.robot_state, self.targets.flatten()))
 
         if self.is_render:
             self._handle_keyboard()
@@ -704,68 +693,39 @@ class Walker3DStepperEnv(EnvBase):
     def get_mirror_indices(self):
 
         action_dim = self.robot.action_space.shape[0]
-        observation_dim = self.robot.observation_space.shape[0]
 
-        # _ + 6 accounting for global
         right_obs_indices = np.concatenate(
             (
-                # history
-                # joint angle indices acounting for global
+                # joint angle indices + 6 accounting for global
                 6 + self.robot._right_joint_indices,
                 # joint velocity indices
                 6 + self.robot._right_joint_indices + action_dim,
                 # right foot contact
                 [6 + 2 * action_dim],
-                # current
-                # joint angle indices
-                observation_dim + 6 + self.robot._right_joint_indices,
-                # joint velocity indices
-                observation_dim + 6 + self.robot._right_joint_indices + action_dim,
-                # right foot contact
-                [observation_dim + 6 + 2 * action_dim],
             )
         )
 
         # Do the same for left, except using +1 for left foot contact
         left_obs_indices = np.concatenate(
             (
-                # history
-                # joint angle indices acounting for global
                 6 + self.robot._left_joint_indices,
-                # joint velocity indices
                 6 + self.robot._left_joint_indices + action_dim,
-                # left foot contact
                 [6 + 2 * action_dim + 1],
-                # current
-                # joint angle indices
-                observation_dim + 6 + self.robot._left_joint_indices,
-                # joint velocity indices
-                observation_dim + 6 + self.robot._left_joint_indices + action_dim,
-                # left foot contact
-                [observation_dim + 6 + 2 * action_dim + 1],
             )
         )
 
         negation_obs_indices = np.array(
             [
-                # history
                 2,  # vy
                 4,  # roll
                 6,  # abdomen_z pos
                 8,  # abdomen_x pos
                 27,  # abdomen_z vel
                 29,  # abdomen_x vel
-                # current
-                2 + observation_dim,
-                4 + observation_dim,
-                6 + observation_dim,
-                8 + observation_dim,
-                27 + observation_dim,
-                29 + observation_dim,
-                100,  # sin(-a) = -sin(a) of next step
-                103,  # x_tilt of next step
-                105,  # sin(-a) = -sin(a) of next + 1 step
-                108,  # x_tilt of next + 1 step
+                50,  # sin(-a) = -sin(a) of next step
+                53,  # x_tilt of next step
+                55,  # sin(-a) = -sin(a) of next + 1 step
+                58,  # x_tilt of next + 1 step
             ],
             dtype=np.int64,
         )
