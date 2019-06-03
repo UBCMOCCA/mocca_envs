@@ -45,13 +45,24 @@ class CassieEnv(EnvBase):
 
     initial_velocity = [0, 0, 0]
 
-    def __init__(self, render=False, planar=False, power_coef=1.0):
+    def __init__(
+        self,
+        render=False,
+        planar=False,
+        power_coef=1.0,
+        residual_control=True,
+        rsi=True,
+    ):
         """
             :params render: enables GUI rendering
             :params planar: constrains the robot movement to a 2D plane (rather than the full 3D motion)
             :params power_coef: multiplying factor that determines the torque limit
+            :params residual_control: if set to `True`, will add `self.base_angles` to the action
+            :params rsi: if set to `True`, will do Random State Initialization [https://www.cs.ubc.ca/~van/papers/2018-TOG-deepMimic/]
         """
         self.planar = planar
+        self.residual_control = residual_control
+        self.rsi = rsi
         robot_class = Cassie2D if planar else Cassie
         super(CassieEnv, self).__init__(robot_class, render, power=power_coef)
 
@@ -70,9 +81,12 @@ class CassieEnv(EnvBase):
     def resetJoints(self):
         self.robot.reset_joint_positions(self.base_angles(), self.base_velocities())
 
+    def phase(self):
+        return self.istep * self.control_step / self.llc_frame_skip
+
     def reset(self, istep=0):
         self.done = False
-        self.istep = istep
+        self.istep = istep if self.rsi else 0
         self.walk_target = np.array([1000.0, 0.0, 0.0])
 
         self._p.restoreState(self.state_id)
@@ -139,9 +153,12 @@ class CassieEnv(EnvBase):
         return state
 
     def step(self, a):
-        target_angles = self.base_angles()[self.robot.powered_joint_inds]
-        ## `knee_to_shin` and `ankle_joint` joints (both sides) do not have a motor
-        ## we don't know how to set the constraints for them so we're using PD with fixed target instead
+        if self.residual_control:
+            ## `knee_to_shin` and `ankle_joint` joints (both sides) do not have a driving motor
+            target_angles = self.base_angles()[self.robot.powered_joint_inds]
+        else:
+            target_angles = 0
+
         target_angles += a
 
         torques = []
@@ -259,27 +276,21 @@ class CassieOSUEnv(CassieMocapRewEnv):
 
     def resetJoints(self):
         super().resetJoints()
-        t = (self.istep) * self.control_step / self.llc_frame_skip
+        t = self.phase()
         rod_joint_names = [
             "fixed_right_achilles_rod_joint_z",
             "fixed_right_achilles_rod_joint_y",
             "fixed_left_achilles_rod_joint_z",
             "fixed_left_achilles_rod_joint_y",
         ]
-        # print(self.traj.rod_joint_angles(t))
         for jname, angle in zip(rod_joint_names, self.traj.rod_joint_angles(t)):
             self.robot.rod_joints[jname].reset_current_position(angle, 0)
 
     def base_angles(self):
-        t = (self.istep) * self.control_step / self.llc_frame_skip
-        # print("pos time:", t, "step:", self.istep)
-        # print(t)  # , self.traj.joint_angles(t))
-        return self.traj.joint_angles(t)
+        return self.traj.joint_angles(self.phase())
 
     def base_velocities(self):
-        t = self.istep * self.control_step / self.llc_frame_skip
-        # print("vel time:", t, "step:", self.istep)
-        return self.traj.joint_speeds(t)
+        return self.traj.joint_speeds(self.phase())
 
     def get_obs(self, _):
         t = (self.istep + 1) * self.control_step / self.llc_frame_skip

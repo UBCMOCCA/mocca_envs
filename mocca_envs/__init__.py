@@ -62,6 +62,20 @@ register(
 )
 
 register(
+    id="CassieRSIEnv-v0",
+    entry_point="mocca_envs.cassie_envs:CassieOSUEnv",
+    max_episode_steps=1000,
+    kwargs={"residual_control": False},
+)
+
+register(
+    id="CassieRSI2DEnv-v0",
+    entry_point="mocca_envs.cassie_envs:CassieOSUEnv",
+    max_episode_steps=1000,
+    kwargs={"planar": True, "residual_control": False},
+)
+
+register(
     id="Walker3DCustomEnv-v0",
     entry_point="mocca_envs.walker3d_envs:Walker3DCustomEnv",
     max_episode_steps=1000,
