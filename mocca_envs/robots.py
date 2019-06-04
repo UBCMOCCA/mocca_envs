@@ -16,6 +16,7 @@ class Cassie:
     base_orientation = (0.0, 0.0, 0.0, 1.0)
 
     base_joint_angles = [
+        # left:
         0.035615837,
         -0.01348790,
         0.391940848,
@@ -23,6 +24,7 @@ class Cassie:
         -0.08376049,
         1.305643634,
         -1.61174064,
+        # right:
         0.035615837,
         -0.01348790,
         0.391940848,
@@ -53,6 +55,7 @@ class Cassie:
     joint_damping = [1, 1, 1, 1, 0.1, 0, 1, 1, 1, 1, 1, 0.1, 0, 1]
 
     powered_joint_inds = [0, 1, 2, 3, 6, 7, 8, 9, 10, 13]
+    spring_joint_inds = [4, 11]
 
     def __init__(self, bc, power=1.0):
         self._p = bc
@@ -93,6 +96,9 @@ class Cassie:
         self.parse_joints_and_links(self.object_id)
         self.powered_joints = np.array(self.ordered_joints)[
             self.powered_joint_inds
+        ].tolist()
+        self.spring_joints = np.array(self.ordered_joints)[
+            self.spring_joint_inds
         ].tolist()
 
         # Set Initial pose
@@ -216,7 +222,7 @@ class Cassie:
     def apply_action(self, a):
         assert np.isfinite(a).all()
         # for n, j in enumerate(self.ordered_joints):
-        for n, j in enumerate(self.powered_joints):
+        for n, j in enumerate(self.powered_joints + self.spring_joints):
             # j.set_position(self.base_joint_angles[n])
             j.set_motor_torque(float(np.clip(a[n], -j.torque_limit, j.torque_limit)))
 

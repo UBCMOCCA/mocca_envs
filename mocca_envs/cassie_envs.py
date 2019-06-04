@@ -22,6 +22,7 @@ class CassieEnv(EnvBase):
     ## PD gains:
     kp = np.array(
         [
+            ## left:
             100,
             100,
             88,
@@ -29,7 +30,7 @@ class CassieEnv(EnvBase):
             # 500,
             # 450,
             50,
-            #
+            ## right:
             100,
             100,
             88,
@@ -37,6 +38,9 @@ class CassieEnv(EnvBase):
             # 500,
             # 450,
             50,
+            ## knee_to_shin springs:
+            500,
+            500,
         ]
     )
     # kp = kp / 2
@@ -103,8 +107,9 @@ class CassieEnv(EnvBase):
 
     def pd_control(self, target_angles, target_speeds):
         self.istep += 1
-        curr_angles = self.robot.rad_joint_angles[self.robot.powered_joint_inds]
-        curr_speeds = self.robot.joint_speeds[self.robot.powered_joint_inds]
+        joint_inds = self.robot.powered_joint_inds + self.robot.spring_joint_inds
+        curr_angles = self.robot.rad_joint_angles[joint_inds]
+        curr_speeds = self.robot.joint_speeds[joint_inds]
 
         perror = target_angles - curr_angles
         verror = np.clip(target_speeds - curr_speeds, -5, 5)
@@ -160,6 +165,9 @@ class CassieEnv(EnvBase):
             target_angles = 0
 
         target_angles += a
+        target_angles = np.concatenate(
+            [target_angles, [0 for _ in self.robot.spring_joint_inds]]
+        )
 
         torques = []
         done = False
