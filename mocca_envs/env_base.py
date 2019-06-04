@@ -122,7 +122,7 @@ class EnvBase(gym.Env):
             np.array(px), (self._render_height, self._render_width, -1)
         )
         rgb_array = rgb_array[:, :, :3]
-        return rgb_array
+        return rgb_array.astype(np.uint8)
 
     def reset(self):
         raise NotImplementedError
