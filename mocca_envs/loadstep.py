@@ -73,7 +73,9 @@ class CassieTrajectory:
     """
     # tarsus_v_index
 
-    def __init__(self, data=None):
+    def __init__(self, data=None, filepath=None):
+        if filepath is None:
+            filepath = self.filepath
         if data is None:
             n = 1 + 35 + 32 + 10 + 10 + 10
             self.data = np.fromfile(self.filepath, dtype=np.double).reshape((-1, n))
@@ -236,7 +238,7 @@ def fix_rod_angles():
                 )
             for j in env.unwrapped.robot.ordered_joints:
                 j.reset_position(j.get_position(), 0)
-       
+
         # no reason to change the angle of the feet
         mask = np.array([0, 1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12])
 

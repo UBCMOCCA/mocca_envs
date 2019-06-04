@@ -178,6 +178,9 @@ class Joint:
 
         self.power_coeff = 0
 
+    def set_torque_limit(self, torque_limit):
+        self.torque_limit = torque_limit
+
     def set_state(self, x, vx):
         self._p.resetJointState(self.bodies[self.bodyIndex], self.jointIndex, x, vx)
 

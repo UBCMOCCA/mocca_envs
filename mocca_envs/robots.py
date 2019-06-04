@@ -16,21 +16,23 @@ class Cassie:
     base_orientation = (0.0, 0.0, 0.0, 1.0)
 
     base_joint_angles = [
-        3.56592126e-02,
-        -1.30443918e-02,
-        3.55475724e-01,
-        -9.15456176e-01,
-        -8.37604925e-02,
-        1.37208855e00,
-        -1.61174064e00,
-        3.56592126e-02,
-        -1.30443918e-02,
-        3.55475724e-01,
-        -9.15456176e-01,
-        -8.37604925e-02,
-        1.37208855e00,
-        -1.61174064e00,
+        0.035615837,
+        -0.01348790,
+        0.391940848,
+        -0.95086160,
+        -0.08376049,
+        1.305643634,
+        -1.61174064,
+        0.035615837,
+        -0.01348790,
+        0.391940848,
+        -0.95086160,
+        -0.08376049,
+        1.305643634,
+        -1.61174064,
     ]
+
+    rod_joint_angles = [-0.8967891835, 0.063947468, -0.8967891835, -0.063947468]
 
     power_coef = {
         "hip_abduction_left": 112.5,
@@ -56,6 +58,7 @@ class Cassie:
         self._p = bc
         self.power = power
         self.rod_joints = {}
+        print(self.power)
 
         self.parts = None
         self.jdict = None
@@ -176,17 +179,12 @@ class Cassie:
                 joint = Joint(self._p, joint_name, bodies, i, j, torque_limit=0)
 
                 if "achilles" in joint_name:
+                    joint.reset_position(self.rod_joint_angles[len(self.rod_joints)], 0)
                     self.rod_joints[joint_name] = joint
 
                 if joint_name[:5] != "fixed":
-                    self.jdict[joint_name] = Joint(
-                        self._p,
-                        joint_name,
-                        bodies,
-                        i,
-                        j,
-                        torque_limit=self.power * self.power_coef[joint_name],
-                    )
+                    joint.set_torque_limit(self.power * self.power_coef[joint_name])
+                    self.jdict[joint_name] = joint
                     self._p.changeDynamics(
                         bodies[i],
                         j,
