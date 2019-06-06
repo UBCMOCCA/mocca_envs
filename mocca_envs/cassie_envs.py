@@ -197,6 +197,18 @@ class CassieEnv(EnvBase):
 
 
 class CassieMocapRewEnv(CassieEnv):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        m = 1 if self.residual_control else 0.25
+        self.weights = {
+            "SpeedRew": 0.1 * m,
+            "CoMRew": 0.15 * m,
+            "OrientationRew": 0 if self.planar else (0.1 * m),
+        }
+        self.weights["ImitationRew"] = 1 - sum(self.weights.values())
+        self.weights["DeviationRew"] = -0.05
+        self.weights["EnergyUseRew"] = -0.00005 if self.residual_control else 0
+
     def compute_rewards(self, action, torques):
         dead, rewards = super(CassieMocapRewEnv, self).compute_rewards(action, torques)
         # TODO: use self.initial_velocity
@@ -214,20 +226,16 @@ class CassieMocapRewEnv(CassieEnv):
         )
 
         rewards = {}
-        # rewards["AliveRew"] = 0
-        # rewards["ProgressRew"] /= 4
-        rewards["EnergyUseRew"] = -0.00005 * np.mean(np.power(torques, 2))
-        rewards["DeviationRew"] = -0.05 * np.mean(np.power(action, 2))
+        rewards["EnergyUseRew"] = np.mean(np.power(torques, 2))
+        rewards["DeviationRew"] = np.mean(np.power(action, 2))
+        rewards["SpeedRew"] = np.exp(-4 * vel_error)
+        rewards["ImitationRew"] = np.exp(-4 * joint_penalty)
+        rewards["OrientationRew"] = np.exp(-4 * orientation_penalty)
+        rewards["CoMRew"] = np.exp(-4 * com_penalty)
 
-        # TODO: add orientation reward if not 2D
+        weighted_rewards = {k: v * self.weights[k] for k, v in rewards.items()}
 
-        rewards["SpeedRew"] = 0.1 * np.exp(-4 * vel_error)
-        rewards["ImitationRew"] = 0.65 * np.exp(-4 * joint_penalty)
-        if not self.planar:
-            rewards["OrientationRew"] = 0.1 * np.exp(-4 * orientation_penalty)
-        rewards["CoMRew"] = 0.15 * np.exp(-4 * com_penalty)
-
-        return dead, rewards
+        return dead, weighted_rewards
 
 
 class CassieMocapEnv(CassieMocapRewEnv):
@@ -236,9 +244,8 @@ class CassieMocapEnv(CassieMocapRewEnv):
     mocap_cycle_length = 28
     initial_velocity = [0.8, 0, 0]
 
-    def __init__(self, rsi=False, *args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.rsi = rsi
         with open(self.mocap_path, "rb") as datafile:
             self.step_data = pickle.load(datafile)
 
