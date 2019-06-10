@@ -199,7 +199,7 @@ class CassieEnv(EnvBase):
 class CassieMocapRewEnv(CassieEnv):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        m = 1 if self.residual_control else 0.2
+        m = 1 if self.residual_control else 0.25
         self.weights = {
             "SpeedRew": 0.1 * m,
             "CoMRew": 0.15 * m,
@@ -207,7 +207,7 @@ class CassieMocapRewEnv(CassieEnv):
         }
         self.weights["ImitationRew"] = 1 - sum(self.weights.values())
         self.weights["DeviationRew"] = -0.05 if self.residual_control else 0
-        self.weights["EnergyUseRew"] = -0.00005
+        self.weights["EnergyUseRew"] = -0.00005 * m
 
     def compute_rewards(self, action, torques):
         dead, rewards = super(CassieMocapRewEnv, self).compute_rewards(action, torques)
@@ -229,8 +229,7 @@ class CassieMocapRewEnv(CassieEnv):
         rewards["EnergyUseRew"] = np.mean(np.power(torques, 2))
         rewards["DeviationRew"] = np.mean(np.power(action, 2))
         rewards["SpeedRew"] = np.exp(-4 * vel_error)
-        m = 4 if self.residual_control else 2
-        rewards["ImitationRew"] = np.exp(-m * joint_penalty)
+        rewards["ImitationRew"] = np.exp(-4 * joint_penalty)
         rewards["OrientationRew"] = np.exp(-4 * orientation_penalty)
         rewards["CoMRew"] = np.exp(-4 * com_penalty)
 
@@ -275,7 +274,7 @@ class CassieMocapEnv(CassieMocapRewEnv):
 
 
 class CassieOSUEnv(CassieMocapRewEnv):
-    initial_velocity = [0, 0, 0]
+    initial_velocity = [0.8, 0, 0]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
