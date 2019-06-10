@@ -1,3 +1,5 @@
+*.png
+mocca_envs/cassie/
 .vscode
 
 # Byte-compiled / optimized / DLL files

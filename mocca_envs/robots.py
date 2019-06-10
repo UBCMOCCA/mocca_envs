@@ -245,6 +245,7 @@ class Cassie:
 
         body_pose = self.robot_body.pose()
         self.body_xyz = body_pose.xyz()
+        self.body_angular_speed = self.robot_body.angular_speed()
 
         z = self.body_xyz[2]
         if self.initial_z is None:

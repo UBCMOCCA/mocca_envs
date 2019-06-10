@@ -204,6 +204,7 @@ class CassieMocapRewEnv(CassieEnv):
             "SpeedRew": 0.1 * m,
             "CoMRew": 0.15 * m,
             "OrientationRew": 0 if self.planar else (0.1 * m),
+            "AngularSpeedRew": 0.1 * m,
         }
         self.weights["ImitationRew"] = 1 - sum(self.weights.values())
         self.weights["DeviationRew"] = -0.05 if self.residual_control else 0
@@ -221,9 +222,12 @@ class CassieMocapRewEnv(CassieEnv):
             np.sum((kin_angles - dyn_angles)[self.robot.powered_joint_inds] ** 2)
         )
         orientation_penalty = np.sum(np.power(self.robot.body_rpy, 2))
+        angular_speed_penalty = np.sum(np.power(self.robot.body_angular_speed, 2))
         com_penalty = np.sum(
             np.subtract(self.robot.body_xyz[1:], self.robot.base_position[1:]) ** 2
         )
+
+        self.robot.robot_body.angular_speed()
 
         rewards = {}
         rewards["EnergyUseRew"] = np.mean(np.power(torques, 2))
@@ -231,6 +235,7 @@ class CassieMocapRewEnv(CassieEnv):
         rewards["SpeedRew"] = np.exp(-4 * vel_error)
         rewards["ImitationRew"] = np.exp(-4 * joint_penalty)
         rewards["OrientationRew"] = np.exp(-4 * orientation_penalty)
+        rewards["AngularSpeedRew"] = np.exp(-4 * angular_speed_penalty)
         rewards["CoMRew"] = np.exp(-4 * com_penalty)
 
         weighted_rewards = {k: v * self.weights[k] for k, v in rewards.items()}
@@ -273,12 +278,23 @@ class CassieMocapEnv(CassieMocapRewEnv):
         return super().step(action)
 
 
-class CassieOSUEnv(CassieMocapRewEnv):
+class CassieDynStateOSUEnv(CassieMocapRewEnv):
     initial_velocity = [0.8, 0, 0]
+
+    mirror_indices = {
+        "neg_obs_inds": np.array(
+            [0, 3, 5, 21, 24]  # y  # quat x  # quat z  # y velocity  # y angular speed
+        ),
+        "left_obs_inds": np.array(list(range(6, 13)) + list(range(26, 33))),
+        "right_obs_inds": np.array(list(range(13, 20)) + list(range(33, 40))),
+        "left_act_inds": np.array(list(range(0, 5))),
+        "right_act_inds": np.array(list(range(5, 10))),
+        "neg_act_inds": np.array([]),
+    }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        high = np.inf * np.ones(80)
+        high = np.inf * np.ones(40)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.traj = CassieTrajectory()
         # self.traj = RobotData()
@@ -308,9 +324,6 @@ class CassieOSUEnv(CassieMocapRewEnv):
         return self.traj.joint_speeds(self.phase())
 
     def get_obs(self, _):
-        t = (self.istep + 1) * self.control_step / self.llc_frame_skip
-        kin_state = self.traj.state(t)
-
         joint_angles = np.array(
             [j.get_position() for j in self.robot.ordered_joints], dtype=np.float32
         )
@@ -320,7 +333,7 @@ class CassieOSUEnv(CassieMocapRewEnv):
         )
         quaternion = self._p.getQuaternionFromEuler(self.robot.body_rpy)
 
-        dyn_state = np.concatenate(
+        return np.concatenate(
             [
                 ## pos
                 self.robot.body_xyz[1:],
@@ -330,15 +343,31 @@ class CassieOSUEnv(CassieMocapRewEnv):
                 joint_angles,
                 ## vel
                 self.robot.body_velocity,
-                self.robot.robot_body.angular_speed(),
+                self.robot.body_angular_speed,
                 # [0, 0, 0],
                 joint_speeds,
             ]
         )
 
+
+class CassieOSUEnv(CassieDynStateOSUEnv):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        high = np.inf * np.ones(80)
+        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
+
+        for key in ["neg_obs_inds", "left_obs_inds", "right_obs_inds"]:
+            self.mirror_indices[key] = np.concatenate(
+                [self.mirror_indices[key], self.mirror_indices[key] + 40]
+            )
+
+    def get_obs(self, robot_state):
+        t = (self.istep + 1) * self.control_step / self.llc_frame_skip
+        kin_state = self.traj.state(t)
+
         kin_state[0] = 0  # fix desired y to be exactly 0
 
-        return np.concatenate([dyn_state, kin_state])
+        return np.concatenate([super().get_obs(robot_state), kin_state])
 
 
 class CassieMocapPhaseEnv(CassieMocapEnv):
