@@ -283,7 +283,20 @@ class CassieDynStateOSUEnv(CassieMocapRewEnv):
 
     mirror_indices = {
         "neg_obs_inds": np.array(
-            [0, 3, 5, 21, 24]  # y  # quat x  # quat z  # y velocity  # y angular speed
+            [
+                # y
+                0,
+                # quat x
+                3,
+                # quat z
+                5,
+                # y velocity
+                21,
+                # x angular speed
+                23,
+                # z angular speed
+                25,
+            ]
         ),
         "left_obs_inds": np.array(list(range(6, 13)) + list(range(26, 33))),
         "right_obs_inds": np.array(list(range(13, 20)) + list(range(33, 40))),
