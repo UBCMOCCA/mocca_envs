@@ -76,6 +76,19 @@ register(
 )
 
 register(
+    id="CassieMirror2DEnv-v0",
+    entry_point="mocca_envs.cassie_envs:CassieMirrorEnv",
+    max_episode_steps=300,
+    kwargs={"planar": True},
+)
+register(
+    id="CassieMirrorEnv-v0",
+    entry_point="mocca_envs.cassie_envs:CassieMirrorEnv",
+    max_episode_steps=300,
+    kwargs={},
+)
+
+register(
     id="CassieNoMocap2DEnv-v0",
     entry_point="mocca_envs.cassie_envs:CassieOSUEnv",
     max_episode_steps=1000,

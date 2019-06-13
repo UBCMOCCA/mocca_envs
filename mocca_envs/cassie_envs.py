@@ -199,16 +199,15 @@ class CassieEnv(EnvBase):
 class CassieMocapRewEnv(CassieEnv):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        m = 1 if self.residual_control else 0.25
         self.weights = {
-            "SpeedRew": 0.1 * m,
-            "CoMRew": 0.15 * m,
-            "OrientationRew": 0 if self.planar else (0.1 * m),
-            "AngularSpeedRew": 0.1 * m,
+            "SpeedRew": 0.1,
+            "CoMRew": 0.15,
+            "OrientationRew": 0 if self.planar else 0.1,
+            "AngularSpeedRew": 0.1,
         }
         self.weights["ImitationRew"] = 1 - sum(self.weights.values())
-        self.weights["DeviationRew"] = -0.05 if self.residual_control else 0
-        self.weights["EnergyUseRew"] = -0.00005 * m
+        # self.weights["DeviationRew"] = -0.05 if self.residual_control else 0
+        # self.weights["EnergyUseRew"] = -0.00001
 
     def compute_rewards(self, action, torques):
         dead, rewards = super(CassieMocapRewEnv, self).compute_rewards(action, torques)
@@ -230,8 +229,8 @@ class CassieMocapRewEnv(CassieEnv):
         self.robot.robot_body.angular_speed()
 
         rewards = {}
-        rewards["EnergyUseRew"] = np.mean(np.power(torques, 2))
-        rewards["DeviationRew"] = np.mean(np.power(action, 2))
+        # rewards["EnergyUseRew"] = np.mean(np.power(torques, 2))
+        # rewards["DeviationRew"] = np.mean(np.power(action, 2))
         rewards["SpeedRew"] = np.exp(-4 * vel_error)
         rewards["ImitationRew"] = np.exp(-4 * joint_penalty)
         rewards["OrientationRew"] = np.exp(-4 * orientation_penalty)
@@ -359,6 +358,45 @@ class CassieDynStateOSUEnv(CassieMocapRewEnv):
                 self.robot.body_angular_speed,
                 # [0, 0, 0],
                 joint_speeds,
+            ]
+        )
+
+
+class CassieMirrorEnv(CassieDynStateOSUEnv):
+    initial_velocity = [0, 0, 0]
+    mirror_sizes = [
+        6,  # c_in
+        6,  # n_in
+        14,  # s_in
+        0,  # c_out
+        0,  # n_out
+        5,  # s_out
+    ]
+
+    def base_angles(self):
+        if self.in_reset:
+            return self.traj.joint_angles(self.phase())
+        else:
+            return np.array(self.robot.base_joint_angles)
+
+    def reset(self):
+        self.in_reset = True
+        obs = super().reset()
+        self.in_reset = False
+        return obs
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mirror_indices["const_obs_inds"] = np.array([1, 2, 4, 20, 22, 24])
+
+    def get_obs(self, robot_state):
+        obs = super().get_obs(robot_state)
+        return np.concatenate(
+            [
+                obs[self.mirror_indices["const_obs_inds"]],
+                obs[self.mirror_indices["neg_obs_inds"]],
+                obs[self.mirror_indices["left_obs_inds"]],
+                obs[self.mirror_indices["right_obs_inds"]],
             ]
         )
 
