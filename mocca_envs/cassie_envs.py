@@ -47,6 +47,8 @@ class CassieEnv(EnvBase):
     # kp[[4, 9]] /= 2
     kd = kp / 10
 
+    jvel_alpha = 10 / llc_frame_skip
+
     initial_velocity = [0, 0, 0]
 
     def __init__(
@@ -84,6 +86,7 @@ class CassieEnv(EnvBase):
 
     def resetJoints(self):
         self.robot.reset_joint_positions(self.base_angles(), self.base_velocities())
+        self.jvel = self.base_velocities()
 
     def phase(self):
         return self.istep * self.control_step / self.llc_frame_skip
@@ -109,6 +112,7 @@ class CassieEnv(EnvBase):
         self.istep += 1
         joint_inds = self.robot.powered_joint_inds + self.robot.spring_joint_inds
         curr_angles = self.robot.rad_joint_angles[joint_inds]
+        # curr_speeds = self.jvel[joint_inds]
         curr_speeds = self.robot.joint_speeds[joint_inds]
 
         perror = target_angles - curr_angles
@@ -172,7 +176,10 @@ class CassieEnv(EnvBase):
         torques = []
         done = False
 
+        jpos = self.robot.rad_joint_angles
+
         for _ in range(self.llc_frame_skip):
+            self.jvel = (1 - self.jvel_alpha) * self.jvel + self.jvel_alpha * self.robot.joint_speeds
             target_speeds = target_angles * 0
             torque = self.pd_control(target_angles, target_speeds)
             torques.append(torque)
@@ -185,6 +192,11 @@ class CassieEnv(EnvBase):
                 )
                 self._handle_keyboard()
                 done = done or self.done
+
+        self.jpos = self.robot.rad_joint_angles
+        # self.jvel = np.subtract(self.jpos, jpos) / self.control_step
+
+        # TODO: how to get more stable jvel for using in PD?
 
         if not np.isfinite(robot_state).all():
             print("~INF~", robot_state)
@@ -205,7 +217,9 @@ class CassieMocapRewEnv(CassieEnv):
             "OrientationRew": 0 if self.planar else 0.1,
             "AngularSpeedRew": 0.1,
         }
-        self.weights["ImitationRew"] = 1 - sum(self.weights.values())
+        wleft = 1 - sum(self.weights.values())
+        self.weights["JPosRew"] = wleft / 5 * 4
+        self.weights["JVelRew"] = wleft / 5
         # self.weights["DeviationRew"] = -0.05 if self.residual_control else 0
         # self.weights["EnergyUseRew"] = -0.00001
 
@@ -214,12 +228,16 @@ class CassieMocapRewEnv(CassieEnv):
         # TODO: use self.initial_velocity
         vel_error = (self.robot.body_velocity[0] - 0.8) ** 2
 
-        dyn_angles = self.robot.to_radians(self.robot.joint_angles)
-        kin_angles = self.base_angles()
+        kin_jpos = self.base_angles()
+        kin_jvel = self.base_velocities()
 
         joint_penalty = np.sqrt(
-            np.sum((kin_angles - dyn_angles)[self.robot.powered_joint_inds] ** 2)
+            np.sum((kin_jpos - self.jpos)[self.robot.powered_joint_inds] ** 2)
         )
+        jvel_penalty = np.sqrt(
+            np.sum((kin_jvel - self.jvel)[self.robot.powered_joint_inds] ** 2)
+        )
+        # print(kin_jvels, dyn_jvels)
         orientation_penalty = np.sum(np.power(self.robot.body_rpy, 2))
         angular_speed_penalty = np.sum(np.power(self.robot.body_angular_speed, 2))
         com_penalty = np.sum(
@@ -232,7 +250,8 @@ class CassieMocapRewEnv(CassieEnv):
         # rewards["EnergyUseRew"] = np.mean(np.power(torques, 2))
         # rewards["DeviationRew"] = np.mean(np.power(action, 2))
         rewards["SpeedRew"] = np.exp(-4 * vel_error)
-        rewards["ImitationRew"] = np.exp(-4 * joint_penalty)
+        rewards["JPosRew"] = np.exp(-1 * joint_penalty)
+        rewards["JVelRew"] = np.exp(-0.1 * jvel_penalty)
         rewards["OrientationRew"] = np.exp(-4 * orientation_penalty)
         rewards["AngularSpeedRew"] = np.exp(-4 * angular_speed_penalty)
         rewards["CoMRew"] = np.exp(-4 * com_penalty)
@@ -373,6 +392,12 @@ class CassieMirrorEnv(CassieDynStateOSUEnv):
         5,  # s_out
     ]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mirror_indices["const_obs_inds"] = np.array([1, 2, 4, 20, 22, 24])
+        self.weights["JPosRew"] = 0
+        self.weights["JVelRew"] = 0
+
     def base_angles(self):
         if self.in_reset:
             return self.traj.joint_angles(self.phase())
@@ -381,13 +406,9 @@ class CassieMirrorEnv(CassieDynStateOSUEnv):
 
     def reset(self):
         self.in_reset = True
-        obs = super().reset()
+        obs = super().reset(700)
         self.in_reset = False
         return obs
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.mirror_indices["const_obs_inds"] = np.array([1, 2, 4, 20, 22, 24])
 
     def get_obs(self, robot_state):
         obs = super().get_obs(robot_state)
