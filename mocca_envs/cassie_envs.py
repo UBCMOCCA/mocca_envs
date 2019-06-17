@@ -179,7 +179,9 @@ class CassieEnv(EnvBase):
         jpos = self.robot.rad_joint_angles
 
         for _ in range(self.llc_frame_skip):
-            self.jvel = (1 - self.jvel_alpha) * self.jvel + self.jvel_alpha * self.robot.joint_speeds
+            self.jvel = (
+                1 - self.jvel_alpha
+            ) * self.jvel + self.jvel_alpha * self.robot.joint_speeds
             target_speeds = target_angles * 0
             torque = self.pd_control(target_angles, target_speeds)
             torques.append(torque)
@@ -316,11 +318,25 @@ class CassieDynStateOSUEnv(CassieMocapRewEnv):
                 25,
             ]
         ),
+        "sideneg_obs_inds": np.array(
+            [
+                # left abduction
+                6,
+                # left yaw
+                7,
+                # left abduction speed
+                26,
+                # left yaw speed
+                27,
+            ]
+        ),
+        "const_obs_inds": np.array([1, 2, 4, 20, 22, 24]),
         "left_obs_inds": np.array(list(range(6, 13)) + list(range(26, 33))),
         "right_obs_inds": np.array(list(range(13, 20)) + list(range(33, 40))),
         "left_act_inds": np.array(list(range(0, 5))),
         "right_act_inds": np.array(list(range(5, 10))),
         "neg_act_inds": np.array([]),
+        "sideneg_act_inds": np.array([0]),
     }
 
     def __init__(self, *args, **kwargs):
@@ -394,7 +410,6 @@ class CassieMirrorEnv(CassieDynStateOSUEnv):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.mirror_indices["const_obs_inds"] = np.array([1, 2, 4, 20, 22, 24])
         self.weights["JPosRew"] = 0
         self.weights["JVelRew"] = 0
 
@@ -409,9 +424,14 @@ class CassieMirrorEnv(CassieDynStateOSUEnv):
         obs = super().reset(700)
         self.in_reset = False
         return obs
+    
+    def step(self, action):
+        action[self.mirror_indices["sideneg_act_inds"]] *= -1
+        return super().step(action)
 
     def get_obs(self, robot_state):
         obs = super().get_obs(robot_state)
+        obs[self.mirror_indices["sideneg_obs_inds"]] *= -1
         return np.concatenate(
             [
                 obs[self.mirror_indices["const_obs_inds"]],
@@ -454,4 +474,3 @@ class CassieMocapPhaseEnv(CassieMocapEnv):
         return np.concatenate(
             [super().get_obs(robot_state), [self.phase / self.mocap_cycle_length]]
         )
-
