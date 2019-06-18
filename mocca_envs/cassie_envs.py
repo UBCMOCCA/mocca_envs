@@ -406,9 +406,9 @@ class CassieMirrorEnv(CassieDynStateOSUEnv):
         super().__init__(*args, **kwargs)
         self.phase_in_obs = phase_in_obs
         if phase_in_obs:
-            high = np.inf * np.ones(41)
+            high = np.inf * np.ones(40 + 2)
             self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
-            self.mirror_sizes[1] += 1  # +1 to n_in
+            self.mirror_sizes[2] += 1  # +1 to s_in
         self.weights["JPosRew"] = 0
         self.weights["JVelRew"] = 0
 
@@ -432,16 +432,18 @@ class CassieMirrorEnv(CassieDynStateOSUEnv):
         obs = super().get_obs(robot_state)
         obs[self.mirror_indices["sideneg_obs_inds"]] *= -1
 
-        phase_obs = []
+        phase = []
         if self.phase_in_obs:
-            phase_obs = [(self.phase() % self.cycle_length) - self.cycle_length / 2]
+            phase = [(self.phase() % self.cycle_length) / self.cycle_length]
+        phase = np.array(phase)
 
         return np.concatenate(
             [
                 obs[self.mirror_indices["const_obs_inds"]],
-                phase_obs,
                 obs[self.mirror_indices["neg_obs_inds"]],
+                phase,
                 obs[self.mirror_indices["left_obs_inds"]],
+                (phase + 0.5) % 1,
                 obs[self.mirror_indices["right_obs_inds"]],
             ]
         )
