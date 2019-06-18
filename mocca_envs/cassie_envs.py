@@ -398,7 +398,7 @@ class CassieDynStateOSUEnv(CassieMocapRewEnv):
 
 
 class CassieMirrorEnv(CassieDynStateOSUEnv):
-    initial_velocity = [0, 0, 0]
+    initial_velocity = [0.6, 0, 0]
     mirror_sizes = [
         6,  # c_in
         6,  # n_in
@@ -407,9 +407,15 @@ class CassieMirrorEnv(CassieDynStateOSUEnv):
         0,  # n_out
         5,  # s_out
     ]
+    cycle_length = 0.9
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, phase_in_obs=False, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.phase_in_obs = phase_in_obs
+        if phase_in_obs:
+            high = np.inf * np.ones(41)
+            self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
+            self.mirror_sizes[1] += 1  # +1 to n_in
         self.weights["JPosRew"] = 0
         self.weights["JVelRew"] = 0
 
@@ -424,7 +430,7 @@ class CassieMirrorEnv(CassieDynStateOSUEnv):
         obs = super().reset(700)
         self.in_reset = False
         return obs
-    
+
     def step(self, action):
         action[self.mirror_indices["sideneg_act_inds"]] *= -1
         return super().step(action)
@@ -432,9 +438,15 @@ class CassieMirrorEnv(CassieDynStateOSUEnv):
     def get_obs(self, robot_state):
         obs = super().get_obs(robot_state)
         obs[self.mirror_indices["sideneg_obs_inds"]] *= -1
+
+        phase_obs = []
+        if self.phase_in_obs:
+            phase_obs = [(self.phase() % self.cycle_length) - self.cycle_length / 2]
+
         return np.concatenate(
             [
                 obs[self.mirror_indices["const_obs_inds"]],
+                phase_obs,
                 obs[self.mirror_indices["neg_obs_inds"]],
                 obs[self.mirror_indices["left_obs_inds"]],
                 obs[self.mirror_indices["right_obs_inds"]],
