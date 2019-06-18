@@ -16,7 +16,7 @@ from .loadstep import CassieTrajectory
 class CassieEnv(EnvBase):
 
     control_step = 0.03
-    llc_frame_skip = 100
+    llc_frame_skip = 50
     sim_frame_skip = 1
 
     ## PD gains:
@@ -39,15 +39,15 @@ class CassieEnv(EnvBase):
             # 450,
             50,
             ## knee_to_shin springs:
-            500,
-            500,
+            400,
+            400,
         ]
     )
-    # kp = kp / 2
+    kp = kp / 1.9
     # kp[[4, 9]] /= 2
     kd = kp / 10
 
-    jvel_alpha = 10 / llc_frame_skip
+    jvel_alpha = min(10 / llc_frame_skip, 1)
 
     initial_velocity = [0, 0, 0]
 
@@ -112,8 +112,8 @@ class CassieEnv(EnvBase):
         self.istep += 1
         joint_inds = self.robot.powered_joint_inds + self.robot.spring_joint_inds
         curr_angles = self.robot.rad_joint_angles[joint_inds]
-        # curr_speeds = self.jvel[joint_inds]
-        curr_speeds = self.robot.joint_speeds[joint_inds]
+        curr_speeds = self.jvel[joint_inds]
+        # curr_speeds = self.robot.joint_speeds[joint_inds]
 
         perror = target_angles - curr_angles
         verror = np.clip(target_speeds - curr_speeds, -5, 5)
@@ -196,7 +196,7 @@ class CassieEnv(EnvBase):
                 done = done or self.done
 
         self.jpos = self.robot.rad_joint_angles
-        # self.jvel = np.subtract(self.jpos, jpos) / self.control_step
+        self.jvel = np.subtract(self.jpos, jpos) / self.control_step
 
         # TODO: how to get more stable jvel for using in PD?
 
@@ -215,7 +215,7 @@ class CassieMocapRewEnv(CassieEnv):
         super().__init__(*args, **kwargs)
         self.weights = {
             "SpeedRew": 0.1,
-            "CoMRew": 0.15,
+            "CoMRew": 0.05 if self.planar else 0.15,
             "OrientationRew": 0 if self.planar else 0.1,
             "AngularSpeedRew": 0.1,
         }
@@ -252,8 +252,8 @@ class CassieMocapRewEnv(CassieEnv):
         # rewards["EnergyUseRew"] = np.mean(np.power(torques, 2))
         # rewards["DeviationRew"] = np.mean(np.power(action, 2))
         rewards["SpeedRew"] = np.exp(-4 * vel_error)
-        rewards["JPosRew"] = np.exp(-1 * joint_penalty)
-        rewards["JVelRew"] = np.exp(-0.1 * jvel_penalty)
+        rewards["JPosRew"] = np.exp(-2 * joint_penalty)
+        rewards["JVelRew"] = np.exp(-0.3 * jvel_penalty)
         rewards["OrientationRew"] = np.exp(-4 * orientation_penalty)
         rewards["AngularSpeedRew"] = np.exp(-4 * angular_speed_penalty)
         rewards["CoMRew"] = np.exp(-4 * com_penalty)
@@ -371,13 +371,6 @@ class CassieDynStateOSUEnv(CassieMocapRewEnv):
         return self.traj.joint_speeds(self.phase())
 
     def get_obs(self, _):
-        joint_angles = np.array(
-            [j.get_position() for j in self.robot.ordered_joints], dtype=np.float32
-        )
-        # joint_angles[0] +=
-        joint_speeds = np.array(
-            [j.get_velocity() for j in self.robot.ordered_joints], dtype=np.float32
-        )
         quaternion = self._p.getQuaternionFromEuler(self.robot.body_rpy)
 
         return np.concatenate(
@@ -387,12 +380,12 @@ class CassieDynStateOSUEnv(CassieMocapRewEnv):
                 [quaternion[-1]],
                 quaternion[:-1],
                 # [1, 0, 0, 0],
-                joint_angles,
+                self.robot.rad_joint_angles,
                 ## vel
                 self.robot.body_velocity,
                 self.robot.body_angular_speed,
                 # [0, 0, 0],
-                joint_speeds,
+                self.jvel,
             ]
         )
 
