@@ -91,6 +91,9 @@ class CassieTrajectory:
     def __len__(self):
         return len(self.time)
 
+    def max_time(self):
+        return self.time[-1]
+
     def _sec_to_ind(self, t):
         tmax = self.time[-1]
         return int((t % tmax) / tmax * len(self.time))
