@@ -400,10 +400,11 @@ class CassieMirrorEnv(CassieDynStateOSUEnv):
         0,  # n_out
         5,  # s_out
     ]
-    cycle_length = 0.9
 
-    def __init__(self, phase_in_obs=False, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, phase_in_obs=False, residual_control=False, *args, **kwargs):
+        super().__init__(residual_control=True, *args, **kwargs)
+        self.residual = residual_control
+        self.cycle_length = self.traj.max_time()
         self.phase_in_obs = phase_in_obs
         if phase_in_obs:
             high = np.inf * np.ones(40 + 2)
@@ -413,7 +414,7 @@ class CassieMirrorEnv(CassieDynStateOSUEnv):
         self.weights["JVelRew"] = 0
 
     def base_angles(self):
-        if self.in_reset:
+        if self.in_reset or self.residual:
             return self.traj.joint_angles(self.phase())
         else:
             return np.array(self.robot.base_joint_angles)
