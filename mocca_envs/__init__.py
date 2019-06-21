@@ -97,6 +97,13 @@ register(
 )
 
 register(
+    id="CassiePhase2DEnv-v0",
+    entry_point="mocca_envs.cassie_envs:CassieMirrorEnv",
+    max_episode_steps=1000,
+    kwargs={"phase_in_obs": True, "residual_control": True, "planar": True},
+)
+
+register(
     id="CassieMirrorEnv-v0",
     entry_point="mocca_envs.cassie_envs:CassieMirrorEnv",
     max_episode_steps=300,
