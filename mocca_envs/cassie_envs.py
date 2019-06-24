@@ -336,7 +336,7 @@ class CassieDynStateOSUEnv(CassieMocapRewEnv):
         "left_act_inds": np.array(list(range(0, 5))),
         "right_act_inds": np.array(list(range(5, 10))),
         "neg_act_inds": np.array([]),
-        "sideneg_act_inds": np.array([0]),
+        "sideneg_act_inds": np.array([0, 1]),
     }
 
     def __init__(self, *args, **kwargs):
