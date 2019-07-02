@@ -93,7 +93,7 @@ class Walker3DCustomEnv(EnvBase):
 
     def randomize_target(self):
         self.dist = self.np_random.uniform(1, 2)
-        self.angle = self.np_random.uniform(-np.pi, np.pi)
+        self.angle = self.np_random.uniform(-np.pi/4, np.pi/4)
         self.stop_frames = self.np_random.choice([1.0, 2.0])
 
     def reset(self):
@@ -185,9 +185,9 @@ class Walker3DCustomEnv(EnvBase):
         linear_progress = self.linear_potential - old_linear_potential
         angular_progress = self.angular_potential - old_angular_potential
 
-        self.progress = 2 * linear_progress
-        if self.add_angular_progress:
-            self.progress += 100 * angular_progress
+        self.progress = linear_progress
+        # if self.add_angular_progress:
+        #     self.progress += 100 * angular_progress
 
         self.posture_penalty = 0
         if not -0.2 < self.robot.body_rpy[1] < 0.4:
