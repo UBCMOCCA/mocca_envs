@@ -330,7 +330,7 @@ class CassieDynStateOSUEnv(CassieMocapRewEnv):
                 27,
             ]
         ),
-        "const_obs_inds": np.array([1, 2, 4, 20, 22, 24]),
+        "com_obs_inds": np.array([1, 2, 4, 20, 22, 24]),
         "left_obs_inds": np.array(list(range(6, 13)) + list(range(26, 33))),
         "right_obs_inds": np.array(list(range(13, 20)) + list(range(33, 40))),
         "left_act_inds": np.array(list(range(0, 5))),
@@ -440,7 +440,7 @@ class CassieMirrorEnv(CassieDynStateOSUEnv):
 
         return np.concatenate(
             [
-                obs[self.mirror_indices["const_obs_inds"]],
+                obs[self.mirror_indices["com_obs_inds"]],
                 obs[self.mirror_indices["neg_obs_inds"]],
                 phase,
                 obs[self.mirror_indices["left_obs_inds"]],
