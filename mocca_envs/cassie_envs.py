@@ -1,5 +1,6 @@
 import os
 import gym
+import copy
 import pickle
 import numpy as np
 
@@ -302,41 +303,39 @@ class CassieDynStateOSUEnv(CassieMocapRewEnv):
     initial_velocity = [0.8, 0, 0]
 
     mirror_indices = {
-        "neg_obs_inds": np.array(
-            [
-                # y
-                0,
-                # quat x
-                3,
-                # quat z
-                5,
-                # y velocity
-                21,
-                # x angular speed
-                23,
-                # z angular speed
-                25,
-            ]
-        ),
-        "sideneg_obs_inds": np.array(
-            [
-                # left abduction
-                6,
-                # left yaw
-                7,
-                # left abduction speed
-                26,
-                # left yaw speed
-                27,
-            ]
-        ),
-        "com_obs_inds": np.array([1, 2, 4, 20, 22, 24]),
-        "left_obs_inds": np.array(list(range(6, 13)) + list(range(26, 33))),
-        "right_obs_inds": np.array(list(range(13, 20)) + list(range(33, 40))),
-        "left_act_inds": np.array(list(range(0, 5))),
-        "right_act_inds": np.array(list(range(5, 10))),
-        "neg_act_inds": np.array([]),
-        "sideneg_act_inds": np.array([0, 1]),
+        "neg_obs_inds": [
+            # y
+            0,
+            # quat x
+            3,
+            # quat z
+            5,
+            # y velocity
+            21,
+            # x angular speed
+            23,
+            # z angular speed
+            25,
+        ],
+        "sideneg_obs_inds": [
+            # left abduction
+            6,
+            # left yaw
+            7,
+            # left abduction speed
+            26,
+            # left yaw speed
+            27,
+        ],
+        "com_obs_inds": [1, 2, 4, 20, 22, 24],
+        "left_obs_inds": list(range(6, 13)) + list(range(26, 33)),
+        "right_obs_inds": list(range(13, 20)) + list(range(33, 40)),
+        # action:
+        "com_act_inds": [],
+        "left_act_inds": list(range(0, 5)),
+        "right_act_inds": list(range(5, 10)),
+        "neg_act_inds": [],
+        "sideneg_act_inds": [0, 1],
     }
 
     def __init__(self, *args, **kwargs):
@@ -456,11 +455,13 @@ class CassieOSUEnv(CassieDynStateOSUEnv):
         high = np.inf * np.ones(80)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
+        self.mirror_indices = copy.deepcopy(self.mirror_indices)
+
         for key in self.mirror_indices.keys():
             if "obs" in key:
                 self.mirror_indices[key] = np.concatenate(
-                    [self.mirror_indices[key], self.mirror_indices[key] + 40]
-                )
+                    [self.mirror_indices[key], np.array(self.mirror_indices[key]) + 40]
+                ).tolist()
 
     def get_obs(self, robot_state):
         t = (self.istep + 1) * self.control_step / self.llc_frame_skip
