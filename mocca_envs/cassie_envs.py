@@ -12,7 +12,7 @@ from .loadstep import CassieTrajectory
 
 # from mocca_envs.cassie.CassieParams import CassieParams
 # from mocca_envs.cassie.robot_data import RobotData
-
+#stupid comment
 
 class CassieEnv(EnvBase):
 
