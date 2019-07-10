@@ -11,6 +11,7 @@ setup(
         "pybullet",
         "gym>=0.10.10",
         "numpy",
+        "pyquaternion",
         # And any other dependencies
     ],
     packages=find_packages(include="mocca_envs*"),

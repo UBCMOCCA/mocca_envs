@@ -31,7 +31,7 @@ class Walker3DMimicEnv(EnvBase):
             joint_names.index(jname) for jname in self.joints_with_data
         ]
 
-        high = np.inf * np.ones(self.robot.observation_space.shape[0])
+        high = np.inf * np.ones(self.robot.observation_space.shape[0] + 1)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.action_space = self.robot.action_space
 
