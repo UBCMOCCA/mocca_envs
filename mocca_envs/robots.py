@@ -388,8 +388,11 @@ class Walker3D(WalkerBase):
 
         # T-pose
         self.base_joint_angles = np.zeros(self.action_dim)
+        self.base_joint_speeds = np.zeros(self.action_dim)
         self.base_position = (0, 0, 1.35)
         self.base_orientation = (0, 0, 0, 1)
+        self.base_velocity = (0, 0, 0)
+        self.base_angular_velocity = (0, 0, 0)
 
         # Need this to set pose and mirroring
         # hip_[x,z,y], knee, ankle, shoulder_[x,z,y], elbow
@@ -429,9 +432,10 @@ class Walker3D(WalkerBase):
             self.base_joint_angles[[7, 12]] = -20 * DEG2RAD  # ankles
             self.base_orientation = self._p.getQuaternionFromEuler([0, 90 * DEG2RAD, 0])
 
-    def reset(self, random_pose=True, pos=None, quat=None):
+    def reset(self, random_pose=True, pos=None, quat=None, vel=None, ang_vel=None):
 
         joint_angles = self.base_joint_angles
+        joint_speeds = self.base_joint_speeds
 
         if random_pose:
             # Flip left right
@@ -450,15 +454,18 @@ class Walker3D(WalkerBase):
                 np.clip(self.to_normalized(joint_angles), -0.95, 0.95)
             )
 
-        for j, a in zip(self.ordered_joints, joint_angles):
-            j.reset_current_position(a, 0)
+        for j, p, v in zip(self.ordered_joints, joint_angles, joint_speeds):
+            j.reset_current_position(p, v)
 
         pos = self.base_position if pos is None else pos
         quat = self.base_orientation if quat is None else quat
+        vel = self.base_velocity if vel is None else vel
+        ang_vel = self.base_angular_velocity if ang_vel is None else ang_vel
 
         self._p.resetBasePositionAndOrientation(
             self.object_id[0], posObj=pos, ornObj=quat
         )
+        self.robot_body.reset_velocity(vel, ang_vel)
 
         return super(Walker3D, self).reset()
 
