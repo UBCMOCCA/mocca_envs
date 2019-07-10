@@ -7,6 +7,12 @@
 	 Email:  rosshart@umich.edu
      Date:   04/24/2016   -->
 <robot name="cassie" xmlns:xacro="http://ros.org/wiki/xacro">
+  <material name="grey">
+    <color rgba="0.25 0.35 0.60 1"/>
+  </material>
+  <material name="light_grey">
+    <color rgba="0.75 0.75 0.75 1"/>
+  </material>
   <link name="vectorNav">
     <inertial>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -16,18 +22,17 @@
   </link>
   <link name="pelvis">
     <inertial>
-      <origin rpy="0 0 0" xyz=".0507 0 .0284"/>
+      <origin rpy="0 -0.5 0" xyz=".0507 0 .0284"/>
+      <!-- <origin rpy="0 0 0" xyz=".0507 0 .0284"/> -->
       <mass value="10.33"/>
       <inertia ixx=".0942" ixy=".000169" ixz=".015" iyy=".084" iyz=".000516" izz=".113"/>
     </inertial>
-    <visual>
+    <visual>  
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
         <mesh filename="../meshes/pelvis.stl" scale="1 1 1"/>
       </geometry>
-      <material name="grey">
-        <color rgba="0.35 0.35 0.35 1"/>
-      </material>
+      <material name="grey" />
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -47,9 +52,7 @@
       <geometry>
         <mesh filename="../meshes/abduction.stl" scale="1 1 1"/>
       </geometry>
-      <material name="light_grey">
-        <color rgba="0.75 0.75 0.75 1"/>
-      </material>
+      <material name="light_grey" />
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -69,9 +72,7 @@
       <geometry>
         <mesh filename="../meshes/yaw.stl" scale="1 1 1"/>
       </geometry>
-      <material name="light_grey">
-        <color rgba="0.75 0.75 0.75 1"/>
-      </material>
+      <material name="light_grey" />
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -91,9 +92,7 @@
       <geometry>
         <mesh filename="../meshes/hip.stl" scale="1 1 1"/>
       </geometry>
-      <material name="light_grey">
-        <color rgba="0.75 0.75 0.75 1"/>
-      </material>
+      <material name="light_grey" />
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -113,9 +112,7 @@
       <geometry>
         <mesh filename="../meshes/thigh.stl" scale="1 1 1"/>
       </geometry>
-      <material name="light_grey">
-        <color rgba="0.75 0.75 0.75 1"/>
-      </material>
+      <material name="light_grey" />
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -135,9 +132,7 @@
       <geometry>
         <mesh filename="../meshes/knee-output.stl" scale="1 1 1"/>
       </geometry>
-      <material name="grey">
-        <color rgba="0.35 0.35 0.35 1"/>
-      </material>
+      <material name="grey" />
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -157,9 +152,7 @@
       <geometry>
         <mesh filename="../meshes/shin-bone.stl" scale="1 1 1"/>
       </geometry>
-      <material name="grey">
-        <color rgba="0.35 0.35 0.35 1"/>
-      </material>
+      <material name="grey" />
     </visual>
      <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -172,16 +165,15 @@
     <inertial>
       <origin rpy="0 0 0" xyz=".1105 -.0306 -0.0013"/>
       <mass value=".782"/>
-      <inertia ixx=".00113" ixy="-.00288" ixz="-6.33e-05" iyy=".0231" iyz="3.62e-05" izz=".0239"/>
+      <inertia ixx=".00113" ixy="0" ixz="0" iyy=".0231" iyz="3.62e-05" izz=".0239"/>
+      <!-- <inertia ixx=".00113" ixy="-.00288" ixz="-6.33e-05" iyy=".0231" iyz="3.62e-05" izz=".0239"/> -->
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
         <mesh filename="../meshes/tarsus.stl" scale="1 1 1"/>
       </geometry>
-      <material name="grey">
-        <color rgba="0.35 0.35 0.35 1"/>
-      </material>
+      <material name="grey" />
     </visual>
      <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -191,6 +183,9 @@
     </collision>
   </link>
   <link name="left_toe">
+    <contact>
+      <lateral_friction value="1"/>
+    </contact>
     <inertial>
       <origin rpy="0 0 0" xyz=".0047 .0275 -0.0001"/>
       <mass value=".15"/>
@@ -201,9 +196,7 @@
       <geometry>
         <mesh filename="../meshes/toe.stl" scale="1 1 1"/>
       </geometry>
-      <material name="light_grey">
-        <color rgba="0.75 0.75 0.75 1"/>
-      </material>
+      <material name="light_grey" />
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -223,9 +216,7 @@
       <geometry>
         <mesh filename="../meshes/abduction_mirror.stl" scale="1 1 1"/>
       </geometry>
-      <material name="light_grey">
-        <color rgba="0.75 0.75 0.75 1"/>
-      </material>
+      <material name="light_grey" />
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -245,9 +236,7 @@
       <geometry>
         <mesh filename="../meshes/yaw_mirror.stl" scale="1 1 1"/>
       </geometry>
-      <material name="light_grey">
-        <color rgba="0.75 0.75 0.75 1"/>
-      </material>
+      <material name="light_grey" />
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -267,9 +256,7 @@
       <geometry>
         <mesh filename="../meshes/hip_mirror.stl" scale="1 1 1"/>
       </geometry>
-      <material name="light_grey">
-        <color rgba="0.75 0.75 0.75 1"/>
-      </material>
+      <material name="light_grey" />
     </visual>
      <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -289,9 +276,7 @@
       <geometry>
         <mesh filename="../meshes/thigh_mirror.stl" scale="1 1 1"/>
       </geometry>
-      <material name="light_grey">
-        <color rgba="0.75 0.75 0.75 1"/>
-      </material>
+      <material name="light_grey" />
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -311,9 +296,7 @@
       <geometry>
         <mesh filename="../meshes/knee-output_mirror.stl" scale="1 1 1"/>
       </geometry>
-      <material name="grey">
-        <color rgba="0.35 0.35 0.35 1"/>
-      </material>
+      <material name="grey" />
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -333,9 +316,7 @@
       <geometry>
         <mesh filename="../meshes/shin-bone_mirror.stl" scale="1 1 1"/>
       </geometry>
-      <material name="grey">
-        <color rgba="0.35 0.35 0.35 1"/>
-      </material>
+      <material name="grey" />
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -348,16 +329,15 @@
     <inertial>
       <origin rpy="0 0 0" xyz=".1105 -.0306 0.0013"/>
       <mass value=".782"/>
-      <inertia ixx=".00113" ixy="-.00288" ixz="6.33e-05" iyy=".0231" iyz="-3.62e-05" izz=".0239"/>
+      <inertia ixx=".00113" ixy="0" ixz="0" iyy=".0231" iyz="3.62e-05" izz=".0239"/>
+      <!-- <inertia ixx=".00113" ixy="-.00288" ixz="6.33e-05" iyy=".0231" iyz="-3.62e-05" izz=".0239"/> -->
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
         <mesh filename="../meshes/tarsus_mirror.stl" scale="1 1 1"/>
       </geometry>
-      <material name="grey">
-        <color rgba="0.35 0.35 0.35 1"/>
-      </material>
+      <material name="grey" />
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -367,6 +347,9 @@
     </collision>
   </link>
   <link name="right_toe">
+    <contact>
+      <lateral_friction value="1"/>
+    </contact>
     <inertial>
       <origin rpy="0 0 0" xyz=".0047 .0275 0.0001"/>
       <mass value=".15"/>
@@ -377,9 +360,7 @@
       <geometry>
         <mesh filename="../meshes/toe_mirror.stl" scale="1 1 1"/>
       </geometry>
-      <material name="light_grey">
-        <color rgba="0.75 0.75 0.75 1"/>
-      </material>
+      <material name="light_grey" />
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -388,6 +369,65 @@
       </geometry>
     </collision>
   </link>
+
+  <!-- additions of achilles rods -->
+  <link name="left_achilles_rod_y">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <mass value="0"/>
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+    </inertial>
+  </link>
+  <link name="left_achilles_rod">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.24719 0 0"/>
+      <mass value="0.1567"/>
+      <inertia ixx="0.000003754" ixy="0" ixz="0" iyy=".004487" iyz="0" izz=".004488"/>
+      <!-- <inertia ixx="0.000003754" ixy="-.0000000374" ixz="-1.61e-08" iyy=".004487" iyz="0" izz=".004488"/> -->
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="../meshes/achilles-rod.stl" scale="1 1 1"/>
+      </geometry>
+      <material name="light_grey" />
+    </visual>
+    <!-- <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="../meshes/achilles-rod.stl" scale="1 1 1"/>
+      </geometry>
+    </collision> -->
+  </link>
+  <link name="right_achilles_rod_y">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <mass value="0"/>
+      <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
+    </inertial>
+  </link>
+  <link name="right_achilles_rod">
+    <inertial>
+      <origin rpy="0 0 0" xyz="0.24719 0 0"/>
+      <mass value="0.1567"/>
+      <inertia ixx="0.000003754" ixy="0" ixz="0" iyy=".004487" iyz="0" izz=".004488"/>
+    </inertial>
+    <visual>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="../meshes/achilles-rod.stl" scale="1 1 1"/>
+      </geometry>
+      <material name="light_grey" />
+    </visual>
+    <!-- <collision>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <geometry>
+        <mesh filename="../meshes/achilles-rod.stl" scale="1 1 1"/>
+      </geometry>
+    </collision> -->
+  </link>
+  <!-- end of addition -->
+  
   <joint name="fixed_pelvis_to_vectorNav" type="fixed">
     <origin rpy="0 0 0" xyz="0.03155 0 -0.07996"/>
     <parent link="pelvis"/>
@@ -431,8 +471,8 @@
     <axis xyz="0 0 1"/>
     <parent link="left_knee"/>
     <child link="left_shin"/>
-    <limit effort="0" lower="-0.349" upper="0.349" velocity="100"/>
-    <!-- <limit effort="0" lower="-0.08" upper="-0.081" velocity="100"/> -->
+    <!-- <limit effort="0" lower="-0.349" upper="0.349" velocity="100"/> -->
+    <limit effort="0" lower="-0.07" upper="0.07" velocity="100"/>
   </joint>
   <joint name="ankle_joint_left" type="revolute">
     <origin rpy="0 0 0" xyz="0.4348 0.02 0"/>
@@ -487,8 +527,8 @@
     <axis xyz="0 0 1"/>
     <parent link="right_knee"/>
     <child link="right_shin"/>
-    <!-- <limit effort="0" lower="-0.08" upper="-0.081" velocity="100"/> -->
-    <limit effort="0" lower="-0.349" upper="0.349" velocity="100"/>
+    <!-- <limit effort="0" lower="-0.349" upper="0.349" velocity="100"/> -->
+    <limit effort="0" lower="-0.07" upper="0.07" velocity="100"/>
   </joint>
   <joint name="ankle_joint_right" type="revolute">
     <origin rpy="0 0 0" xyz="0.4348 0.02 0"/>
@@ -505,6 +545,37 @@
     <child link="right_toe"/>
     <limit effort="0.9" lower="-2.4435" upper="-0.5236" velocity="11.5192"/>
   </joint>
+  
+<!-- addition of rod joints -->
+
+  <joint name="fixed_left_achilles_rod_joint_z" type="continuous">
+    <origin rpy="0 0 0" xyz="0 0 0.045"/>
+    <axis xyz="0 0 1"/>
+    <parent link="left_thigh"/>
+    <child link="left_achilles_rod_y"/>
+  </joint>
+  <joint name="fixed_left_achilles_rod_joint_y" type="continuous">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <parent link="left_achilles_rod_y"/>
+    <child link="left_achilles_rod"/>
+  </joint>
+
+  <joint name="fixed_right_achilles_rod_joint_z" type="continuous">
+    <origin rpy="0 0 0" xyz="0 0 -0.045"/>
+    <axis xyz="0 0 1"/>
+    <parent link="right_thigh"/>
+    <child link="right_achilles_rod_y"/>
+  </joint>
+  <joint name="fixed_right_achilles_rod_joint_y" type="continuous">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+    <axis xyz="0 1 0"/>
+    <parent link="right_achilles_rod_y"/>
+    <child link="right_achilles_rod"/>
+  </joint>
+
+<!-- end of addition  -->
+
   <transmission name="hip_abduction_trans_left" type="transmission_interface/SimpleTransmission">
     <joint name="hip_abduction_left"/>
     <actuator name="hip_abduction_motor_left"/>

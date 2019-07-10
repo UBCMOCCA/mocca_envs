@@ -101,6 +101,15 @@ class BodyPart:
             self.bodies[self.bodyIndex], self.bodyPartIndex
         )
 
+    def angular_speed(self):
+        if self.bodyPartIndex == -1:
+            _, (vr, vp, vy) = self._p.getBaseVelocity(self.bodies[self.bodyIndex])
+        else:
+            _, _, _, _, _, _, _, (vr, vp, vy) = self._p.getLinkState(
+                self.bodies[self.bodyIndex], self.bodyPartIndex, computeLinkVelocity=1
+            )
+        return np.array([vr, vp, vy])
+
     def speed(self):
         if self.bodyPartIndex == -1:
             (vx, vy, vz), _ = self._p.getBaseVelocity(self.bodies[self.bodyIndex])
@@ -153,18 +162,24 @@ class BodyPart:
 
 
 class Joint:
-    def __init__(self, bullet_client, joint_name, bodies, bodyIndex, jointIndex):
+    def __init__(
+        self, bullet_client, joint_name, bodies, bodyIndex, jointIndex, torque_limit=0
+    ):
         self.bodies = bodies
         self._p = bullet_client
         self.bodyIndex = bodyIndex
         self.jointIndex = jointIndex
         self.joint_name = joint_name
+        self.torque_limit = torque_limit
 
         jointInfo = self._p.getJointInfo(self.bodies[self.bodyIndex], self.jointIndex)
         self.lowerLimit = jointInfo[8]
         self.upperLimit = jointInfo[9]
 
         self.power_coeff = 0
+
+    def set_torque_limit(self, torque_limit):
+        self.torque_limit = torque_limit
 
     def set_state(self, x, vx):
         self._p.resetJointState(self.bodies[self.bodyIndex], self.jointIndex, x, vx)
@@ -201,6 +216,7 @@ class Joint:
             self.jointIndex,
             pybullet.POSITION_CONTROL,
             targetPosition=position,
+            force=self.torque_limit,
         )
 
     def set_velocity(self, velocity):
@@ -299,7 +315,7 @@ class World:
         self.gravity = gravity
         self.timestep = timestep
         self.frame_skip = frame_skip
-        self.numSolverIterations = 5
+        self.numSolverIterations = 20
         self.set_physics_parameters()
 
     def set_physics_parameters(self):
@@ -327,7 +343,11 @@ class StadiumScene(Scene):
 
         for i in self.ground_plane_mjcf:
             self._p.changeDynamics(i, -1, lateralFriction=0.8, restitution=0.5)
-            self._p.changeVisualShape(i, -1, rgbaColor=[1, 1, 1, 0.8])
+            # self._p.changeVisualShape(i, -1, rgbaColor=[1, 1, 1, 0.8])
+
+    def set_friction(self, lateral_friction):
+        for i in self.ground_plane_mjcf:
+            self._p.changeDynamics(i, -1, lateralFriction=lateral_friction)
 
 
 class SinglePlayerStadiumScene(StadiumScene):

@@ -11,7 +11,10 @@ class EnvBase(gym.Env):
     _render_width = 320 * 3
     _render_height = 240 * 3
 
-    def __init__(self, robot_class, render=False):
+    def __init__(self, robot_class, render=False, **kwargs):
+        self.robot_kwargs = kwargs
+        self.robot_class = robot_class
+
         self.scene = None
         self.physics_client_id = -1
         self.owns_physics_client = 0
@@ -20,7 +23,6 @@ class EnvBase(gym.Env):
         self.metadata["video.frames_per_second"] = int(1 / self.control_step)
 
         self.is_render = render
-        self.robot_class = robot_class
 
         self.seed()
         self.initialize_scene_and_robot()
@@ -38,7 +40,7 @@ class EnvBase(gym.Env):
         self._p = BulletClient(connection_mode=bc_mode)
 
         if self.is_render:
-            self.camera = Camera(self._p, 1 / self.control_step)
+            self.camera = Camera(self._p, 1 / self.control_step * self.llc_frame_skip)
             if hasattr(self, "create_target"):
                 self.create_target()
 
@@ -57,7 +59,7 @@ class EnvBase(gym.Env):
         self.ground_ids = {(self.scene.ground_plane_mjcf[0], -1)}
 
         # Create robot object
-        self.robot = self.robot_class(self._p)
+        self.robot = self.robot_class(self._p, **self.robot_kwargs)
         self.robot.initialize()
         self.robot.np_random = self.np_random
 
@@ -120,7 +122,7 @@ class EnvBase(gym.Env):
             np.array(px), (self._render_height, self._render_width, -1)
         )
         rgb_array = rgb_array[:, :, :3]
-        return rgb_array
+        return rgb_array.astype(np.uint8)
 
     def reset(self):
         raise NotImplementedError
