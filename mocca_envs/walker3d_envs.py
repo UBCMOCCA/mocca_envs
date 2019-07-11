@@ -15,60 +15,6 @@ RAD2DEG = 180 / np.pi
 
 
 class Walker3DCustomEnv(EnvBase):
-    mirror_indices = {
-        #### observation:
-        "com_obs_inds": [0, 1, 3, 5, 7, 51, 28],
-        "left_obs_inds": [
-            14,
-            15,
-            16,
-            17,
-            18,
-            23,
-            24,
-            25,
-            26,
-            35,
-            36,
-            37,
-            38,
-            39,
-            44,
-            45,
-            46,
-            47,
-            49,
-        ],
-        "right_obs_inds": [
-            9,
-            10,
-            11,
-            12,
-            13,
-            19,
-            20,
-            21,
-            22,
-            30,
-            31,
-            32,
-            33,
-            34,
-            40,
-            41,
-            42,
-            43,
-            48,
-        ],
-        "neg_obs_inds": [2, 4, 6, 8, 27, 29, 50],
-        "sideneg_obs_inds": [],
-        #### action:
-        "com_act_inds": [1],
-        "neg_act_inds": [0, 2],
-        "left_act_inds": [8, 9, 10, 11, 12, 17, 18, 19, 20],
-        "right_act_inds": [3, 4, 5, 6, 7, 13, 14, 15, 16],
-        "sideneg_act_inds": [],
-    }
 
     control_step = 1 / 60
     llc_frame_skip = 1
@@ -93,7 +39,7 @@ class Walker3DCustomEnv(EnvBase):
 
     def randomize_target(self):
         self.dist = self.np_random.uniform(1, 2)
-        self.angle = self.np_random.uniform(-np.pi/4, np.pi/4)
+        self.angle = self.np_random.uniform(-np.pi, np.pi)
         self.stop_frames = self.np_random.choice([1.0, 2.0])
 
     def reset(self):
@@ -185,9 +131,9 @@ class Walker3DCustomEnv(EnvBase):
         linear_progress = self.linear_potential - old_linear_potential
         angular_progress = self.angular_potential - old_angular_potential
 
-        self.progress = linear_progress
-        # if self.add_angular_progress:
-        #     self.progress += 100 * angular_progress
+        self.progress = 2 * linear_progress
+        if self.add_angular_progress:
+            self.progress += 100 * angular_progress
 
         self.posture_penalty = 0
         if not -0.2 < self.robot.body_rpy[1] < 0.4:
