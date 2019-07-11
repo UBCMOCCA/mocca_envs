@@ -469,7 +469,7 @@ class Walker3D(WalkerBase):
         # T-pose
         self.base_joint_angles = np.zeros(self.action_dim)
         self.base_joint_speeds = np.zeros(self.action_dim)
-        self.base_position = (0, 0, 1.35)
+        self.base_position = (0, 0, 1.32)
         self.base_orientation = (0, 0, 0, 1)
         self.base_velocity = (0, 0, 0)
         self.base_angular_velocity = (0, 0, 0)
@@ -483,6 +483,8 @@ class Walker3D(WalkerBase):
             [8, 9, 10, 11, 12, 17, 18, 19, 20], dtype=np.int64
         )
         self._negation_joint_indices = np.array([0, 2], dtype=np.int64)  # abdomen_[x,z]
+        self._rl = np.concatenate((self._right_joint_indices, self._left_joint_indices))
+        self._lr = np.concatenate((self._left_joint_indices, self._right_joint_indices))
 
     def set_base_pose(self, pose=None):
         self.base_joint_angles[:] = 0  # reset
@@ -514,37 +516,30 @@ class Walker3D(WalkerBase):
 
     def reset(self, random_pose=True, pos=None, quat=None, vel=None, ang_vel=None):
 
-        joint_angles = self.base_joint_angles
-        joint_speeds = self.base_joint_speeds
-
         if random_pose:
-            # Flip left right
+            # Mirror initial pose
             if self.np_random.rand() < 0.5:
-                rl = np.concatenate(
-                    (self._right_joint_indices, self._left_joint_indices)
-                )
-                lr = np.concatenate(
-                    (self._left_joint_indices, self._right_joint_indices)
-                )
-                self.base_joint_angles[rl] = self.base_joint_angles[lr]
+                self.base_joint_angles[self._rl] = self.base_joint_angles[self._lr]
+                self.base_joint_angles[self._negation_joint_indices] *= -1
+
             # Add small deviations
             ds = self.np_random.uniform(low=-0.1, high=0.1, size=self.action_dim)
-            joint_angles += ds
-            joint_angles = self.to_radians(
-                np.clip(self.to_normalized(joint_angles), -0.95, 0.95)
-            )
+            ps = self.to_normalized(self.base_joint_angles + ds)
+            ps = self.to_radians(np.clip(ps, -0.95, 0.95))
 
-        for j, p, v in zip(self.ordered_joints, joint_angles, joint_speeds):
-            j.reset_current_position(p, v)
+            for i, j in enumerate(self.ordered_joints):
+                j.reset_current_position(ps[i], self.base_joint_speeds[i])
 
         pos = self.base_position if pos is None else pos
         quat = self.base_orientation if quat is None else quat
-        vel = self.base_velocity if vel is None else vel
-        ang_vel = self.base_angular_velocity if ang_vel is None else ang_vel
 
         self._p.resetBasePositionAndOrientation(
             self.object_id[0], posObj=pos, ornObj=quat
         )
+
+        vel = self.base_velocity if vel is None else vel
+        ang_vel = self.base_angular_velocity if ang_vel is None else ang_vel
+
         self.robot_body.reset_velocity(vel, ang_vel)
 
         return super(Walker3D, self).reset()
