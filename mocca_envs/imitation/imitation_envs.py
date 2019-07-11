@@ -38,7 +38,7 @@ class Walker3DMimicEnv(EnvBase):
     def get_obs(self):
         return np.concatenate([[self.phase], self.robot_state])
 
-    def reset(self, ctime=None):
+    def reset(self):
         self.done = False
 
         self._p.restoreState(self.state_id)

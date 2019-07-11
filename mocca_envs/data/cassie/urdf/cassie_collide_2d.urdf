@@ -8,10 +8,10 @@
      Date:   04/24/2016   -->
 <robot name="cassie" xmlns:xacro="http://ros.org/wiki/xacro">
   <material name="grey">
-    <color rgba="0.25 0.35 0.60 1"/>
+    <color rgba="0 0.3333 0.7255 1"/>
   </material>
   <material name="light_grey">
-    <color rgba="0.75 0.75 0.75 1"/>
+    <color rgba="0.98 0.98 0.98 1"/>
   </material>
   <link name="vectorNav">
     <inertial>
