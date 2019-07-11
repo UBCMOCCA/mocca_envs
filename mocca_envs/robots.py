@@ -63,7 +63,6 @@ class Cassie:
         self._p = bc
         self.power = power
         self.rod_joints = {}
-        print(self.power)
 
         self.parts = None
         self.jdict = None
