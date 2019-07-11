@@ -369,9 +369,16 @@ class CassiePhaseMoccaEnv(CassieMoccaEnv):
 class CassiePhaseMirrorEnv(CassiePhaseMoccaEnv):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.neg_inds = self.mirror_indices["neg_obs_inds"] + self.mirror_indices["sideneg_obs_inds"]
-        self.lr_inds = self.mirror_indices["left_obs_inds"] + self.mirror_indices["right_obs_inds"]
-        self.rl_inds = self.mirror_indices["right_obs_inds"] + self.mirror_indices["left_obs_inds"]
+        self.neg_inds = (
+            self.mirror_indices["neg_obs_inds"]
+            + self.mirror_indices["sideneg_obs_inds"]
+        )
+        self.lr_inds = (
+            self.mirror_indices["left_obs_inds"] + self.mirror_indices["right_obs_inds"]
+        )
+        self.rl_inds = (
+            self.mirror_indices["right_obs_inds"] + self.mirror_indices["left_obs_inds"]
+        )
 
     def get_obs(self, robot_state):
         obs = super().get_obs(robot_state)
@@ -379,7 +386,7 @@ class CassiePhaseMirrorEnv(CassiePhaseMoccaEnv):
         if phase > 0.5:
             obs[self.lr_inds] = obs[self.rl_inds]
             obs[self.neg_inds] *= -1
-        return
+        return obs
 
 
 # class CassieOSUEnv(CassieMoccaEnv):
