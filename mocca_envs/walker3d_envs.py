@@ -2,7 +2,7 @@ import gym
 import numpy as np
 
 from mocca_envs.env_base import EnvBase
-from mocca_envs.bullet_objects import VSphere, Pillar, Plank, Rectangle, Sofa
+from mocca_envs.bullet_objects import VSphere, Pillar, Plank, LargePlank
 from mocca_envs.robots import Child3D, Walker3D
 
 Colors = {
@@ -310,8 +310,8 @@ class Walker3DStepperEnv(EnvBase):
 
         for index in range(self.rendered_step_count):
             # p = Pillar(self._p, self.step_radius)
-            p = Plank(self._p, self.step_radius)
-            # p = LargePlank(self._p, self.step_radius)
+            # p = Plank(self._p, self.step_radius)
+            p = LargePlank(self._p, self.step_radius)
             self.steps.append(p)
             step_ids = step_ids | {(p.id, p.base_id)}
             cover_ids = cover_ids | {(p.id, p.cover_id)}
