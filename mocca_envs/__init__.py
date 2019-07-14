@@ -42,9 +42,14 @@ register(
     kwargs={"planar": True},
 )
 
-
 register(
     id="Walker3DCustomEnv-v0",
     entry_point="mocca_envs.walker3d_envs:Walker3DCustomEnv",
+    max_episode_steps=1000,
+)
+
+register(
+    id="Walker3DStepperEnv-v0",
+    entry_point="mocca_envs.walker3d_envs:Walker3DStepperEnv",
     max_episode_steps=1000,
 )
