@@ -23,6 +23,7 @@ class Walker3DCustomEnv(EnvBase):
     def __init__(self, render=False):
         super(Walker3DCustomEnv, self).__init__(Walker3D, render)
         self.robot.set_base_pose(pose="running_start")
+        self.eval_mode = False
 
         self.electricity_cost = 4.5
         self.stall_torque_cost = 0.225
@@ -38,9 +39,16 @@ class Walker3DCustomEnv(EnvBase):
         self.target = VSphere(self._p, radius=0.15, pos=None)
 
     def randomize_target(self):
-        self.dist = self.np_random.uniform(3, 5)
-        self.angle = self.np_random.uniform(-np.pi / 2, np.pi / 2)
+        if self.eval_mode:
+            self.dist = 4
+            self.angle = 0
+        else:
+            self.dist = self.np_random.uniform(3, 5)
+            self.angle = self.np_random.uniform(-np.pi / 2, np.pi / 2)
         self.stop_frames = self.np_random.choice([30.0, 60.0])
+
+    def evaluation_mode(self):
+        self.eval_mode = True
 
     def reset(self):
         self.done = False
@@ -75,6 +83,9 @@ class Walker3DCustomEnv(EnvBase):
     def step(self, action):
         self.robot.apply_action(action)
         self.scene.global_step()
+
+        if self.eval_mode:
+            self.walk_target = np.array([self.robot.body_xyz[0] + 4, 0, 1.0])
 
         self.robot_state = self.robot.calc_state(self.ground_ids)
         self.calc_env_state(action)
@@ -256,6 +267,9 @@ class Walker3DStepperEnv(EnvBase):
         )
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.action_space = self.robot.action_space
+
+    def evaluation_mode(self):
+        self.pitch_limit = 0
 
     def generate_step_placements(
         self,
