@@ -2,7 +2,7 @@
 
 "Good artists borrow, great artists steal."
 
-Sorry, the documentation is pretty much non-existent at this point. I'll try to work on it in the next couple of days. The `master` branch is also way behind the other ones which should be fixed soon. [`symmetric_rl`](https://github.com/UBCMOCCA/mocca_envs/tree/symmetric-rl) is the branch that was used in our recent publication "On Learning Symmetric Loocmotion".
+This repository contains the environments used in [On Learning Symmetric Loocmotion](https://dl.acm.org/citation.cfm?id=3360070), i.e. `Walker3DCustomEnv-v0` and `Walker3DStepperEnv-v0`.  There are some other WIP environments.
 
 ## Installation
 You can use the `setup.py` for installing tha `mocca_envs` package:
@@ -10,7 +10,7 @@ You can use the `setup.py` for installing tha `mocca_envs` package:
 ## You might need to use `python3` or prepend `sudo` depending on your setup 
 python setup.py install
 ```
-You may also wish to install **PyBullet** manually.
+You may also wish to install [PyBullet](https://pypi.org/project/pybullet/) separately.
 
 ## Environments
 Current environments:
