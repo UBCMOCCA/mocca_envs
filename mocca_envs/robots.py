@@ -454,14 +454,16 @@ class Walker3D(WalkerBase):
         high = np.inf * np.ones(self.state_dim)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
-    def load_robot_model(self):
-        flags = (
-            self._p.MJCF_COLORS_FROM_FILE
-            | self._p.URDF_USE_SELF_COLLISION
-            | self._p.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
-        )
-        model_path = os.path.join(current_dir, "data", "custom", "walker3d.xml")
-        root_link_name = None
+    def load_robot_model(self, model_path=None, flags=None, root_link_name=None):
+        if flags is None:
+            flags = (
+                self._p.MJCF_COLORS_FROM_FILE
+                | self._p.URDF_USE_SELF_COLLISION
+                | self._p.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
+            )
+
+        if model_path is None:
+            model_path = os.path.join(current_dir, "data", "custom", "walker3d.xml")
 
         # Need to call this first to parse body
         super(Walker3D, self).load_robot_model(model_path, flags, root_link_name)
@@ -526,9 +528,11 @@ class Walker3D(WalkerBase):
             ds = self.np_random.uniform(low=-0.1, high=0.1, size=self.action_dim)
             ps = self.to_normalized(self.base_joint_angles + ds)
             ps = self.to_radians(np.clip(ps, -0.95, 0.95))
+        else:
+            ps = self.base_joint_angles
 
-            for i, j in enumerate(self.ordered_joints):
-                j.reset_current_position(ps[i], self.base_joint_speeds[i])
+        for i, j in enumerate(self.ordered_joints):
+            j.reset_current_position(ps[i], self.base_joint_speeds[i])
 
         pos = self.base_position if pos is None else pos
         quat = self.base_orientation if quat is None else quat
@@ -550,32 +554,12 @@ class Child3D(Walker3D):
         super().__init__(bc)
         self.power = 0.4
 
-    def load_robot_model(self):
-        flags = (
-            self._p.MJCF_COLORS_FROM_FILE
-            | self._p.URDF_USE_SELF_COLLISION
-            | self._p.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
-        )
-        model_path = os.path.join(current_dir, "data", "custom", "child3d.xml")
-        root_link_name = None
+    def load_robot_model(self, model_path=None, flags=None, root_link_name=None):
+        if model_path is None:
+            model_path = os.path.join(current_dir, "data", "custom", "child3d.xml")
 
-        # Need to call this first to parse body
-        super(Walker3D, self).load_robot_model(model_path, flags, root_link_name)
-
-        # Set pose to a good initial pose
-        self.base_joint_angles = np.zeros(self.action_dim)
-        self.base_position = (0, 0, 1.35)
-        self.base_orientation = (0, 0, 0, 1)
-
-        # Need this to set pose and mirroring
-        # hip_[x,z,y], knee, ankle, shoulder_[x,z,y], elbow
-        self._right_joint_indices = np.array(
-            [3, 4, 5, 6, 7, 13, 14, 15, 16], dtype=np.int64
-        )
-        self._left_joint_indices = np.array(
-            [8, 9, 10, 11, 12, 17, 18, 19, 20], dtype=np.int64
-        )
-        self._negation_joint_indices = np.array([0, 2], dtype=np.int64)  # abdomen_[x,z]
+        super().load_robot_model(model_path)
+        self.base_position = (0, 0, 0.38)
 
 
 class Walker2D(WalkerBase):

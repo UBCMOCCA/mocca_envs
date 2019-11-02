@@ -1,8 +1,11 @@
+import os
+
 import gym
 import numpy as np
+import torch
 
 from mocca_envs.env_base import EnvBase
-from mocca_envs.bullet_objects import VSphere, Pillar, Plank, LargePlank
+from mocca_envs.bullet_objects import VSphere, Pillar, Plank, LargePlank, Chair, Bench
 from mocca_envs.robots import Child3D, Walker3D
 
 Colors = {
@@ -20,8 +23,11 @@ class Walker3DCustomEnv(EnvBase):
     llc_frame_skip = 1
     sim_frame_skip = 4
 
+    robot_class = Walker3D
+    termination_height = 0.7
+
     def __init__(self, render=False):
-        super(Walker3DCustomEnv, self).__init__(Walker3D, render)
+        super().__init__(self.robot_class, render)
         self.robot.set_base_pose(pose="running_start")
         self.eval_mode = False
 
@@ -164,7 +170,7 @@ class Walker3DCustomEnv(EnvBase):
 
         # Calculate done
         height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
-        self.tall_bonus = 2.0 if height > 0.7 else -1.0
+        self.tall_bonus = 2.0 if height > self.termination_height else -1.0
         self.done = self.done or self.tall_bonus < 0
 
     def calc_target_reward(self):
@@ -229,6 +235,68 @@ class Walker3DCustomEnv(EnvBase):
         )
 
 
+class Child3DCustomEnv(Walker3DCustomEnv):
+
+    robot_class = Child3D
+    termination_height = 0.1
+
+    def __init__(self, render=False):
+        super().__init__(render)
+        self.robot.set_base_pose(pose="crawl")
+
+    def calc_base_reward(self, action):
+        super().calc_base_reward(action)
+
+
+class Walker3DChairEnv(Walker3DCustomEnv):
+    def __init__(self, render=False):
+        super().__init__(render)
+        self.robot.set_base_pose(pose="sit")
+
+    def create_terrain(self):
+
+        self.chair = Chair(self._p)
+        self.bench = Bench(self._p, pos=np.array([3, 0, 0]))
+
+    def randomize_target(self):
+        self.dist = 3.0
+        self.angle = 0
+        self.stop_frames = 1000
+
+    def reset(self):
+        self.done = False
+        self.add_angular_progress = True
+        self.randomize_target()
+
+        self.walk_target = np.array(
+            [self.dist * np.cos(self.angle), self.dist * np.sin(self.angle), 1.0]
+        )
+        self.close_count = 0
+
+        self._p.restoreState(self.state_id)
+
+        # Disable random pose for now
+        # How to set on chair with random pose?
+        self.robot.reset(random_pose=False, pos=(0, 0, 1.1))
+        self.robot_state = self.robot.calc_state()
+
+        # Reset camera
+        if self.is_render:
+            self.camera.lookat(self.robot.body_xyz)
+            self.target.set_position(pos=self.walk_target)
+
+        self.calc_potential()
+
+        sin_ = self.distance_to_target * np.sin(self.angle_to_target)
+        sin_ = sin_ / (1 + abs(sin_))
+        cos_ = self.distance_to_target * np.cos(self.angle_to_target)
+        cos_ = cos_ / (1 + abs(cos_))
+
+        state = np.concatenate((self.robot_state, [sin_], [cos_]))
+
+        return state
+
+
 class Walker3DStepperEnv(EnvBase):
 
     control_step = 1 / 60
@@ -246,12 +314,14 @@ class Walker3DStepperEnv(EnvBase):
         super().__init__(Walker3D, render)
         self.robot.set_base_pose(pose="running_start")
 
+        # Robot settings
         self.electricity_cost = 4.5
         self.stall_torque_cost = 0.225
         self.joints_at_limit_cost = 0.1
 
+        # Env settings
         self.n_steps = 24
-        self.lookahead = 2
+        self.lookahead = 4
         self.next_step_index = 0
 
         # Terrain info
@@ -261,7 +331,7 @@ class Walker3DStepperEnv(EnvBase):
         # x, y, z, phi, x_tilt, y_tilt
         self.terrain_info = np.zeros((self.n_steps, 6))
 
-        # (2 targets) * (x, y, z, x_tilt, y_tilt)
+        # robot_state + (2 targets) * (x, y, z, x_tilt, y_tilt)
         high = np.inf * np.ones(
             self.robot.observation_space.shape[0] + self.lookahead * 5
         )
@@ -548,25 +618,22 @@ class Walker3DStepperEnv(EnvBase):
 
         self.walk_target = targets[[1], 0:3].mean(axis=0)
 
-        deltas = targets[:, 0:3] - self.robot.body_xyz
-        target_thetas = np.arctan2(deltas[:, 1], deltas[:, 0])
+        delta_pos = targets[:, 0:3] - self.robot.body_xyz
+        target_thetas = np.arctan2(delta_pos[:, 1], delta_pos[:, 0])
 
         angle_to_targets = target_thetas - self.robot.body_rpy[2]
-        distance_to_targets = np.linalg.norm(deltas[:, 0:2], ord=2, axis=1)
+        distance_to_targets = np.linalg.norm(delta_pos[:, 0:2], ord=2, axis=1)
 
         deltas = np.stack(
             (
                 np.sin(angle_to_targets) * distance_to_targets,  # x
                 np.cos(angle_to_targets) * distance_to_targets,  # y
-                deltas[:, 2],  # z
+                delta_pos[:, 2],  # z
                 targets[:, 4],  # x_tilt
                 targets[:, 5],  # y_tilt
             ),
             axis=1,
         )
-
-        # Normalize targets x,y to between -1 and +1 using softsign
-        # deltas[:, 0:2] /= 1 + np.abs(deltas[:, 0:2])
 
         return deltas
 
