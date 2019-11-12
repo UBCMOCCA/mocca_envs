@@ -49,13 +49,14 @@ class EnvBase(gym.Env):
 
         self.scene = SinglePlayerStadiumScene(
             self._p,
-            gravity=9.8,
+            gravity = 9.81,
             timestep=self.control_step / self.llc_frame_skip / self.sim_frame_skip,
             frame_skip=self.sim_frame_skip,
         )
         self.scene.initialize()
 
         # Create floor
+        # self.ground_ids = {(self.scene.ground_plane_mjcf[0], -1)}
         self.ground_ids = {(self.scene.ground_plane_mjcf[0], -1)}
 
         # Create robot object

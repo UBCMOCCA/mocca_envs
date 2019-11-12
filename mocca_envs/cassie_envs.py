@@ -10,6 +10,9 @@ from mocca_envs import current_dir
 
 from .loadstep import CassieTrajectory
 
+# from mocca_envs.cassie.CassieParams import CassieParams
+# from mocca_envs.cassie.robot_data import RobotData
+#stupid comment
 
 class CassieEnv(EnvBase):
 
@@ -41,7 +44,7 @@ class CassieEnv(EnvBase):
             400,
         ]
     )
-    kp = kp / 1.9
+    kp = kp
     # kp[[4, 9]] /= 2
     kd = kp / 10
 
@@ -86,7 +89,7 @@ class CassieEnv(EnvBase):
         self.robot.reset_joint_positions(self.base_angles(), self.base_velocities())
         self.jvel = self.base_velocities()
 
-    def mocap_time(self):
+    def phase(self):
         return self.istep * self.control_step / self.llc_frame_skip
 
     def reset(self, istep=0):
@@ -220,6 +223,8 @@ class CassieMocapRewEnv(CassieEnv):
         wleft = 1 - sum(self.weights.values())
         self.weights["JPosRew"] = wleft / 5 * 4
         self.weights["JVelRew"] = wleft / 5
+        # self.weights["DeviationRew"] = -0.05 if self.residual_control else 0
+        # self.weights["EnergyUseRew"] = -0.00001
 
     def compute_rewards(self, action, torques):
         dead, rewards = super(CassieMocapRewEnv, self).compute_rewards(action, torques)
@@ -259,7 +264,42 @@ class CassieMocapRewEnv(CassieEnv):
         return dead, weighted_rewards
 
 
-class CassieMoccaEnv(CassieMocapRewEnv):
+class CassieMocapEnv(CassieMocapRewEnv):
+    mocap_path = os.path.join(current_dir, "data/cassie/mocap/", "cassie_step_data.pkl")
+    mocap_frame_skip = 60
+    mocap_cycle_length = 28
+    initial_velocity = [0.8, 0, 0]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        with open(self.mocap_path, "rb") as datafile:
+            self.step_data = pickle.load(datafile)
+
+    def reset(self):
+        self.phase = (
+            self.np_random.randint(0, self.mocap_cycle_length) if self.rsi else 0
+        )
+        return super().reset()
+
+    def base_angles(self):
+        return self.step_data[self.phase * self.mocap_frame_skip]  # TODO: fix time
+
+    def base_velocities(self):
+        return (
+            self.mocap_frame_skip
+            / self.control_step
+            * (
+                self.step_data[self.phase * self.mocap_frame_skip + 1]
+                - self.step_data[self.phase * self.mocap_frame_skip]
+            )
+        )
+
+    def step(self, action):
+        self.phase = (self.phase + 1) % self.mocap_cycle_length
+        return super().step(action)
+
+
+class CassieDynStateOSUEnv(CassieMocapRewEnv):
     initial_velocity = [0.8, 0, 0]
 
     mirror_indices = {
@@ -303,6 +343,8 @@ class CassieMoccaEnv(CassieMocapRewEnv):
         high = np.inf * np.ones(40)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.traj = CassieTrajectory()
+        # self.traj = RobotData()
+        # self.traj = CassieParams()
 
     def reset(self, istep=None):
         if istep is None:
@@ -311,7 +353,7 @@ class CassieMoccaEnv(CassieMocapRewEnv):
 
     def resetJoints(self):
         super().resetJoints()
-        t = self.mocap_time()
+        t = self.phase()
         rod_joint_names = [
             "fixed_right_achilles_rod_joint_z",
             "fixed_right_achilles_rod_joint_y",
@@ -322,10 +364,10 @@ class CassieMoccaEnv(CassieMocapRewEnv):
             self.robot.rod_joints[jname].reset_current_position(angle, 0)
 
     def base_angles(self):
-        return self.traj.joint_angles(self.mocap_time())
+        return self.traj.joint_angles(self.phase())
 
     def base_velocities(self):
-        return self.traj.joint_speeds(self.mocap_time())
+        return self.traj.joint_speeds(self.phase())
 
     def get_obs(self, _):
         quaternion = self._p.getQuaternionFromEuler(self.robot.body_rpy)
@@ -347,68 +389,99 @@ class CassieMoccaEnv(CassieMocapRewEnv):
         )
 
 
-class CassiePhaseMoccaEnv(CassieMoccaEnv):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        high = np.inf * np.ones(42)
-        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
+class CassieMirrorEnv(CassieDynStateOSUEnv):
+    initial_velocity = [0.6, 0, 0]
+    mirror_sizes = [
+        6,  # c_in
+        6,  # n_in
+        14,  # s_in
+        0,  # c_out
+        0,  # n_out
+        5,  # s_out
+    ]
 
-        self.mirror_indices = copy.deepcopy(self.mirror_indices)
-        self.mirror_indices["left_obs_inds"] += [40]
-        self.mirror_indices["right_obs_inds"] += [41]
+    def __init__(self, phase_in_obs=False, residual_control=False, *args, **kwargs):
+        super().__init__(residual_control=True, *args, **kwargs)
+        self.residual = residual_control
+        self.cycle_length = self.traj.max_time()
+        self.phase_in_obs = phase_in_obs
+        if phase_in_obs:
+            high = np.inf * np.ones(40 + 2)
+            self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
+            self.mirror_sizes[2] += 1  # +1 to s_in
+        self.weights["JPosRew"] = 0
+        self.weights["JVelRew"] = 0
 
-    def get_obs(self, robot_state):
-        dyn_state = super().get_obs(robot_state)
+    def base_angles(self):
+        if self.in_reset or self.residual:
+            return self.traj.joint_angles(self.phase())
+        else:
+            return np.array(self.robot.base_joint_angles)
 
-        phase_l = (self.mocap_time() / self.traj.max_time()) % 1
-        phase_r = (phase_l + 0.5) % 1
+    def reset(self):
+        self.in_reset = True
+        obs = super().reset(700)
+        self.in_reset = False
+        return obs
 
-        return np.concatenate([dyn_state, [phase_l, phase_r]])
-
-
-class CassiePhaseMirrorEnv(CassiePhaseMoccaEnv):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.neg_inds = (
-            self.mirror_indices["neg_obs_inds"]
-            + self.mirror_indices["sideneg_obs_inds"]
-        )
-        self.lr_inds = (
-            self.mirror_indices["left_obs_inds"] + self.mirror_indices["right_obs_inds"]
-        )
-        self.rl_inds = (
-            self.mirror_indices["right_obs_inds"] + self.mirror_indices["left_obs_inds"]
-        )
+    def step(self, action):
+        action[self.mirror_indices["sideneg_act_inds"]] *= -1
+        return super().step(action)
 
     def get_obs(self, robot_state):
         obs = super().get_obs(robot_state)
-        phase = obs[-2]
-        if phase > 0.5:
-            obs[self.lr_inds] = obs[self.rl_inds]
-            obs[self.neg_inds] *= -1
-        return obs
+        obs[self.mirror_indices["sideneg_obs_inds"]] *= -1
+
+        phase = []
+        if self.phase_in_obs:
+            phase = [(self.phase() % self.cycle_length) / self.cycle_length]
+        phase = np.array(phase)
+
+        return np.concatenate(
+            [
+                obs[self.mirror_indices["com_obs_inds"]],
+                obs[self.mirror_indices["neg_obs_inds"]],
+                phase,
+                obs[self.mirror_indices["left_obs_inds"]],
+                (phase + 0.5) % 1,
+                obs[self.mirror_indices["right_obs_inds"]],
+            ]
+        )
 
 
-# class CassieOSUEnv(CassieMoccaEnv):
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-#         high = np.inf * np.ones(80)
-#         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
+class CassieOSUEnv(CassieDynStateOSUEnv):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        high = np.inf * np.ones(80)
+        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
-#         self.mirror_indices = copy.deepcopy(self.mirror_indices)
+        self.mirror_indices = copy.deepcopy(self.mirror_indices)
 
-#         for key in self.mirror_indices.keys():
-#             if "obs" in key:
-#                 self.mirror_indices[key] = np.concatenate(
-#                     [self.mirror_indices[key], np.array(self.mirror_indices[key]) + 40]
-#                 ).tolist()
+        for key in self.mirror_indices.keys():
+            if "obs" in key:
+                self.mirror_indices[key] = np.concatenate(
+                    [self.mirror_indices[key], np.array(self.mirror_indices[key]) + 40]
+                ).tolist()
 
-#     def get_obs(self, robot_state):
-#         t = (self.istep + 1) * self.control_step / self.llc_frame_skip
-#         kin_state = self.traj.state(t)
-#         kin_state[0] = 0  # fix desired y to be exactly 0
+    def get_obs(self, robot_state):
+        t = (self.istep + 1) * self.control_step / self.llc_frame_skip
+        kin_state = self.traj.state(t)
+        kin_state[0] = 0  # fix desired y to be exactly 0
 
-#         dyn_state = super().get_obs(robot_state)
+        dyn_state = super().get_obs(robot_state)
 
-#         return np.concatenate([dyn_state, kin_state])
+        return np.concatenate([dyn_state, kin_state])
 
+
+class CassieMocapPhaseEnv(CassieMocapEnv):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.kp[[0, 5]] *= 2
+        self.kd[[0, 5]] *= 2
+        high = np.concatenate([self.observation_space.high, [1]])
+        self.observation_space = gym.spaces.Box(-1 * high, high, dtype=np.float32)
+
+    def get_obs(self, robot_state):
+        return np.concatenate(
+            [super().get_obs(robot_state), [self.phase / self.mocap_cycle_length]]
+        )
