@@ -836,42 +836,25 @@ class Walker3DMocapStepperEnv(Walker3DMocapEnv):
     def get_mirror_indices(self):
 
         action_dim = self.robot.action_space.shape[0]
+        # _ + 6 accounting for global
+        right = self.robot._right_joint_indices + 10
+        # _ + action_dim to get velocities, 48 is right foot contact
+        right = np.concatenate((right, right + action_dim, [48+4]))
+        # Do the same for left, except using 49 for left foot contact
+        left = self.robot._left_joint_indices + 10
+        left = np.concatenate((left, left + action_dim, [49+4]))
 
-        right_obs_indices = np.concatenate(
-            (
-                # joint angle indices + 6 accounting for global
-                6 + self.robot._right_joint_indices,
-                # joint velocity indices
-                6 + self.robot._right_joint_indices + action_dim,
-                # right foot contact
-                [6 + 2 * action_dim],
-            )
-        )
-
-        # Do the same for left, except using +1 for left foot contact
-        left_obs_indices = np.concatenate(
-            (
-                6 + self.robot._left_joint_indices,
-                6 + self.robot._left_joint_indices + action_dim,
-                [6 + 2 * action_dim + 1],
-            )
-        )
-
-        negation_obs_indices = np.array(
-            [
-                2,  # vy
-                4,  # roll
-                6,  # abdomen_z pos
-                8,  # abdomen_x pos
-                27,  # abdomen_z vel
-                29,  # abdomen_x vel
-                50,  # sin(-a) = -sin(a) of next step
-                53,  # x_tilt of next step
-                55,  # sin(-a) = -sin(a) of next + 1 step
-                58,  # x_tilt of next + 1 step
-            ],
-            dtype=np.int64,
-        )
+        # Used for creating mirrored observations
+        # 2:  vy
+        # 4:  roll
+        # 6:  abdomen_z pos
+        # 8:  abdomen_x pos
+        # 27: abdomen_z vel
+        # 29: abdomen_x vel
+        # 50: sin(-a) = -sin(a)
+        negation_obs_indices = np.array([2, 4, 6, 7, 9, 6+4, 8+4, 27+4, 29+4, 50+5, 53+5,55+5,58+5], dtype=np.int64)
+        right_obs_indices = right
+        left_obs_indices = left
 
         # Used for creating mirrored actions
         negation_action_indices = self.robot._negation_joint_indices
@@ -886,6 +869,7 @@ class Walker3DMocapStepperEnv(Walker3DMocapEnv):
             right_action_indices,
             left_action_indices,
         )
+
 
 class Walker3DStepperEnv(EnvBase):
 
