@@ -356,9 +356,9 @@ class Walker3DMocapEnv(Walker3DCustomEnv):
 
         self.done = self.done or (height < 0.9) or (reward < 0.3)
 
-        if self.is_render:
-            self._handle_keyboard()
-            self.camera.track(pos=np.array([self.robot.body_xyz[0], 0, 1.2]))
+        # if self.is_render:
+        #     self._handle_keyboard()
+        #     self.camera.track(pos=np.array([self.robot.body_xyz[0], 0, 1.2]))
 
         # self.robot_state = self.robot.reset(random_pose=False, pose=self.mocap_poses[self.phase], pos=[self.mocap_x[self.phase] + self.counter * 1.2,0,self.mocap_heights[self.phase]+0.5])
         # j, jv = self.robot.cal_j_and_jv()
@@ -470,7 +470,7 @@ class Walker3DMocapEnv(Walker3DCustomEnv):
 class Walker3DMocapStepperEnv(Walker3DMocapEnv):
 
     control_step = 1 / 30
-    llc_frame_skip = 33
+    llc_frame_skip = 15
     sim_frame_skip = 1
 
     def __init__(self, render=False):
