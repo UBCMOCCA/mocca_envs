@@ -639,7 +639,9 @@ class Walker3DMocapStepperEnv(Walker3DMocapEnv):
         # Order is important because walk_target is set up above
         self.calc_potential()
 
-        state = np.concatenate((obs, self.targets.flatten()))
+        self.robot_state = self.robot.calc_state(self.ground_ids)
+        state = np.concatenate((self.robot_state, [self.phase * 1.0 / self.max_phase]))
+        state = np.concatenate((state, self.targets.flatten()))
         height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
         state[0] = height
         #import time; time.sleep(12)
@@ -653,7 +655,23 @@ class Walker3DMocapStepperEnv(Walker3DMocapEnv):
         self.robot_state = self.robot.calc_state()
         self.calc_env_state(action)
 
-        state = np.concatenate((obs, self.targets.flatten()))
+        self.robot_state = self.robot.calc_state(self.ground_ids)
+        state = np.concatenate((self.robot_state, [self.phase * 1.0 / self.max_phase]))
+        state = np.concatenate((state, self.targets.flatten()))
+        if self.mirror and self.phase >= self.max_phase / 2:
+            (
+                negation_obs_indices,
+                right_obs_indices,
+                left_obs_indices,
+                negation_action_indices,
+                right_action_indices,
+                left_action_indices,
+            ) = self.get_mirror_indices_child()
+            state[negation_obs_indices] *=-1
+            rl = np.concatenate((right_obs_indices, left_obs_indices))
+            lr = np.concatenate((left_obs_indices, right_obs_indices))
+            state[rl] = state[lr]
+            state[54] -= 0.5
 
         #reward += self.progress - self.energy_penalty
         reward += self.step_bonus + self.target_bonus - self.speed_penalty
@@ -833,7 +851,7 @@ class Walker3DMocapStepperEnv(Walker3DMocapEnv):
 
         return deltas
 
-    def get_mirror_indices(self):
+    def get_mirror_indices_child(self):
 
         action_dim = self.robot.action_space.shape[0]
         # _ + 6 accounting for global
