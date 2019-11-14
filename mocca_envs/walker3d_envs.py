@@ -1,9 +1,16 @@
+import os
+
+current_dir = os.path.dirname(os.path.realpath(__file__))
+
 import gym
 import numpy as np
 
 from mocca_envs.env_base import EnvBase
 from mocca_envs.bullet_objects import VSphere, Pillar, Plank, LargePlank
 from mocca_envs.robots import Walker2D, Walker3D
+
+import torch
+from mocca_envs.model import ActorCriticNet
 
 Colors = {
     "dodgerblue": (0.11764705882352941, 0.5647058823529412, 1.0, 1.0),
@@ -225,7 +232,7 @@ class Walker3DMocapEnv(Walker3DCustomEnv):
 
     def __init__(self, render=False):
         super(Walker3DCustomEnv, self).__init__(Walker3D, render)
-        self.mirror = False
+        self.mirror = True
         self.phase = 0
         self.max_phase = 38
         self.kp = self.robot.torque_limits / self.robot.torque_limits
@@ -495,7 +502,7 @@ class Walker3DMocapStepperEnv(Walker3DMocapEnv):
         self.next_step_index = 0
 
         # Terrain info
-        self.pitch_limit = 0
+        self.pitch_limit = 20
         self.yaw_limit = 0
         self.tilt_limit = 0
         # x, y, z, phi, x_tilt, y_tilt
@@ -508,11 +515,14 @@ class Walker3DMocapStepperEnv(Walker3DMocapEnv):
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.action_space = self.robot.action_space
 
+        self.base_controller = ActorCriticNet(55, self.action_space.shape[0], hidden_layer=[256, 256], num_contact=2)
+        self.base_controller.load_state_dict(torch.load(os.path.join(current_dir, "data", "walkermocap_policy.pt")))
+
     def generate_step_placements(
         self,
         n_steps=50,
         min_gap=0.65,
-        max_gap=0.65,
+        max_gap=0.85,
         yaw_limit=30,
         pitch_limit=25,
         tilt_limit=10,
@@ -616,6 +626,28 @@ class Walker3DMocapStepperEnv(Walker3DMocapEnv):
             quaternion = np.array(self._p.getQuaternionFromEuler([x_tilt, y_tilt, phi]))
             self.steps[oldest].set_position(pos=pos, quat=quaternion)
 
+    def get_base_state(self):
+        self.robot_state = self.robot.calc_state(self.ground_ids)
+        state = np.concatenate((self.robot_state, [self.phase * 1.0 / self.max_phase]))
+        height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
+        state[0] = height
+
+        if self.mirror and self.phase >= self.max_phase / 2:
+            (
+                negation_obs_indices,
+                right_obs_indices,
+                left_obs_indices,
+                negation_action_indices,
+                right_action_indices,
+                left_action_indices,
+            ) = self.get_mirror_indices()
+            state[negation_obs_indices] *=-1
+            rl = np.concatenate((right_obs_indices, left_obs_indices))
+            lr = np.concatenate((left_obs_indices, right_obs_indices))
+            state[rl] = state[lr]
+            state[-1] -= 0.5
+        return state
+
     def reset(self):
         obs = super().reset(phase=3, height_adj=20)
         self.target_reached_count = 0
@@ -649,8 +681,12 @@ class Walker3DMocapStepperEnv(Walker3DMocapEnv):
         return state
 
     def step(self, action):
+        base_state = self.get_base_state()
+        with torch.no_grad():
+            base_action = self.base_controller.sample_best_actions(torch.from_numpy(base_state).float().unsqueeze(0))
+        base_action = base_action.squeeze().numpy()
 
-        obs, reward, _, _, = super().step(action)
+        obs, reward, _, _, = super().step(base_action+action)
         #print("reward", reward)
         self.robot_state = self.robot.calc_state()
         self.calc_env_state(action)
@@ -689,8 +725,7 @@ class Walker3DMocapStepperEnv(Walker3DMocapEnv):
 
         height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
         self.done = (height < 0.7)
-        #print("height", height)
-        # state[0] = height
+        state[0] = height
 
         return state, reward, self.done, {}
 
