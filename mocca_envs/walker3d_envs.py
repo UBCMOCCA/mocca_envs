@@ -515,7 +515,7 @@ class Walker3DStepperEnv(EnvBase):
 
         self.sample_size = 11
         self.yaw_samples = np.linspace(-self.yaw_limit, self.yaw_limit, num=self.sample_size) * DEG2RAD
-        self.pitch_samples = np.linspace(-20, -20, num=self.sample_size) * DEG2RAD
+        self.pitch_samples = np.linspace(-20, 20, num=self.sample_size) * DEG2RAD
         self.yaw_pitch_prob = np.ones((self.sample_size, self.sample_size)) / (self.sample_size**2)
 
         # x, y, z, phi, x_tilt, y_tilt
@@ -708,6 +708,7 @@ class Walker3DStepperEnv(EnvBase):
 
         height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
         state[0] = height
+        print(height)
 
         return state, reward, self.done, {}
 
@@ -922,6 +923,22 @@ class Walker3DStepperEnv(EnvBase):
         self.terrain_info[bound_checked_index, 1] = y
         self.terrain_info[bound_checked_index, 2] = z
         self.terrain_info[bound_checked_index, 3] = yaw
+
+    def update_sample_prob(self, sample_prob):
+        if self.update_terrain:
+            self.yaw_pitch_prob = sample_prob
+            self.update_terrain_info()
+
+    def update_curriculum(self, curriculum):
+        self.curriculum = min(curriculum, 5)
+        half_size = (self.sample_size-1)//2
+        if self.curriculum >= half_size:
+            self.curriculum = half_size
+        self.yaw_pitch_prob *= 0
+        prob = 1.0 / (self.curriculum * 2 + 1)**2
+        #print(self.curriculum, prob)
+        window = slice(half_size-self.curriculum, half_size+self.curriculum+1)
+        self.yaw_pitch_prob[window, window] = prob
 
     def get_mirror_indices(self):
 
