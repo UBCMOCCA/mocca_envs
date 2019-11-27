@@ -708,7 +708,7 @@ class Walker3DStepperEnv(EnvBase):
 
         height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
         state[0] = height
-        print(height)
+        #print(height)
 
         return state, reward, self.done, {}
 
@@ -836,7 +836,7 @@ class Walker3DStepperEnv(EnvBase):
         self.update_terrain = (cur_step_index != self.next_step_index)
 
         if cur_step_index != self.next_step_index:
-            self.update_terrain_info()
+            #self.update_terrain_info()
             self.calc_potential()
 
     def delta_to_k_targets(self, k=1):
@@ -947,20 +947,20 @@ class Walker3DStepperEnv(EnvBase):
         right_obs_indices = np.concatenate(
             (
                 # joint angle indices + 6 accounting for global
-                10 + self.robot._right_joint_indices,
+                6 + self.robot._right_joint_indices,
                 # joint velocity indices
-                10 + self.robot._right_joint_indices + action_dim,
+                6 + self.robot._right_joint_indices + action_dim,
                 # right foot contact
-                [10 + 2 * action_dim],
+                [6 + 2 * action_dim],
             )
         )
 
         # Do the same for left, except using +1 for left foot contact
         left_obs_indices = np.concatenate(
             (
-                10 + self.robot._left_joint_indices,
-                10 + self.robot._left_joint_indices + action_dim,
-                [10 + 2 * action_dim + 1],
+                6 + self.robot._left_joint_indices,
+                6 + self.robot._left_joint_indices + action_dim,
+                [6 + 2 * action_dim + 1],
             )
         )
 
@@ -969,14 +969,14 @@ class Walker3DStepperEnv(EnvBase):
                 2,  # vy
                 4,  # roll
                 6, 7, 9, #yaw, wx, wz
-                6+4,  # abdomen_z pos
-                8+4,  # abdomen_x pos
-                27+4,  # abdomen_z vel
-                29+4,  # abdomen_x vel
-                50+4,  # sin(-a) = -sin(a) of next step
-                53+4,  # x_tilt of next step
-                55+4,  # sin(-a) = -sin(a) of next + 1 step
-                58+4,  # x_tilt of next + 1 step
+                6,  # abdomen_z pos
+                8,  # abdomen_x pos
+                27,  # abdomen_z vel
+                29,  # abdomen_x vel
+                50,  # sin(-a) = -sin(a) of next step
+                53,  # x_tilt of next step
+                55,  # sin(-a) = -sin(a) of next + 1 step
+                58,  # x_tilt of next + 1 step
             ],
             dtype=np.int64,
         )
