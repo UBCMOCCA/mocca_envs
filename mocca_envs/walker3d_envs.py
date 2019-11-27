@@ -836,7 +836,7 @@ class Walker3DStepperEnv(EnvBase):
         self.update_terrain = (cur_step_index != self.next_step_index)
 
         if cur_step_index != self.next_step_index:
-            #self.update_terrain_info()
+            self.update_terrain_info()
             self.calc_potential()
 
     def delta_to_k_targets(self, k=1):
