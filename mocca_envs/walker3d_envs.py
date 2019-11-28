@@ -913,20 +913,26 @@ class Walker3DStepperEnv(EnvBase):
         base_phi = self.base_phi[bound_checked_index]
         base_yaw = self.terrain_info[self.next_step_index, 3]
 
-        yaw = yaw + base_yaw
-
-        # clip to prevent overlapping
         dx = dr * np.sin(pitch) * np.cos(yaw + base_phi)
+        # clip to prevent overlapping
         dx = np.sign(dx) * min(max(abs(dx), self.step_radius * 3), self.r_range[1])
+        dy = dr * np.sin(pitch) * np.sin(yaw + base_phi)
 
-        x = next_step_xyz[0] + dx
-        y = next_step_xyz[1] + dr * np.sin(pitch) * np.sin(yaw + base_phi)
+        matrix = np.array([
+            [np.cos(base_yaw), -np.sin(base_yaw)], 
+            [np.sin(base_yaw), np.cos(base_yaw)]
+        ])
+
+        dxy = np.dot(matrix, np.concatenate(([dx], [dy])))
+
+        x = next_step_xyz[0] + dxy[0]
+        y = next_step_xyz[1] + dxy[1]
         z = next_step_xyz[2] + dr * np.cos(pitch)
 
         self.terrain_info[bound_checked_index, 0] = x
         self.terrain_info[bound_checked_index, 1] = y
         self.terrain_info[bound_checked_index, 2] = z
-        self.terrain_info[bound_checked_index, 3] = yaw
+        self.terrain_info[bound_checked_index, 3] = yaw + base_yaw
 
     def update_sample_prob(self, sample_prob):
         if self.update_terrain:
