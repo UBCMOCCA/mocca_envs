@@ -473,7 +473,7 @@ class Walker3D(WalkerBase):
         self.action_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
         # globals + angles + speeds + contacts
-        self.state_dim = 10 + self.action_dim * 2 + 2
+        self.state_dim = 6 + self.action_dim * 2 + 2
         high = np.inf * np.ones(self.state_dim)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.P = np.array([60,80,60,80,60,100,90,60,80,60,100,90,60,60,60,50,60,60,60,50,60])
