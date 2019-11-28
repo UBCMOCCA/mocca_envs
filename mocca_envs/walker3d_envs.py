@@ -503,9 +503,9 @@ class Walker3DStepperEnv(EnvBase):
         self.lookahead = 2
         self.next_step_index = 0
 
-        self.base_phi = DEG2RAD * np.array(
-            [-10] + [20, -20] * (self.n_steps // 2 - 1) + [10]
-        )
+        # self.base_phi = DEG2RAD * np.array(
+        #     [-10] + [20, -20] * (self.n_steps // 2 - 1) + [10]
+        # )
 
         # Terrain info
         self.pitch_limit = 20
@@ -661,6 +661,10 @@ class Walker3DStepperEnv(EnvBase):
 
         #self.robot_state = self.robot.reset(random_pose=True)
         self.robot_state = self.robot.reset(random_pose=False, pos=(0.3, 0, 21.25))
+        self.base_phi = DEG2RAD * np.array(
+            [-10] + [20, -20] * (self.n_steps // 2 - 1) + [10]
+        )
+        self.base_phi *= np.sign(float(self.robot.mirrored) - 0.5)
         self.calc_feet_state()
 
         # Randomize platforms
@@ -678,7 +682,7 @@ class Walker3DStepperEnv(EnvBase):
         state = np.concatenate((self.robot_state, self.targets.flatten()))
         height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
         state[0] = height
-        #import time; time.sleep(12)
+        # import time; time.sleep(5)
 
         return state
 

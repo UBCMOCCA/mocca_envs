@@ -283,6 +283,9 @@ class Cassie2D(Cassie):
 
 
 class WalkerBase:
+
+    mirrored = False
+
     def apply_action(self, a):
         assert np.isfinite(a).all()
         x = np.clip(a, -1, 1)
@@ -567,23 +570,27 @@ class Walker3D(WalkerBase):
             self.base_joint_angles[20] = 0.5813480000
 
     def reset(self, random_pose=True, pos=None, quat=None, pose=None, vel=None):
+        base_joint_angles = np.copy(self.base_joint_angles)
         if self.np_random.rand() < 0.5:
-            self.base_joint_angles[self._rl] = self.base_joint_angles[self._lr]
-            self.base_joint_angles[self._negation_joint_indices] *= -1
+            self.mirrored = True
+            base_joint_angles[self._rl] = base_joint_angles[self._lr]
+            base_joint_angles[self._negation_joint_indices] *= -1
+        else:
+            self.mirrored = False
 
         if random_pose:
             # Mirror initial pose
 
             # Add small deviations
             ds = self.np_random.uniform(low=-0.1, high=0.1, size=self.action_dim)
-            ps = self.to_normalized(self.base_joint_angles + ds)
+            ps = self.to_normalized(base_joint_angles + ds)
             ps = self.to_radians(np.clip(ps, -0.95, 0.95))
 
             for i, j in enumerate(self.ordered_joints):
                 j.reset_current_position(ps[i], 0)
         else:
             for i, j in enumerate(self.ordered_joints):
-                j.reset_current_position(self.base_joint_angles[i], 0)
+                j.reset_current_position(base_joint_angles[i], 0)
 
         if pose is not None:
             for i, j in enumerate(self.ordered_joints):
