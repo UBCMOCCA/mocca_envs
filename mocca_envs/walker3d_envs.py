@@ -968,7 +968,7 @@ class Walker3DStepperEnv(EnvBase):
             [
                 2,  # vy
                 4,  # roll
-                6, 7, 9, #yaw, wx, wz
+                6, #yaw, wx, wz
                 6,  # abdomen_z pos
                 8,  # abdomen_x pos
                 27,  # abdomen_z vel
