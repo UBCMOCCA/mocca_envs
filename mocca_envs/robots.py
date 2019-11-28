@@ -336,15 +336,15 @@ class WalkerBase:
 
         wx, wy, wz = self.robot_body.angular_speed() / 10
 
-        # more = np.array(
-        #     [self.body_xyz[2] - self.initial_z, vx, vy, vz, roll, pitch],
-        #     dtype=np.float32,
-        # )
-        vx, vy, vz = self.robot_body.speed()
         more = np.array(
-            [self.body_xyz[2] - self.initial_z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz],
+            [self.body_xyz[2] - self.initial_z, vx, vy, vz, roll, pitch],
             dtype=np.float32,
         )
+        # vx, vy, vz = self.robot_body.speed()
+        # more = np.array(
+        #     [self.body_xyz[2] - self.initial_z, vx, vy, vz, roll, pitch, yaw, wx, wy, wz],
+        #     dtype=np.float32,
+        # )
 
         if contact_object_ids is not None:
             for i, f in enumerate(self.feet):
