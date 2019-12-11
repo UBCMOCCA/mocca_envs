@@ -509,13 +509,13 @@ class Walker3DStepperEnv(EnvBase):
 
         # Terrain info
         self.pitch_limit = 20
-        self.yaw_limit = 0
+        self.yaw_limit = 10
         self.tilt_limit = 0
-        self.r_range = np.array([0.65, 0.85])
+        self.r_range = np.array([0.65, 0.8])
 
         self.sample_size = 11
         self.yaw_samples = np.linspace(-self.yaw_limit, self.yaw_limit, num=self.sample_size) * DEG2RAD
-        self.pitch_samples = np.linspace(-20, 20, num=self.sample_size) * DEG2RAD
+        self.pitch_samples = np.linspace(-40, 40, num=self.sample_size) * DEG2RAD
         self.yaw_pitch_prob = np.ones((self.sample_size, self.sample_size)) / (self.sample_size**2)
 
         # x, y, z, phi, x_tilt, y_tilt
@@ -584,6 +584,10 @@ class Walker3DStepperEnv(EnvBase):
         dr[1] = 0.8
         dphi[1] = 0.0
         dtheta[1] = np.pi / 2
+
+        dr[2] = 0.7
+        dphi[2] = 0.0
+        dtheta[2] = np.pi / 2
 
         x_tilt = self.np_random.uniform(*t_range, size=n_steps)
         y_tilt = self.np_random.uniform(*t_range, size=n_steps)
@@ -660,7 +664,7 @@ class Walker3DStepperEnv(EnvBase):
         self._p.restoreState(self.state_id)
 
         #self.robot_state = self.robot.reset(random_pose=True)
-        self.robot_state = self.robot.reset(random_pose=False, pos=(0.3, 0, 21.25))
+        self.robot_state = self.robot.reset(random_pose=False, pos=(0.3, 0, 21.25), vel=[0.5, 0, 0])
         self.base_phi = DEG2RAD * np.array(
             [-10] + [20, -20] * (self.n_steps // 2 - 1) + [10]
         )
@@ -669,7 +673,7 @@ class Walker3DStepperEnv(EnvBase):
 
         # Randomize platforms
         self.randomize_terrain()
-        self.next_step_index = 0
+        self.next_step_index = 1
 
         # Reset camera
         if self.is_render:
@@ -915,7 +919,7 @@ class Walker3DStepperEnv(EnvBase):
 
         dx = dr * np.sin(pitch) * np.cos(yaw + base_phi)
         # clip to prevent overlapping
-        dx = np.sign(dx) * min(max(abs(dx), self.step_radius * 3), self.r_range[1])
+        dx = np.sign(dx) * min(max(abs(dx), self.step_radius * 2.5), self.r_range[1])
         dy = dr * np.sin(pitch) * np.sin(yaw + base_phi)
 
         matrix = np.array([
