@@ -514,8 +514,8 @@ class Walker3DStepperEnv(EnvBase):
         self.r_range = np.array([0.65, 0.8])
 
         self.sample_size = 11
-        self.yaw_samples = np.linspace(-self.yaw_limit, self.yaw_limit, num=self.sample_size) * DEG2RAD
-        self.pitch_samples = np.linspace(-40, 40, num=self.sample_size) * DEG2RAD
+        self.yaw_samples = np.linspace(-10, 10, num=self.sample_size) * DEG2RAD
+        self.pitch_samples = np.linspace(-50, 50, num=self.sample_size) * DEG2RAD
         self.yaw_pitch_prob = np.ones((self.sample_size, self.sample_size)) / (self.sample_size**2)
 
         # x, y, z, phi, x_tilt, y_tilt
@@ -664,7 +664,7 @@ class Walker3DStepperEnv(EnvBase):
         self._p.restoreState(self.state_id)
 
         #self.robot_state = self.robot.reset(random_pose=True)
-        self.robot_state = self.robot.reset(random_pose=False, pos=(0.3, 0, 21.25), vel=[0.5, 0, 0])
+        self.robot_state = self.robot.reset(random_pose=True, pos=(0.3, 0, 21.25), vel=[0.0, 0, 0])
         self.base_phi = DEG2RAD * np.array(
             [-10] + [20, -20] * (self.n_steps // 2 - 1) + [10]
         )
@@ -699,7 +699,7 @@ class Walker3DStepperEnv(EnvBase):
         self.robot_state = self.robot.calc_state()
         self.calc_env_state(action)
 
-        reward = self.progress - self.energy_penalty
+        reward = 2.0 * self.progress - self.energy_penalty
         reward += self.step_bonus + self.target_bonus - self.speed_penalty
         reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
 
