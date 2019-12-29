@@ -1078,7 +1078,7 @@ class Walker3DStepperEnv(EnvBase):
         half_size = (self.sample_size-1)//2
         if self.curriculum >= half_size:
             self.curriculum = half_size
-        self.yaw_pitch_prob *= 0
+        self.yaw_pitch_r_prob *= 0
         prob = 1.0 / (self.curriculum * 2 + 1)**3
         #print(self.curriculum, prob)
         window = slice(half_size-self.curriculum, half_size+self.curriculum+1)
