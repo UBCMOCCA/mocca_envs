@@ -916,6 +916,7 @@ class Walker3DStepperEnv(EnvBase):
 
     def sample_next_next_step(self):
         pairs = np.indices(dimensions=(self.sample_size, self.sample_size))
+        self.yaw_pitch_r_prob /= self.yaw_pitch_r_prob.sum()
         inds = self.np_random.choice(np.arange(self.sample_size**2), p=self.yaw_pitch_prob.reshape(-1), size=1, replace=False)
 
         inds = pairs.reshape(2, self.sample_size**2)[:, inds].squeeze()
