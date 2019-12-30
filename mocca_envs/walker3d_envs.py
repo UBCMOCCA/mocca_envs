@@ -965,8 +965,8 @@ class Walker3DStepperEnv(EnvBase):
             temp_states = []
             for yaw in self.fake_yaw_samples:
                 for pitch in self.fake_pitch_samples:
-                    pitch = np.pi/2 - pitch
-                    self.set_next_step_location(pitch, yaw, 0.7)
+                    actual_pitch = np.pi/2 - pitch
+                    self.set_next_step_location(actual_pitch, yaw, 0.7)
                     self.set_next_next_step_location(np.pi/2, 0, 0.65)
                     temp_state = self.get_temp_state()
                     temp_states.append(temp_state)
