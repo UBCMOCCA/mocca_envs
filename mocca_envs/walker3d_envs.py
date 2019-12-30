@@ -914,7 +914,7 @@ class Walker3DStepperEnv(EnvBase):
         self.steps[body_index].set_position(pos=pos, quat=quaternion)
         self.targets = self.delta_to_k_targets(k=self.lookahead)
 
-    def sample_next_next_step_2(self):
+    def sample_next_next_step(self):
         pairs = np.indices(dimensions=(self.sample_size, self.sample_size))
         inds = self.np_random.choice(np.arange(self.sample_size**2), p=self.yaw_pitch_prob.reshape(-1), size=1, replace=False)
 
@@ -933,7 +933,7 @@ class Walker3DStepperEnv(EnvBase):
 
         self.set_next_next_step_location(self.next_next_pitch, self.next_next_yaw, self.next_next_dr)
 
-    def sample_next_next_step(self):
+    def sample_next_next_step_2(self):
         pairs = np.indices(dimensions=(self.sample_size, self.sample_size, self.sample_size))
         self.yaw_pitch_r_prob /= self.yaw_pitch_r_prob.sum()
         inds = self.np_random.choice(np.arange(self.sample_size**3), p=self.yaw_pitch_r_prob.reshape(-1), size=1, replace=False)
@@ -959,7 +959,7 @@ class Walker3DStepperEnv(EnvBase):
         target = self.delta_to_k_targets(k=self.lookahead)
         return np.concatenate((obs, target.flatten()))
 
-    def create_temp_states_2(self):
+    def create_temp_states(self):
         if self.update_terrain:
             temp_states = []
             for yaw in self.fake_yaw_samples:
@@ -976,7 +976,7 @@ class Walker3DStepperEnv(EnvBase):
             ret = self.temp_states
         return ret
 
-    def create_temp_states(self):
+    def create_temp_states_2(self):
         if self.update_terrain:
             temp_states = []
             for yaw in self.fake_yaw_samples:
@@ -1052,17 +1052,17 @@ class Walker3DStepperEnv(EnvBase):
         self.terrain_info[self.next_step_index, 2] = z
         self.terrain_info[self.next_step_index, 3] = yaw + base_yaw
 
-    def update_sample_prob_2(self, sample_prob):
+    def update_sample_prob(self, sample_prob):
         if self.update_terrain:
             self.yaw_pitch_prob = sample_prob
             self.update_terrain_info()
 
-    def update_sample_prob(self, sample_prob):
+    def update_sample_prob_2(self, sample_prob):
         if self.update_terrain:
             self.yaw_pitch_r_prob = sample_prob
             self.update_terrain_info()
 
-    def update_curriculum_2(self, curriculum):
+    def update_curriculum(self, curriculum):
         self.curriculum = min(curriculum, 5)
         half_size = (self.sample_size-1)//2
         if self.curriculum >= half_size:
@@ -1073,7 +1073,7 @@ class Walker3DStepperEnv(EnvBase):
         window = slice(half_size-self.curriculum, half_size+self.curriculum+1)
         self.yaw_pitch_prob[window, window] = prob
 
-    def update_curriculum(self, curriculum):
+    def update_curriculum_2(self, curriculum):
         self.curriculum = min(curriculum, 5)
         half_size = (self.sample_size-1)//2
         if self.curriculum >= half_size:
