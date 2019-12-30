@@ -514,13 +514,15 @@ class Walker3DStepperEnv(EnvBase):
         self.r_range = np.array([0.65, 0.8])
 
         self.sample_size = 11
-        self.yaw_samples = np.linspace(-10, 10, num=self.sample_size) * DEG2RAD
-        self.pitch_samples = np.linspace(-50, 50, num=self.sample_size) * DEG2RAD
+        self.yaw_sample_size = 11
+        self.pitch_sample_size = 51
+        self.yaw_samples = np.linspace(-10, 10, num=self.yaw_sample_size) * DEG2RAD
+        self.pitch_samples = np.linspace(-50, 50, num=self.pitch_sample_size) * DEG2RAD
         self.r_samples = np.linspace(0.65, 0.8, num=self.sample_size)
-        self.yaw_pitch_prob = np.ones((self.sample_size, self.sample_size)) / (self.sample_size**2)
+        self.yaw_pitch_prob = np.ones((self.yaw_sample_size, self.pitch_sample_size)) / (self.yaw_sample_size*self.pitch_sample_size)
         self.yaw_pitch_r_prob = np.ones((self.sample_size, self.sample_size, self.sample_size)) / (self.sample_size**3)
-        self.fake_yaw_samples = np.linspace(-10, 10, num=self.sample_size) * DEG2RAD
-        self.fake_pitch_samples = np.linspace(-50, 50, num=self.sample_size) * DEG2RAD
+        self.fake_yaw_samples = np.linspace(-10, 10, num=self.yaw_sample_size) * DEG2RAD
+        self.fake_pitch_samples = np.linspace(-50, 50, num=self.pitch_sample_size) * DEG2RAD
         self.fake_r_samples = np.linspace(0.65, 0.8, num=self.sample_size)
 
         # x, y, z, phi, x_tilt, y_tilt
@@ -915,11 +917,11 @@ class Walker3DStepperEnv(EnvBase):
         self.targets = self.delta_to_k_targets(k=self.lookahead)
 
     def sample_next_next_step(self):
-        pairs = np.indices(dimensions=(self.sample_size, self.sample_size))
+        pairs = np.indices(dimensions=(self.yaw_sample_size, self.pitch_sample_size))
         self.yaw_pitch_r_prob /= self.yaw_pitch_r_prob.sum()
-        inds = self.np_random.choice(np.arange(self.sample_size**2), p=self.yaw_pitch_prob.reshape(-1), size=1, replace=False)
+        inds = self.np_random.choice(np.arange(self.yaw_sample_size*self.pitch_sample_size), p=self.yaw_pitch_prob.reshape(-1), size=1, replace=False)
 
-        inds = pairs.reshape(2, self.sample_size**2)[:, inds].squeeze()
+        inds = pairs.reshape(2, self.yaw_sample_size*self.pitch_sample_size)[:, inds].squeeze()
         #print(self.yaw_pitch_prob, inds)
         yaw = self.yaw_samples[inds[0]]
         pitch = self.pitch_samples[inds[1]] + np.pi / 2
@@ -1064,15 +1066,16 @@ class Walker3DStepperEnv(EnvBase):
             self.update_terrain_info()
 
     def update_curriculum(self, curriculum):
-        self.curriculum = min(curriculum, 5)
-        half_size = (self.sample_size-1)//2
-        if self.curriculum >= half_size:
-            self.curriculum = half_size
         self.yaw_pitch_prob *= 0
-        prob = 1.0 / (self.curriculum * 2 + 1)**2
-        #print(self.curriculum, prob)
-        window = slice(half_size-self.curriculum, half_size+self.curriculum+1)
-        self.yaw_pitch_prob[window, window] = prob
+        self.yaw_pitch_prob[(self.yaw_sample_size-1)//2, (self.pitch_sample_size-1)//2] = 1
+        # self.curriculum = min(curriculum, 5)
+        # half_size = (self.sample_size-1)//2
+        # if self.curriculum >= half_size:
+        #     self.curriculum = half_size
+        # self.yaw_pitch_prob *= 0
+        # prob = 1.0 / (self.curriculum * 2 + 1)**2
+        # window = slice(half_size-self.curriculum, half_size+self.curriculum+1)
+        # self.yaw_pitch_prob[window, window] = prob
 
     def update_curriculum_2(self, curriculum):
         self.curriculum = min(curriculum, 5)
