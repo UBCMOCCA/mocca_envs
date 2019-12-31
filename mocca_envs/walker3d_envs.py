@@ -514,15 +514,15 @@ class Walker3DStepperEnv(EnvBase):
         self.r_range = np.array([0.65, 0.8])
 
         self.sample_size = 11
-        self.yaw_sample_size = 11
+        self.yaw_sample_size = 21
         self.pitch_sample_size = 51
         self.r_sample_size = 4
-        self.yaw_samples = np.linspace(-10, 10, num=self.yaw_sample_size) * DEG2RAD
+        self.yaw_samples = np.linspace(-20, 20, num=self.yaw_sample_size) * DEG2RAD
         self.pitch_samples = np.linspace(-50, 50, num=self.pitch_sample_size) * DEG2RAD
         self.r_samples = np.linspace(0.65, 0.8, num=self.r_sample_size)
         self.yaw_pitch_prob = np.ones((self.yaw_sample_size, self.pitch_sample_size)) / (self.yaw_sample_size*self.pitch_sample_size)
         self.yaw_pitch_r_prob = np.ones((self.sample_size, self.sample_size, self.sample_size)) / (self.yaw_sample_size*self.pitch_sample_size*self.r_sample_size)
-        self.fake_yaw_samples = np.linspace(-10, 10, num=self.yaw_sample_size) * DEG2RAD
+        self.fake_yaw_samples = np.linspace(-20, 20, num=self.yaw_sample_size) * DEG2RAD
         self.fake_pitch_samples = np.linspace(-50, 50, num=self.pitch_sample_size) * DEG2RAD
         self.fake_r_samples = np.linspace(0.65, 0.8, num=self.r_sample_size)
 
