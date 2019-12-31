@@ -509,6 +509,7 @@ class Walker3DStepperEnv(EnvBase):
 
         # Terrain info
         self.pitch_limit = 20
+        self.max_curriculum = 5
         self.yaw_limit = 10
         self.tilt_limit = 0
         self.r_range = np.array([0.65, 0.8])
@@ -1070,7 +1071,7 @@ class Walker3DStepperEnv(EnvBase):
     def update_curriculum(self, curriculum):
         self.yaw_pitch_prob *= 0
         self.yaw_pitch_prob[(self.yaw_sample_size-1)//2, (self.pitch_sample_size-1)//2] = 1
-        # self.curriculum = min(curriculum, 5)
+        # self.curriculum = min(curriculum, self.max_curriculum)
         # half_size = (self.sample_size-1)//2
         # if self.curriculum >= half_size:
         #     self.curriculum = half_size
@@ -1082,7 +1083,7 @@ class Walker3DStepperEnv(EnvBase):
     def update_curriculum_2(self, curriculum):
         self.yaw_pitch_r_prob *= 0
         self.yaw_pitch_r_prob[(self.yaw_sample_size-1)//2, (self.pitch_sample_size-1)//2, :] = 0.25
-        # self.curriculum = min(curriculum, 5)
+        # self.curriculum = min(curriculum, self.max_curriculum)
         # half_size = (self.sample_size-1)//2
         # if self.curriculum >= half_size:
         #     self.curriculum = half_size
