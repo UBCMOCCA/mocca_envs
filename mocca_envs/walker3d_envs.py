@@ -971,7 +971,7 @@ class Walker3DStepperEnv(EnvBase):
                     actual_pitch = np.pi/2 - pitch
                     #print(actual_pitch / np.pi * 180)
                     #self.set_next_step_location(actual_pitch, yaw, 0.7)
-                    self.set_next_next_step_location(actual_pitch, yaw, 0.7)
+                    self.set_next_next_step_location(actual_pitch, yaw, 0.75)
                     temp_state = self.get_temp_state()
                     temp_states.append(temp_state)
             #self.set_next_step_location(self.next_pitch, self.next_yaw, self.next_dr)
