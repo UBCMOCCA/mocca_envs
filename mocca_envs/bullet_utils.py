@@ -34,7 +34,7 @@ class BulletClient(object):
                 return
             else:
                 connection_mode = pybullet.DIRECT
-        self._client = pybullet.connect(connection_mode)
+        self._client = pybullet.connect(connection_mode, options='--background_color_red=1.0 --background_color_green=1.0 --background_color_blue=1.0')
 
     def __del__(self):
         """Clean up connection if not already done."""
@@ -339,7 +339,8 @@ class StadiumScene(Scene):
     def initialize(self):
         current_dir = os.path.dirname(__file__)
         filename = os.path.join(current_dir, "data", "misc", "plane_stadium.sdf")
-        self.ground_plane_mjcf = self._p.loadSDF(filename)
+        # self.ground_plane_mjcf = self._p.loadSDF(filename)
+        self.ground_plane_mjcf = (10,)
 
         for i in self.ground_plane_mjcf:
             self._p.changeDynamics(i, -1, lateralFriction=0.8, restitution=0.5)
