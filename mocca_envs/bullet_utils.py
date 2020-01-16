@@ -379,12 +379,14 @@ class Camera:
         yaw, pitch, dist, lookat_ = self._p.getDebugVisualizerCamera()[-4:]
         lookat = (1 - smooth_coef) * lookat_ + smooth_coef * pos
 
+        self.camera_target = lookat
         self._p.resetDebugVisualizerCamera(dist, yaw, pitch, lookat)
 
         # Remember camera for reset
         self._cam_yaw, self._cam_pitch, self._cam_dist = yaw, pitch, dist
 
     def lookat(self, pos):
+        self.camera_target = pos
         self._p.resetDebugVisualizerCamera(
             self._cam_dist, self._cam_yaw, self._cam_pitch, pos
         )
@@ -393,15 +395,29 @@ class Camera:
 
         width, height, view_mat, proj_mat = self._p.getDebugVisualizerCamera()[0:4]
 
+        distance = 50
+        target = np.array(self.camera_target)
+        target[-1] -= 0.5
+        view_mat = self._p.computeViewMatrixFromYawPitchRoll(target, distance, self._cam_yaw, self._cam_pitch, 0, upAxisIndex=2)
+
+        fov = 3
+        aspect = width / height
+        nearVal = 0.01
+        farVal = 1000
+
+        proj_mat = self._p.computeProjectionMatrixFOV(fov, aspect, nearVal, farVal)
+
+
         (_, _, rgb_array, _, _) = self._p.getCameraImage(
-            width=width,
-            height=height,
+            width=int(width * 2),
+            height=int(height * 2),
             viewMatrix=view_mat,
             projectionMatrix=proj_mat,
             renderer=pybullet.ER_BULLET_HARDWARE_OPENGL,
+            flags=pybullet.ER_NO_SEGMENTATION_MASK,
         )
 
-        rgb_array = rgb_array[:, :, :3]
+        # rgb_array = rgb_array[:, :, :3]
 
         return rgb_array
 
