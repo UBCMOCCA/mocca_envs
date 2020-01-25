@@ -3,6 +3,7 @@ import os
 current_dir = os.path.dirname(os.path.realpath(__file__))
 
 import numpy as np
+from scipy.ndimage.filters import gaussian_filter
 
 DEG2RAD = np.pi / 180
 
@@ -289,3 +290,83 @@ class Bench:
                 contactStiffness=30000,
                 contactDamping=1000,
             )
+
+
+class HeightField:
+    def __init__(self, bc, height_field_size):
+        self._p = bc
+        self.height_field_size = height_field_size
+        self.id = -1
+
+        texture_file = os.path.join(current_dir, "data", "misc", "canyon.jpg")
+        self.texture_id = self._p.loadTexture(texture_file)
+        self.texture_scaling = 1
+
+        self.digitize_bins = 32
+
+    def reload(self, data=None, pos=(0, 0, 0)):
+        rows = self.height_field_size[0]
+        cols = self.height_field_size[1]
+
+        self.data = self.get_random_height_field() if data is None else data
+
+        if self.id >= 0:
+            self._p.removeBody(self.id)
+
+        shape = self._p.createCollisionShape(
+            shapeType=self._p.GEOM_HEIGHTFIELD,
+            meshScale=[0.5, 0.5, 1],
+            heightfieldTextureScaling=self.texture_scaling,
+            heightfieldData=self.data,
+            numHeightfieldRows=rows,
+            numHeightfieldColumns=cols,
+        )
+        self.id = self._p.createMultiBody(0, shape)
+        self._p.resetBasePositionAndOrientation(self.id, pos, [0, 0, 0, 1])
+
+        self._p.changeVisualShape(
+            self.id,
+            -1,
+            textureUniqueId=self.texture_id,
+            rgbaColor=[1, 1, 1, 1],
+            specularColor=[0, 0, 0],
+        )
+
+    def get_random_height_field(self, rng=None):
+        num_peaks = 64
+
+        rng = np.random if rng is None else rng
+
+        # peak scale
+        scale = rng.normal(1, 3, size=num_peaks)[:, None, None]
+
+        # peak positions
+        x0 = rng.uniform(-1, 1, size=num_peaks)[:, None, None]
+        y0 = rng.uniform(-1, 1, size=num_peaks)[:, None, None]
+
+        # peak spread
+        xs = rng.uniform(0.01, 0.02, size=num_peaks)[:, None, None]
+        ys = rng.uniform(0.01, 0.02, size=num_peaks)[:, None, None]
+
+        # peak roundness
+        xp = rng.randint(1, 3, size=num_peaks)[:, None, None] * 2
+        yp = rng.randint(1, 3, size=num_peaks)[:, None, None] * 2
+
+        # evaluate on grid points
+        rows = self.height_field_size[0]
+        cols = self.height_field_size[1]
+        x = np.linspace(-1, 1, rows)[None, :, None]
+        y = np.linspace(-1, 1, cols)[None, None, :]
+        peaks = scale * np.exp(-((x - x0) ** xp / xs + (y - y0) ** yp / ys))
+
+        # Make into one height field
+        peaks = np.sum(peaks, axis=0).flatten()
+
+        # Add some ripples
+        noise = rng.uniform(-1, 1, size=self.height_field_size)
+        peaks += gaussian_filter(noise, 1).flatten()
+
+        # bins = np.linspace(peaks.min(), peaks.max(), self.digitize_bins)
+        # digitized = bins[np.digitize(peaks, bins) - 1]
+
+        return peaks

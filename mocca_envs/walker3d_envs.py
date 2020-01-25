@@ -5,7 +5,15 @@ import numpy as np
 import torch
 
 from mocca_envs.env_base import EnvBase
-from mocca_envs.bullet_objects import VSphere, Pillar, Plank, LargePlank, Chair, Bench
+from mocca_envs.bullet_objects import (
+    VSphere,
+    Pillar,
+    Plank,
+    LargePlank,
+    Chair,
+    Bench,
+    HeightField,
+)
 from mocca_envs.robots import Child3D, Walker3D
 
 Colors = {
@@ -690,3 +698,64 @@ class Walker3DStepperEnv(EnvBase):
             right_action_indices,
             left_action_indices,
         )
+
+
+class Walker3DTerrainEnv(EnvBase):
+
+    control_step = 1 / 60
+    llc_frame_skip = 1
+    sim_frame_skip = 4
+
+    def __init__(self, render=False):
+        self.terrain_size = (256, 256)
+
+        super().__init__(Walker3D, render, remove_ground=True)
+        self.robot.set_base_pose(pose="running_start")
+
+        # robot_state + (2 targets) * (x, y, z, x_tilt, y_tilt)
+        high = np.inf * np.ones(self.robot.observation_space.shape[0])
+        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
+        self.action_space = self.robot.action_space
+
+    def create_terrain(self):
+        self.terrain = HeightField(self._p, self.terrain_size)
+        self.ground_ids = {(self.terrain, -1)}
+
+        self.terrain.reload()
+
+    def reset(self):
+        self.done = False
+
+        self._p.restoreState(self.state_id)
+
+        self.terrain.reload()
+
+        rows = self.terrain_size[0]
+        cols = self.terrain_size[1]
+        mid_row = int(rows / 2)
+        mid_col = int(cols / 2)
+        height = self.terrain.data[mid_row * cols + mid_col]
+
+        self.robot_state = self.robot.reset(pos=(0, 0, height), random_pose=True)
+
+        # Reset camera
+        if self.is_render:
+            self.camera.lookat(self.robot.body_xyz)
+
+        return self.robot_state
+
+    def step(self, action):
+
+        self.robot.apply_action(action)
+        self.scene.global_step()
+
+        # Don't calculate the contacts for now
+        self.robot_state = self.robot.calc_state()
+
+        reward = 0
+
+        if self.is_render:
+            self._handle_keyboard()
+            self.camera.track(pos=self.robot.body_xyz)
+
+        return self.robot_state, reward, self.done, {}

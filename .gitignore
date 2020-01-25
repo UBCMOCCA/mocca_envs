@@ -1,6 +1,7 @@
 *.png
 mocca_envs/cassie/
 .vscode
+.idea
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -11,9 +11,10 @@ class EnvBase(gym.Env):
     _render_width = 320 * 3
     _render_height = 240 * 3
 
-    def __init__(self, robot_class, render=False, **kwargs):
+    def __init__(self, robot_class, render=False, remove_ground=False, **kwargs):
         self.robot_kwargs = kwargs
         self.robot_class = robot_class
+        self.remove_ground = remove_ground
 
         self.scene = None
         self.physics_client_id = -1
@@ -53,10 +54,11 @@ class EnvBase(gym.Env):
             timestep=self.control_step / self.llc_frame_skip / self.sim_frame_skip,
             frame_skip=self.sim_frame_skip,
         )
-        self.scene.initialize()
+        self.scene.initialize(self.remove_ground)
 
         # Create floor
-        self.ground_ids = {(self.scene.ground_plane_mjcf[0], -1)}
+        if hasattr(self.scene, "ground_plane_mjcf"):
+            self.ground_ids = {(self.scene.ground_plane_mjcf[0], -1)}
 
         # Create robot object
         self.robot = self.robot_class(self._p, **self.robot_kwargs)

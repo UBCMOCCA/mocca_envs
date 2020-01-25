@@ -336,14 +336,16 @@ class StadiumScene(Scene):
     stadium_halflen = 105 * 0.25  # FOOBALL_FIELD_HALFLEN
     stadium_halfwidth = 50 * 0.25  # FOOBALL_FIELD_HALFWID
 
-    def initialize(self):
+    def initialize(self, remove_ground=False):
         current_dir = os.path.dirname(__file__)
-        filename = os.path.join(current_dir, "data", "misc", "plane_stadium.sdf")
-        self.ground_plane_mjcf = self._p.loadSDF(filename)
 
-        for i in self.ground_plane_mjcf:
-            self._p.changeDynamics(i, -1, lateralFriction=0.8, restitution=0.5)
-            # self._p.changeVisualShape(i, -1, rgbaColor=[1, 1, 1, 0.8])
+        if not remove_ground:
+            filename = os.path.join(current_dir, "data", "misc", "plane_stadium.sdf")
+            self.ground_plane_mjcf = self._p.loadSDF(filename)
+
+            for i in self.ground_plane_mjcf:
+                self._p.changeDynamics(i, -1, lateralFriction=0.8, restitution=0.5)
+                # self._p.changeVisualShape(i, -1, rgbaColor=[1, 1, 1, 0.8])
 
     def set_friction(self, lateral_friction):
         for i in self.ground_plane_mjcf:
