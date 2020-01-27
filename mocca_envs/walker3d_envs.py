@@ -708,6 +708,7 @@ class Walker3DTerrainEnv(EnvBase):
 
     def __init__(self, render=False):
         self.terrain_size = (256, 256)
+        self.vision_hsize = 2
 
         super().__init__(Walker3D, render, remove_ground=True)
         self.robot.set_base_pose(pose="running_start")
@@ -730,13 +731,8 @@ class Walker3DTerrainEnv(EnvBase):
 
         self.terrain.reload()
 
-        rows = self.terrain_size[0]
-        cols = self.terrain_size[1]
-        mid_row = int(rows / 2)
-        mid_col = int(cols / 2)
-        height = self.terrain.data[mid_row * cols + mid_col]
-
-        self.robot_state = self.robot.reset(pos=(0, 0, height), random_pose=True)
+        self.robot_state = self.robot.reset(pos=(0, 0, 1.28))
+        self.calc_local_height_map()
 
         # Reset camera
         if self.is_render:
@@ -751,6 +747,7 @@ class Walker3DTerrainEnv(EnvBase):
 
         # Don't calculate the contacts for now
         self.robot_state = self.robot.calc_state()
+        self.calc_local_height_map()
 
         reward = 0
 
@@ -759,3 +756,19 @@ class Walker3DTerrainEnv(EnvBase):
             self.camera.track(pos=self.robot.body_xyz)
 
         return self.robot_state, reward, self.done, {}
+
+    def calc_feet_state(self):
+        for i, f in enumerate(self.robot.feet):
+            self.robot.feet_xyz[i] = f.pose().xyz()
+
+    def calc_local_height_map(self):
+        x, y, z = self.robot.body_xyz
+        tx, ty = self.terrain_size
+        vs = self.vision_hsize
+
+        x = int(x + tx / 2)
+        y = int(y + ty / 2)
+
+        vision_map = self.terrain.data.reshape(tx, ty)[
+            x - vs : x + vs + 1, y - vs : y + vs + 1
+        ]

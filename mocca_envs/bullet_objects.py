@@ -315,14 +315,17 @@ class HeightField:
 
         shape = self._p.createCollisionShape(
             shapeType=self._p.GEOM_HEIGHTFIELD,
-            meshScale=[0.5, 0.5, 1],
+            meshScale=[1, 1, 1],
             heightfieldTextureScaling=self.texture_scaling,
             heightfieldData=self.data,
             numHeightfieldRows=rows,
             numHeightfieldColumns=cols,
         )
-        self.id = self._p.createMultiBody(0, shape)
-        self._p.resetBasePositionAndOrientation(self.id, pos, [0, 0, 0, 1])
+
+        midpoint = int(self.data.shape[0] / 2 + rows / 2)
+        height = self.data.max() / 2 - self.data[midpoint : midpoint + 1].mean()
+        self.id = self._p.createMultiBody(0, shape, -1, (0, 0, height))
+        self.data -= self.data[midpoint : midpoint + 1].mean()
 
         self._p.changeVisualShape(
             self.id,
@@ -332,13 +335,15 @@ class HeightField:
             specularColor=[0, 0, 0],
         )
 
+        self._p.changeDynamics(self.id, -1, lateralFriction=0.6, restitution=0.2)
+
     def get_random_height_field(self, rng=None):
         num_peaks = 64
 
         rng = np.random if rng is None else rng
 
         # peak scale
-        scale = rng.normal(1, 3, size=num_peaks)[:, None, None]
+        scale = rng.normal(1, 4, size=num_peaks)[:, None, None]
 
         # peak positions
         x0 = rng.uniform(-1, 1, size=num_peaks)[:, None, None]
@@ -366,7 +371,14 @@ class HeightField:
         noise = rng.uniform(-1, 1, size=self.height_field_size)
         peaks += gaussian_filter(noise, 1).flatten()
 
+        # Make a flat platform in the centre
+        rows = self.height_field_size[0]
+        cols = self.height_field_size[1]
+        midpoints = peaks.reshape(self.height_field_size)[
+            int(rows / 2 - 1) : int(rows / 2 + 2), int(cols / 2 - 1) : int(cols / 2 + 2)
+        ]
+        midpoints[:] = midpoints.mean()
+
         # bins = np.linspace(peaks.min(), peaks.max(), self.digitize_bins)
         # digitized = bins[np.digitize(peaks, bins) - 1]
-
-        return peaks
+        return peaks - peaks.min()
