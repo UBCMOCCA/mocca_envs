@@ -100,7 +100,7 @@ class CassieEnv(EnvBase):
 
         self.robot_state = self.robot.reset()
 
-        if self.is_render:
+        if self.is_rendered:
             self.camera.lookat(self.robot.body_xyz)
 
         self.potential = self.calc_potential(self.robot.body_xyz)
@@ -186,7 +186,7 @@ class CassieEnv(EnvBase):
             self.robot.apply_action(torque)
             self.scene.global_step()
             robot_state = self.robot.calc_state()
-            if self.is_render:
+            if self.is_rendered:
                 self.camera.track(
                     pos=self.robot.body_xyz, smooth_coef=np.array([0.1, 0.01, 0.01])
                 )
@@ -411,4 +411,3 @@ class CassiePhaseMirrorEnv(CassiePhaseMoccaEnv):
 #         dyn_state = super().get_obs(robot_state)
 
 #         return np.concatenate([dyn_state, kin_state])
-

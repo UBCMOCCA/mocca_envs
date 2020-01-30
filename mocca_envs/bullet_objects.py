@@ -297,6 +297,7 @@ class HeightField:
         self._p = bc
         self.height_field_size = height_field_size
         self.id = -1
+        self.shape_id = -1
 
         texture_file = os.path.join(current_dir, "data", "misc", "canyon.jpg")
         self.texture_id = self._p.loadTexture(texture_file)
@@ -304,46 +305,58 @@ class HeightField:
 
         self.digitize_bins = 32
 
-    def reload(self, data=None, pos=(0, 0, 0)):
+    def reload(self, data=None, pos=(0, 0, 0), rendered=False):
         rows = self.height_field_size[0]
         cols = self.height_field_size[1]
 
         self.data = self.get_random_height_field() if data is None else data
-
-        if self.id >= 0:
-            self._p.removeBody(self.id)
-
-        shape = self._p.createCollisionShape(
-            shapeType=self._p.GEOM_HEIGHTFIELD,
-            meshScale=[1, 1, 1],
-            heightfieldTextureScaling=self.texture_scaling,
-            heightfieldData=self.data,
-            numHeightfieldRows=rows,
-            numHeightfieldColumns=cols,
-        )
-
         midpoint = int(self.data.shape[0] / 2 + rows / 2)
         height = self.data.max() / 2 - self.data[midpoint : midpoint + 1].mean()
-        self.id = self._p.createMultiBody(0, shape, -1, (0, 0, height))
         self.data -= self.data[midpoint : midpoint + 1].mean()
 
-        self._p.changeVisualShape(
-            self.id,
-            -1,
-            textureUniqueId=self.texture_id,
-            rgbaColor=[1, 1, 1, 1],
-            specularColor=[0, 0, 0],
-        )
+        if self.id >= 0:
+            # Replace existing height field
+            self.shape_id = self._p.createCollisionShape(
+                shapeType=self._p.GEOM_HEIGHTFIELD,
+                meshScale=[1, 1, 1],
+                heightfieldTextureScaling=self.texture_scaling,
+                heightfieldData=self.data,
+                numHeightfieldRows=rows,
+                numHeightfieldColumns=cols,
+                replaceHeightfieldIndex=self.shape_id,
+            )
 
-        self._p.changeDynamics(self.id, -1, lateralFriction=0.6, restitution=0.2)
+        else:
+            # Create if it's the first time
+            self.shape_id = self._p.createCollisionShape(
+                shapeType=self._p.GEOM_HEIGHTFIELD,
+                meshScale=[1, 1, 1],
+                heightfieldTextureScaling=self.texture_scaling,
+                heightfieldData=self.data,
+                numHeightfieldRows=rows,
+                numHeightfieldColumns=cols,
+            )
+
+            self.id = self._p.createMultiBody(0, self.shape_id, -1, (0, 0, height))
+
+            self._p.changeDynamics(self.id, -1, lateralFriction=0.7, restitution=0.2)
+
+        if rendered:
+            self._p.changeVisualShape(
+                self.id,
+                -1,
+                textureUniqueId=self.texture_id,
+                rgbaColor=[1, 1, 1, 1],
+                specularColor=[0, 0, 0],
+            )
 
     def get_random_height_field(self, rng=None):
-        num_peaks = 64
+        num_peaks = 256
 
         rng = np.random if rng is None else rng
 
         # peak scale
-        scale = rng.normal(1, 4, size=num_peaks)[:, None, None]
+        scale = rng.normal(3, 1, size=num_peaks)[:, None, None]
 
         # peak positions
         x0 = rng.uniform(-1, 1, size=num_peaks)[:, None, None]

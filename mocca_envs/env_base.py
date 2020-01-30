@@ -23,7 +23,7 @@ class EnvBase(gym.Env):
 
         self.metadata["video.frames_per_second"] = int(1 / self.control_step)
 
-        self.is_render = render
+        self.is_rendered = render
 
         self.seed()
         self.initialize_scene_and_robot()
@@ -37,10 +37,10 @@ class EnvBase(gym.Env):
 
         self.owns_physics_client = True
 
-        bc_mode = pybullet.GUI if self.is_render else pybullet.DIRECT
+        bc_mode = pybullet.GUI if self.is_rendered else pybullet.DIRECT
         self._p = BulletClient(connection_mode=bc_mode)
 
-        if self.is_render:
+        if self.is_rendered:
             self.camera = Camera(self._p, 1 / self.control_step * self.llc_frame_skip)
             if hasattr(self, "create_target"):
                 self.create_target()
@@ -87,8 +87,8 @@ class EnvBase(gym.Env):
 
     def render(self, mode="human"):
         # Taken care of by pybullet
-        if not self.is_render:
-            self.is_render = True
+        if not self.is_rendered:
+            self.is_rendered = True
             self._p.disconnect()
             self.initialize_scene_and_robot()
             self.reset()
