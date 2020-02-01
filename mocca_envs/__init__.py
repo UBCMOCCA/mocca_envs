@@ -72,3 +72,9 @@ register(
     entry_point="mocca_envs.walker3d_envs:Walker3DChairEnv",
     max_episode_steps=1000,
 )
+
+register(
+    id="Monkey3DCustomEnv-v0",
+    entry_point="mocca_envs.brachiation_envs:Monkey3DCustomEnv",
+    max_episode_steps=1000,
+)

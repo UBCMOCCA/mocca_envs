@@ -317,19 +317,17 @@ class WalkerBase:
         self.body_vel = np.dot(rot, self.robot_body.speed())
         vx, vy, vz = self.body_vel
 
-        more = np.array(
-            [self.body_xyz[2] - self.initial_z, vx, vy, vz, roll, pitch],
-            dtype=np.float32,
-        )
-
-        if contact_object_ids is not None:
-            for i, f in enumerate(self.feet):
-                self.feet_xyz[i] = f.pose().xyz()
+        for i, f in enumerate(self.feet):
+            self.feet_xyz[i] = f.pose().xyz()
+            if contact_object_ids is not None:
                 contact_ids = set((x[2], x[4]) for x in f.contact_list())
                 if contact_object_ids & contact_ids:
                     self.feet_contact[i] = 1.0
                 else:
                     self.feet_contact[i] = 0.0
+
+        height = self.body_xyz[2] - np.min(self.feet_xyz[:, 2])
+        more = np.array([height, vx, vy, vz, roll, pitch], dtype=np.float32)
 
         state = np.concatenate(
             (more, self.joint_angles, self.joint_speeds, self.feet_contact)
@@ -343,6 +341,7 @@ class WalkerBase:
 
     def load_robot_model(self, model_path, flags, root_link_name=None):
         self.object_id = self._p.loadMJCF(model_path, flags=flags)
+        self.id = self.object_id[0]
 
         self.parse_joints_and_links(self.object_id)
         if root_link_name is not None:
@@ -490,6 +489,7 @@ class Walker3D(WalkerBase):
 
     def set_base_pose(self, pose=None):
         self.base_joint_angles[:] = 0  # reset
+        self.base_orientation = np.array([0, 0, 0, 1])
 
         if pose == "running_start":
             self.base_joint_angles[[5, 6]] = -np.pi / 8  # Right leg
@@ -506,7 +506,9 @@ class Walker3D(WalkerBase):
             self.base_joint_angles[[5, 10]] = -np.pi / 2  # hip
             self.base_joint_angles[[6, 11]] = -np.pi / 2  # knee
             self.base_joint_angles[[7, 12]] = angle  # ankles
-            self.base_orientation = self._p.getQuaternionFromEuler([0, -angle, 0])
+            self.base_orientation = np.array(
+                self._p.getQuaternionFromEuler([0, -angle, 0])
+            )
         elif pose == "crawl":
             self.base_joint_angles[[13, 17]] = np.pi / 2  # shoulder x
             self.base_joint_angles[[14, 18]] = np.pi / 2  # shoulder z
@@ -514,7 +516,9 @@ class Walker3D(WalkerBase):
             self.base_joint_angles[[5, 10]] = -np.pi / 2  # hip
             self.base_joint_angles[[6, 11]] = -120 * DEG2RAD  # knee
             self.base_joint_angles[[7, 12]] = -20 * DEG2RAD  # ankles
-            self.base_orientation = self._p.getQuaternionFromEuler([0, 90 * DEG2RAD, 0])
+            self.base_orientation = np.array(
+                self._p.getQuaternionFromEuler([0, 90 * DEG2RAD, 0])
+            )
 
     def reset(self, random_pose=True, pos=None, quat=None, vel=None, ang_vel=None):
 
@@ -523,6 +527,7 @@ class Walker3D(WalkerBase):
             if self.np_random.rand() < 0.5:
                 self.base_joint_angles[self._rl] = self.base_joint_angles[self._lr]
                 self.base_joint_angles[self._negation_joint_indices] *= -1
+                self.base_orientation[0:3] *= -1
 
             # Add small deviations
             ds = self.np_random.uniform(low=-0.1, high=0.1, size=self.action_dim)
@@ -638,3 +643,66 @@ class Cassie2D(Cassie):
     model_path = os.path.join(
         current_dir, "data", "cassie", "urdf", "cassie_collide_2d.urdf"
     )
+
+
+class Monkey3D(Walker3D):
+    foot_names = ["right_hand", "left_hand"]
+
+    power_coef = {
+        "abdomen_z": 60,
+        "abdomen_y": 60,
+        "abdomen_x": 60,
+        "right_hip_x": 50,
+        "right_hip_z": 50,
+        "right_hip_y": 50,
+        "right_knee": 30,
+        "right_ankle": 10,
+        "left_hip_x": 50,
+        "left_hip_z": 50,
+        "left_hip_y": 50,
+        "left_knee": 30,
+        "left_ankle": 10,
+        "right_shoulder_x": 70,
+        "right_shoulder_z": 70,
+        "right_shoulder_y": 70,
+        "right_elbow_z": 60,
+        "right_elbow_y": 60,
+        "left_shoulder_x": 70,
+        "left_shoulder_z": 70,
+        "left_shoulder_y": 70,
+        "left_elbow_z": 60,
+        "left_elbow_y": 60,
+    }
+
+    def __init__(self, bc):
+        super().__init__(bc)
+        self.power = 0.7
+
+        self.action_dim = 23
+        high = np.ones(self.action_dim)
+        self.action_space = gym.spaces.Box(-high, high, dtype=np.float32)
+
+        # globals + angles + speeds + contacts
+        self.state_dim = 6 + self.action_dim * 2 + 2
+        high = np.inf * np.ones(self.state_dim)
+        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
+
+    def load_robot_model(self, model_path=None, flags=None, root_link_name=None):
+        if model_path is None:
+            model_path = os.path.join(current_dir, "data", "custom", "monkey3d.xml")
+
+        super().load_robot_model(model_path)
+        self.base_position = (0, 0, 0.7)
+
+    def set_base_pose(self, pose=None):
+        self.base_joint_angles[:] = 0  # reset
+        self.base_orientation = np.array([0, 0, 0, 1])
+
+        if pose == "monkey_start":
+            self.base_joint_angles[[13]] = 20 * DEG2RAD  # shoulder x
+            self.base_joint_angles[[15]] = -130 * DEG2RAD  # shoulder y
+            self.base_joint_angles[[16]] = 180 * DEG2RAD  # elbow z
+            self.base_joint_angles[[20]] = 20 * DEG2RAD  # shoulder y
+            self.base_orientation = np.array(
+                self._p.getQuaternionFromEuler([0, 0, 20 * DEG2RAD])
+            )

@@ -39,6 +39,7 @@ class Walker3DCustomEnv(EnvBase):
         super().__init__(self.robot_class, render)
         self.robot.set_base_pose(pose="running_start")
         self.eval_mode = False
+        self.random_pose = True
 
         self.electricity_cost = 4.5
         self.stall_torque_cost = 0.225
@@ -77,7 +78,7 @@ class Walker3DCustomEnv(EnvBase):
 
         self._p.restoreState(self.state_id)
 
-        self.robot_state = self.robot.reset(random_pose=True)
+        self.robot_state = self.robot.reset(random_pose=self.random_pose)
 
         # Reset camera
         if self.is_rendered:
