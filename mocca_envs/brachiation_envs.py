@@ -1,7 +1,7 @@
 import gym
 import numpy as np
 
-from mocca_envs.bullet_objects import VMonkeyBar
+from mocca_envs.bullet_objects import MonkeyBar
 from mocca_envs.env_base import EnvBase
 from mocca_envs.robots import Monkey3D
 
@@ -14,7 +14,7 @@ class Monkey3DCustomEnv(EnvBase):
 
     control_step = 1 / 60
     llc_frame_skip = 1
-    sim_frame_skip = 16
+    sim_frame_skip = 8
 
     initial_height = 20
     bar_length = 5
@@ -67,6 +67,7 @@ class Monkey3DCustomEnv(EnvBase):
 
         # special treatment for first step
         dphi[0] = 0
+        dphi[1] = 0
 
         dphi = np.cumsum(dphi)
 
@@ -75,14 +76,36 @@ class Monkey3DCustomEnv(EnvBase):
         z_ = dr * np.cos(dtheta)
 
         # make first step directly on hand that is in front
-        i = np.argmax(self.robot.feet_xyz[:, 0])
+
+        i = np.argmin(self.robot.feet_xyz[:, 0])
         x_[0] = self.robot.feet_xyz[i, 0]
         y_[0] = self.robot.feet_xyz[i, 1]
-        z_[0] = self.robot.feet_xyz[i, 2] - self.initial_height
+        z_[0] = (
+            self.robot.feet_xyz[i, 2] - self.initial_height + self.step_radius + 0.05
+        )
+
+        j = np.argmax(self.robot.feet_xyz[:, 0])
+        x_[1] = self.robot.feet_xyz[j, 0] - x_[0]
+        y_[1] = self.robot.feet_xyz[j, 1] - y_[0]
+        z_[1] = self.robot.feet_xyz[j, 2] - self.robot.feet_xyz[i, 2]
 
         x = np.cumsum(x_)
         y = np.cumsum(y_)
         z = np.cumsum(z_) + self.initial_height
+
+        for index, (x1, y1, z1, i) in enumerate(zip(x[:2], y[:2], z[:2], [i, j])):
+            id = self._p.createConstraint(
+                self.robot.id,
+                self.robot.feet[i].bodyPartIndex,
+                childBodyUniqueId=-1,
+                childLinkIndex=-1,
+                jointType=self._p.JOINT_POINT2POINT,
+                jointAxis=[1, 0, 0],
+                parentFramePosition=[0, 0, 0],
+                childFramePosition=(x1, y1, z1),
+            )
+            self._p.changeConstraint(id, maxForce=100)
+            self.holding_constraint_id[index] = id
 
         return np.stack((x, y, z, dphi), axis=1)
 
@@ -94,7 +117,7 @@ class Monkey3DCustomEnv(EnvBase):
         cover_ids = set()
 
         for index in range(self.rendered_step_count):
-            p = VMonkeyBar(self._p, self.step_radius, self.bar_length)
+            p = MonkeyBar(self._p, self.step_radius, self.bar_length)
             self.steps.append(p)
             step_ids = step_ids | {(p.id, p.base_id)}
             cover_ids = cover_ids | {(p.id, p.cover_id)}
@@ -143,12 +166,18 @@ class Monkey3DCustomEnv(EnvBase):
         self.done = False
         self.target_reached_count = 0
         self.holding = np.ones(len(self.robot.feet_xyz))
+
+        if hasattr(self, "holding_constraint_id"):
+            for id in self.holding_constraint_id:
+                if id != -1:
+                    self._p.removeConstraint(id)
+
         self.holding_constraint_id = [-1, -1]
         self.free_fall_count = 0
 
         self.next_step_index = 0
 
-        self._p.restoreState(self.state_id)
+        # self._p.restoreState(self.state_id)
 
         self.robot_state = self.robot.reset(random_pose=False)
         self.randomize_terrain()
@@ -256,22 +285,17 @@ class Monkey3DCustomEnv(EnvBase):
             distance = (delta[0] ** 2 + delta[1] ** 2) ** (1 / 2)
             self.foot_dist_to_target[i] = distance
 
-            a, b = self.terrain_start_end[:, self.next_step_index]
-            # a = np.array([0.0, -1, 1])
-            # b = np.array([0.0, 1, 1])
-            # self.robot.feet_xyz[i] = 0
-            line = np.matmul(a[:, None], [[1, -1]]) + np.matmul(b[:, None], [[0, 1]])
-            l = line.copy()
-            l[:, 0] -= self.robot.feet_xyz[i]
-            c, d = np.dot(a - b, l)
-            t = -c / d
-
+            points = self._p.getClosestPoints(
+                self.robot.id,
+                next_step.id,
+                self.step_radius * 1.2,
+                f.bodyPartIndex,
+                next_step.cover_id,
+            )
             in_contact = False
-            if t < 1 and t > 0:
-                p = line[:, 1] * t + line[:, 0]
-                d = np.linalg.norm(p - self.robot.feet_xyz[i])
-                if d < self.step_radius:
-                    in_contact = True
+            if len(points) > 0:
+                p = points[0][6]
+                in_contact = True
 
             constraint_id = self.holding_constraint_id[i]
             if in_contact:
@@ -288,7 +312,7 @@ class Monkey3DCustomEnv(EnvBase):
                         parentFramePosition=[0, 0, 0],
                         childFramePosition=p,
                     )
-                    self._p.changeConstraint(id, maxForce=2000)
+                    self._p.changeConstraint(id, maxForce=100)
                     self.holding_constraint_id[i] = id
 
             if not self.holding[i] and constraint_id != -1:
@@ -405,8 +429,9 @@ class Monkey3DCustomEnv(EnvBase):
 
         # Used for creating mirrored actions
         negation_action_indices = self.robot._negation_joint_indices
-        right_action_indices = self.robot._right_joint_indices
-        left_action_indices = self.robot._left_joint_indices
+        # 23, 24 are for holding
+        right_action_indices = np.concatenate((self.robot._right_joint_indices, [23]))
+        left_action_indices = np.concatenate((self.robot._right_joint_indices, [24]))
 
         return (
             negation_obs_indices,

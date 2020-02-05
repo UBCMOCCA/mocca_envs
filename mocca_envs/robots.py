@@ -724,11 +724,32 @@ class Monkey3D(Walker3D):
 
         if pose == "monkey_start":
             self.base_joint_angles[[13]] = 20 * DEG2RAD  # shoulder x
+            self.base_joint_angles[[14]] = -30 * DEG2RAD  # shoulder z
             self.base_joint_angles[[15]] = -130 * DEG2RAD  # shoulder y
-            # self.base_joint_angles[[16]] = 20 * DEG2RAD  # shoulder x
-            # self.base_joint_angles[[20]] = -130 * DEG2RAD  # shoulder y
+            self.base_joint_angles[[18]] = 20 * DEG2RAD  # shoulder x
+            self.base_joint_angles[[19]] = -30 * DEG2RAD  # shoulder z
+            self.base_joint_angles[[20]] = -130 * DEG2RAD  # shoulder y
             self.base_joint_angles[[6, 11]] = -90 * DEG2RAD  # ankles
             self.base_joint_angles[[7, 12]] = -90 * DEG2RAD  # knees
             self.base_orientation = np.array(
-                self._p.getQuaternionFromEuler([0, 0, 20 * DEG2RAD])
+                self._p.getQuaternionFromEuler([0, 0, -60 * DEG2RAD])
             )
+
+    def reset(self, random_pose=True, pos=None, quat=None, vel=None, ang_vel=None):
+
+        # Mirror initial pose
+        if self.np_random.rand() < 0.5 or True:
+            self.base_joint_angles[self._rl] = self.base_joint_angles[self._lr]
+            self.base_joint_angles[self._negation_joint_indices] *= -1
+            self.base_orientation[0:3] *= -1
+
+        angles = self.base_joint_angles
+        for j, angle, speed in zip(self.ordered_joints, angles, self.base_joint_speeds):
+            j.reset_current_position(angle, speed)
+
+        pos = self.base_position if pos is None else pos
+        quat = self.base_orientation if quat is None else quat
+        self._p.resetBasePositionAndOrientation(self.id, posObj=pos, ornObj=quat)
+
+        # call the WalkerBase reset, not Walker3D
+        return super(Walker3D, self).reset()

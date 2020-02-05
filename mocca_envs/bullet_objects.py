@@ -144,7 +144,7 @@ class Rectangle:
         )
 
 
-class VMonkeyBar:
+class MonkeyBar:
     def __init__(self, bc, r, h, mass=0.0, lateral_friction=1.0, pos=None, rgba=None):
         self._p = bc
 
@@ -154,16 +154,16 @@ class VMonkeyBar:
         self._pos = pos
         self._quat = np.array([0.0, 0.0, 0.0, 1.0])
 
-        # box_shape = self._p.createCollisionShape(
-        #     self._p.GEOM_CYLINDER, radius=r, height=h
-        # )
+        box_shape = self._p.createCollisionShape(
+            self._p.GEOM_CYLINDER, radius=r, height=h
+        )
         box_vshape = self._p.createVisualShape(
             self._p.GEOM_CYLINDER, radius=r, length=h, rgbaColor=rgba
         )
 
         self.id = self._p.createMultiBody(
             baseMass=mass,
-            # baseCollisionShapeIndex=box_shape,
+            baseCollisionShapeIndex=box_shape,
             baseVisualShapeIndex=box_vshape,
             basePosition=self._pos,
         )
