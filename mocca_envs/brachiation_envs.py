@@ -14,9 +14,10 @@ class Monkey3DCustomEnv(EnvBase):
 
     control_step = 1 / 60
     llc_frame_skip = 1
-    sim_frame_skip = 40
+    sim_frame_skip = 16
 
     initial_height = 20
+    bar_length = 5
 
     def __init__(self, render=False):
         # Need these before calling constructor
@@ -37,12 +38,12 @@ class Monkey3DCustomEnv(EnvBase):
         self.n_steps = 24
         self.lookahead = 2
         self.next_step_index = 0
-        self.stop_frames = 5
+        self.stop_frames = 2
 
         # Terrain info
-        self.pitch_limit = 25
-        self.yaw_limit = 40
-        self.r_range = np.array([1.0, 1.5])
+        self.pitch_limit = 0
+        self.yaw_limit = 0
+        self.r_range = np.array([0.8, 0.8])
         self.terrain_info = np.zeros((self.n_steps, 4))
 
         # robot_state + (2 targets) * (x, y, z)
@@ -64,21 +65,24 @@ class Monkey3DCustomEnv(EnvBase):
         dphi = self.np_random.uniform(*y_range, size=n_steps)
         dtheta = self.np_random.uniform(*p_range, size=n_steps)
 
+        # special treatment for first step
+        dphi[0] = 0
+
         dphi = np.cumsum(dphi)
 
         x_ = dr * np.sin(dtheta) * np.cos(dphi)
         y_ = dr * np.sin(dtheta) * np.sin(dphi)
         z_ = dr * np.cos(dtheta)
 
+        # make first step directly on hand that is in front
+        i = np.argmax(self.robot.feet_xyz[:, 0])
+        x_[0] = self.robot.feet_xyz[i, 0]
+        y_[0] = self.robot.feet_xyz[i, 1]
+        z_[0] = self.robot.feet_xyz[i, 2] - self.initial_height
+
         x = np.cumsum(x_)
         y = np.cumsum(y_)
         z = np.cumsum(z_) + self.initial_height
-
-        # make first step directly on hand
-        x[0] = self.robot.feet_xyz[0, 0]
-        y[0] = self.robot.feet_xyz[0, 1]
-        z[0] = self.robot.feet_xyz[0, 2]
-        dphi[0] = 0
 
         return np.stack((x, y, z, dphi), axis=1)
 
@@ -90,7 +94,7 @@ class Monkey3DCustomEnv(EnvBase):
         cover_ids = set()
 
         for index in range(self.rendered_step_count):
-            p = VMonkeyBar(self._p, self.step_radius, 5)
+            p = VMonkeyBar(self._p, self.step_radius, self.bar_length)
             self.steps.append(p)
             step_ids = step_ids | {(p.id, p.base_id)}
             cover_ids = cover_ids | {(p.id, p.cover_id)}
@@ -110,6 +114,13 @@ class Monkey3DCustomEnv(EnvBase):
 
         self.terrain_info = self.generate_step_placements(
             self.n_steps, self.pitch_limit, self.yaw_limit
+        )
+
+        mid = self.terrain_info[:, 0:3]
+        yaw = self.terrain_info[:, 3]
+        dir = np.stack((np.sin(yaw), np.cos(yaw), yaw * 0), axis=1)
+        self.terrain_start_end = np.stack(
+            (mid - dir * self.bar_length / 2, mid + dir * self.bar_length / 2)
         )
 
         for index in range(self.rendered_step_count):
@@ -133,15 +144,15 @@ class Monkey3DCustomEnv(EnvBase):
         self.target_reached_count = 0
         self.holding = np.ones(len(self.robot.feet_xyz))
         self.holding_constraint_id = [-1, -1]
+        self.free_fall_count = 0
+
+        self.next_step_index = 0
 
         self._p.restoreState(self.state_id)
 
         self.robot_state = self.robot.reset(random_pose=False)
-        self.calc_feet_state()
-
-        # Randomize platforms
         self.randomize_terrain()
-        self.next_step_index = 0
+        self.calc_feet_state()
 
         # Reset camera
         if self.is_rendered:
@@ -169,8 +180,8 @@ class Monkey3DCustomEnv(EnvBase):
         self.calc_env_state(base_action)
 
         reward = self.progress - self.energy_penalty
-        reward += self.step_bonus + self.target_bonus - self.speed_penalty
-        reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
+        reward += self.step_bonus + self.target_bonus - 0 * self.speed_penalty
+        reward += self.tall_bonus - 0 * self.posture_penalty - self.joints_penalty
 
         state = np.concatenate((self.robot_state, self.targets.flatten()))
 
@@ -227,13 +238,12 @@ class Monkey3DCustomEnv(EnvBase):
         )
 
         self.tall_bonus = 2.0
-        self.done = self.done or self.robot.body_xyz[2] < (self.initial_height - 10)
+        self.done = self.done or (self.free_fall_count > 30)
 
     def calc_feet_state(self):
         # Calculate contact separately for step
         target_cover_index = self.next_step_index % self.rendered_step_count
         next_step = self.steps[target_cover_index]
-        target_cover_id = {(next_step.id, next_step.cover_id)}
 
         self.foot_dist_to_target = np.array([0.0, 0.0])
 
@@ -241,15 +251,27 @@ class Monkey3DCustomEnv(EnvBase):
         self.target_reached = False
         for i, f in enumerate(self.robot.feet):
             self.robot.feet_xyz[i] = f.pose().xyz()
-            delta = self.robot.feet_xyz[i] - p_xyz
-            in_contact = np.linalg.norm(delta) < self.step_radius
-
-            # if contact_ids is not empty, then foot is in contact
-            # self.robot.feet_contact[i] = 1.0 if in_contact else 0.0
 
             delta = self.robot.feet_xyz[i] - p_xyz
             distance = (delta[0] ** 2 + delta[1] ** 2) ** (1 / 2)
             self.foot_dist_to_target[i] = distance
+
+            a, b = self.terrain_start_end[:, self.next_step_index]
+            # a = np.array([0.0, -1, 1])
+            # b = np.array([0.0, 1, 1])
+            # self.robot.feet_xyz[i] = 0
+            line = np.matmul(a[:, None], [[1, -1]]) + np.matmul(b[:, None], [[0, 1]])
+            l = line.copy()
+            l[:, 0] -= self.robot.feet_xyz[i]
+            c, d = np.dot(a - b, l)
+            t = -c / d
+
+            in_contact = False
+            if t < 1 and t > 0:
+                p = line[:, 1] * t + line[:, 0]
+                d = np.linalg.norm(p - self.robot.feet_xyz[i])
+                if d < self.step_radius:
+                    in_contact = True
 
             constraint_id = self.holding_constraint_id[i]
             if in_contact:
@@ -259,13 +281,14 @@ class Monkey3DCustomEnv(EnvBase):
                     id = self._p.createConstraint(
                         self.robot.id,
                         f.bodyPartIndex,
-                        childBodyUniqueId=next_step.id,
-                        childLinkIndex=next_step.cover_id,
+                        childBodyUniqueId=-1,
+                        childLinkIndex=-1,
                         jointType=self._p.JOINT_POINT2POINT,
                         jointAxis=[1, 0, 0],
                         parentFramePosition=[0, 0, 0],
-                        childFramePosition=[0, 0, 0],
+                        childFramePosition=p,
                     )
+                    self._p.changeConstraint(id, maxForce=2000)
                     self.holding_constraint_id[i] = id
 
             if not self.holding[i] and constraint_id != -1:
@@ -314,6 +337,10 @@ class Monkey3DCustomEnv(EnvBase):
         # use next step to calculate next k steps
         self.targets = self.delta_to_k_targets(k=self.lookahead)
 
+        # use contact to detect done
+        mask = float(np.sum(self.holding_constraint_id) == -2)
+        self.free_fall_count = mask * self.free_fall_count + mask
+
         if cur_step_index != self.next_step_index:
             self.calc_potential()
 
@@ -344,3 +371,48 @@ class Monkey3DCustomEnv(EnvBase):
         )
 
         return deltas
+
+    def get_mirror_indices(self):
+
+        global_dim = 6
+        action_dim = self.robot.action_space.shape[0]
+        # _ + 6 accounting for global
+        right = self.robot._right_joint_indices + global_dim
+        # _ + action_dim to get velocities, last one is right foot contact
+        right = np.concatenate(
+            (right, right + action_dim, [global_dim + 2 * action_dim])
+        )
+        # Do the same for left
+        left = self.robot._left_joint_indices + global_dim
+        left = np.concatenate(
+            (left, left + action_dim, [global_dim + 2 * action_dim + 1])
+        )
+
+        # Used for creating mirrored observations
+        # 2:  vy
+        # 4:  roll
+        # 6:  abdomen_z pos
+        # 8:  abdomen_x pos
+        # 27: abdomen_z vel
+        # 29: abdomen_x vel
+        # 54: sin(-a) = -sin(a) of next step
+        # 57: sin(-a) = -sin(a) of next + 1 step
+        negation_obs_indices = np.array(
+            [2, 4, 6, 8, 6 + action_dim, 8 + action_dim, 54, 57], dtype=np.int64
+        )
+        right_obs_indices = right
+        left_obs_indices = left
+
+        # Used for creating mirrored actions
+        negation_action_indices = self.robot._negation_joint_indices
+        right_action_indices = self.robot._right_joint_indices
+        left_action_indices = self.robot._left_joint_indices
+
+        return (
+            negation_obs_indices,
+            right_obs_indices,
+            left_obs_indices,
+            negation_action_indices,
+            right_action_indices,
+            left_action_indices,
+        )

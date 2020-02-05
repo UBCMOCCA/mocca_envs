@@ -277,9 +277,18 @@ class Cassie:
 class WalkerBase:
     def apply_action(self, a):
         assert np.isfinite(a).all()
-        x = np.clip(a, -1, 1)
-        for n, j in enumerate(self.ordered_joints):
-            j.set_motor_torque(j.torque_limit * float(x[n]))
+        normalized = np.clip(a, -1, 1)
+
+        # x = np.clip(a, -1, 1)
+        # for n, j in enumerate(self.ordered_joints):
+        #     j.set_motor_torque(j.torque_limit * float(x[n]))
+
+        self._p.setJointMotorControlArray(
+            bodyIndex=self.id,
+            jointIndices=self.ordered_joint_ids,
+            controlMode=self._p.TORQUE_CONTROL,
+            forces=self.ordered_joint_gains * normalized,
+        )
 
     def calc_state(self, contact_object_ids=None):
         j = np.array(
@@ -367,6 +376,8 @@ class WalkerBase:
         self.parts = {}
         self.jdict = {}
         self.ordered_joints = []
+        self.ordered_joint_ids = []
+        self.ordered_joint_gains = []
         bodies = [bodies] if np.isscalar(bodies) else bodies
 
         for i in range(len(bodies)):
@@ -393,15 +404,16 @@ class WalkerBase:
                     continue
 
                 if joint_name[:8] != "jointfix":
+                    gain = self.power * self.power_coef[joint_name]
                     self.jdict[joint_name] = Joint(
-                        self._p,
-                        joint_name,
-                        bodies,
-                        i,
-                        j,
-                        torque_limit=self.power * self.power_coef[joint_name],
+                        self._p, joint_name, bodies, i, j, gain
                     )
                     self.ordered_joints.append(self.jdict[joint_name])
+                    self.ordered_joint_ids.append(j)
+                    self.ordered_joint_gains.append(gain)
+
+        # need to use it to calculate torques later
+        self.ordered_joint_gains = np.array(self.ordered_joint_gains)
 
     def reset(self):
         self.feet_contact.fill(0.0)
@@ -522,13 +534,13 @@ class Walker3D(WalkerBase):
 
     def reset(self, random_pose=True, pos=None, quat=None, vel=None, ang_vel=None):
 
-        if random_pose:
-            # Mirror initial pose
-            if self.np_random.rand() < 0.5:
-                self.base_joint_angles[self._rl] = self.base_joint_angles[self._lr]
-                self.base_joint_angles[self._negation_joint_indices] *= -1
-                self.base_orientation[0:3] *= -1
+        # Mirror initial pose
+        if self.np_random.rand() < 0.5:
+            self.base_joint_angles[self._rl] = self.base_joint_angles[self._lr]
+            self.base_joint_angles[self._negation_joint_indices] *= -1
+            self.base_orientation[0:3] *= -1
 
+        if random_pose:
             # Add small deviations
             ds = self.np_random.uniform(low=-0.1, high=0.1, size=self.action_dim)
             ps = self.to_normalized(self.base_joint_angles + ds)
@@ -694,6 +706,18 @@ class Monkey3D(Walker3D):
         super().load_robot_model(model_path)
         self.base_position = (0, 0, 0.7)
 
+        # Need this to set pose and mirroring
+        # hip_[x,z,y], knee, ankle, shoulder_[x,z,y], elbow
+        self._right_joint_indices = np.array(
+            [3, 4, 5, 6, 7, 13, 14, 15, 16, 17], dtype=np.int64
+        )
+        self._left_joint_indices = np.array(
+            [8, 9, 10, 11, 12, 18, 19, 20, 21, 22], dtype=np.int64
+        )
+        self._negation_joint_indices = np.array([0, 2], dtype=np.int64)  # abdomen_[x,z]
+        self._rl = np.concatenate((self._right_joint_indices, self._left_joint_indices))
+        self._lr = np.concatenate((self._left_joint_indices, self._right_joint_indices))
+
     def set_base_pose(self, pose=None):
         self.base_joint_angles[:] = 0  # reset
         self.base_orientation = np.array([0, 0, 0, 1])
@@ -701,8 +725,10 @@ class Monkey3D(Walker3D):
         if pose == "monkey_start":
             self.base_joint_angles[[13]] = 20 * DEG2RAD  # shoulder x
             self.base_joint_angles[[15]] = -130 * DEG2RAD  # shoulder y
-            self.base_joint_angles[[16]] = 180 * DEG2RAD  # elbow z
-            self.base_joint_angles[[20]] = 20 * DEG2RAD  # shoulder y
+            # self.base_joint_angles[[16]] = 20 * DEG2RAD  # shoulder x
+            # self.base_joint_angles[[20]] = -130 * DEG2RAD  # shoulder y
+            self.base_joint_angles[[6, 11]] = -90 * DEG2RAD  # ankles
+            self.base_joint_angles[[7, 12]] = -90 * DEG2RAD  # knees
             self.base_orientation = np.array(
                 self._p.getQuaternionFromEuler([0, 0, 20 * DEG2RAD])
             )

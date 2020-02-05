@@ -25,7 +25,7 @@
             <body name="waist" pos="0 0 -0.2">
                 <joint axis="0 0 1" name="abdomen_z" pos="0 0 0.095" range="-35 35" stiffness="0" type="hinge"/>
                 <joint axis="0 1 0" name="abdomen_y" pos="0 0 0.095" range="-80 15" stiffness="0" type="hinge"/>
-                <body name="pelvis" pos="0 0 -0.04" quat="1.000 0 -0.002 0">
+                <body name="pelvis" pos="0 0 -0.04">
                     <joint axis="1 0 0" name="abdomen_x" pos="0 0 0.1" range="-25 25" stiffness="0" type="hinge"/>
                     <geom name="butt" pos="0 0 0.1" size="0.09" conaffinity="2" contype="2" type="sphere"/>
                     <body name="right_thigh" pos="0 -0.08 -0.04">
@@ -37,10 +37,10 @@
                         <body name="right_shin" pos="0 0 -0.157">
                             <joint axis="0 -1 0" name="right_knee" pos="0 0 .02" range="-150 0" stiffness="0" type="hinge"/>
                             <geom fromto="0 0 0 0 0 -.1" name="right_shin1" size="0.04" type="capsule"/>
-                            <body name="right_foot" pos="0 0 -0.25">
-                                <joint axis="0 1 0" name="right_ankle" pos="0 0 0.07" range="-20 40" stiffness="0" type="hinge"/>
-                                <geom fromto="-0.025 0.02 0.07 0.1 0.03 0.07" name="right_foot_1" type="capsule" size="0.035"/>
-                                <geom fromto="-0.025 -0.02 0.07 0.1 -0.03 0.07" name="right_foot_2" type="capsule" size="0.035"/>
+                            <body name="right_foot" pos="0 0 -0.16">
+                                <joint axis="0 1 0" name="right_ankle" pos="0 0 0" range="-110 -50" stiffness="0" type="hinge"/>
+                                <geom fromto="-0.01 0.02 0 -0.01 0.03 -0.1" name="right_foot_1" type="capsule" size="0.035"/>
+                                <geom fromto="-0.01 -0.02 0 -0.01 -0.03 -0.1" name="right_foot_2" type="capsule" size="0.035"/>
                             </body>
                         </body>
                     </body>
@@ -53,10 +53,10 @@
                         <body name="left_shin" pos="0 0 -0.157">
                             <joint axis="0 -1 0" name="left_knee" pos="0 0 .02" range="-150 0" stiffness="0" type="hinge"/>
                             <geom fromto="0 0 0 0 0 -.1" name="left_shin1" size="0.04" type="capsule"/>
-                            <body name="left_foot" pos="0 0 -0.25">
-                                <joint axis="0 1 0" name="left_ankle" pos="0 0 0.07" range="-20 40" stiffness="0" type="hinge"/>
-                                <geom fromto="-0.025 0.02 0.07 0.1 0.03 0.07" name="left_foot_1" type="capsule" size="0.035"/>
-                                <geom fromto="-0.025 -0.02 0.07 0.1 -0.03 0.07" name="left_foot_2" type="capsule" size="0.035"/>
+                            <body name="left_foot" pos="0 0 -0.16">
+                                <joint axis="0 1 0" name="left_ankle" pos="0 0 0" range="-110 -50" stiffness="0" type="hinge"/>
+                                <geom fromto="-0.01 0.02 0 -0.01 0.03 -0.1" name="left_foot_1" type="capsule" size="0.035"/>
+                                <geom fromto="-0.01 -0.02 0 -0.01 -0.03 -0.1" name="left_foot_2" type="capsule" size="0.035"/>
                             </body>
                         </body>
                     </body>
@@ -92,14 +92,4 @@
             </body>
        </body>
     </worldbody>
-    <tendon>
-        <fixed name="left_hipknee">
-            <joint coef="-1" joint="left_hip_y"/>
-            <joint coef="1" joint="left_knee"/>
-        </fixed>
-        <fixed name="right_hipknee">
-            <joint coef="-1" joint="right_hip_y"/>
-            <joint coef="1" joint="right_knee"/>
-        </fixed>
-    </tendon>
 </mujoco>
