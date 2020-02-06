@@ -327,7 +327,9 @@ class Monkey3DCustomEnv(EnvBase):
             if self.target_reached_count >= self.stop_frames:
                 self.next_step_index += 1
                 self.target_reached_count = 0
-                self.swing_leg = np.argmax(self.robot.feet_xyz[:, 0])
+                p_xyz = self.terrain_info[self.next_step_index, 0:3]
+                distance = np.linalg.norm(p_xyz - self.robot.feet_xyz, axis=-1)
+                self.swing_leg = np.argmax(distance)
                 self.update_steps()
 
             # Prevent out of bound
