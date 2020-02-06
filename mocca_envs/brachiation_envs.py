@@ -93,6 +93,7 @@ class Monkey3DCustomEnv(EnvBase):
         y = np.cumsum(y_)
         z = np.cumsum(z_) + self.initial_height
 
+        self.swing_leg = i
         for index, (x1, y1, z1, i) in enumerate(zip(x[:2], y[:2], z[:2], [i, j])):
             id = self._p.createConstraint(
                 self.robot.id,
@@ -222,13 +223,12 @@ class Monkey3DCustomEnv(EnvBase):
 
     def calc_potential(self):
 
+        swing_foot_xyz = self.robot.feet_xyz[self.swing_leg]
         walk_target_theta = np.arctan2(
-            self.walk_target[1] - self.robot.body_xyz[1],
-            self.walk_target[0] - self.robot.body_xyz[0],
+            self.walk_target[1] - swing_foot_xyz[1],
+            self.walk_target[0] - swing_foot_xyz[0],
         )
-        walk_target_delta = self.walk_target - self.robot.body_xyz
-
-        self.angle_to_target = walk_target_theta - self.robot.body_rpy[2]
+        walk_target_delta = self.walk_target - swing_foot_xyz
 
         self.distance_to_target = (
             walk_target_delta[0] ** 2 + walk_target_delta[1] ** 2
@@ -327,6 +327,7 @@ class Monkey3DCustomEnv(EnvBase):
             if self.target_reached_count >= self.stop_frames:
                 self.next_step_index += 1
                 self.target_reached_count = 0
+                self.swing_leg = np.argmax(self.robot.feet_xyz[:, 0])
                 self.update_steps()
 
             # Prevent out of bound
@@ -377,9 +378,9 @@ class Monkey3DCustomEnv(EnvBase):
                 (targets, np.repeat(targets[[-1]], k - len(targets), axis=0))
             )
 
-        self.walk_target = targets[[1], 0:3].mean(axis=0)
+        self.walk_target = targets[[0], 0:3].mean(axis=0)
 
-        delta_pos = targets[:, 0:3] - self.robot.body_xyz
+        delta_pos = targets[:, 0:3] - self.robot.feet_xyz[self.swing_leg]
         target_thetas = np.arctan2(delta_pos[:, 1], delta_pos[:, 0])
 
         angle_to_targets = target_thetas - self.robot.body_rpy[2]
