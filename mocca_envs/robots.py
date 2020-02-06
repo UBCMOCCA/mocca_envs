@@ -279,10 +279,6 @@ class WalkerBase:
         assert np.isfinite(a).all()
         normalized = np.clip(a, -1, 1)
 
-        # x = np.clip(a, -1, 1)
-        # for n, j in enumerate(self.ordered_joints):
-        #     j.set_motor_torque(j.torque_limit * float(x[n]))
-
         self._p.setJointMotorControlArray(
             bodyIndex=self.id,
             jointIndices=self.ordered_joint_ids,
@@ -291,12 +287,16 @@ class WalkerBase:
         )
 
     def calc_state(self, contact_object_ids=None):
-        j = np.array(
-            [j.current_relative_position() for j in self.ordered_joints],
-            dtype=np.float32,
-        )
+        # j = np.array(
+        #     [j.current_relative_position() for j in self.ordered_joints],
+        #     dtype=np.float32,
+        # )
 
-        self.joint_angles = j[:, 0]
+        # Use pybullet's array version, should be faster
+        j = self._p.getJointStates(self.id, self.ordered_joint_ids)
+        j = np.array(j)[:, 0:2].astype(np.float32)
+
+        self.joint_angles = self.to_normalized(j[:, 0])
         self.joint_speeds = 0.1 * j[:, 1]  # Normalize
         self.joints_at_limit = np.count_nonzero(np.abs(self.joint_angles) > 0.99)
 
@@ -414,6 +414,8 @@ class WalkerBase:
 
         # need to use it to calculate torques later
         self.ordered_joint_gains = np.array(self.ordered_joint_gains)
+        self._zeros = [0 for _ in self.ordered_joint_ids]
+        self._gains = [0.1 for _ in self.ordered_joint_ids]
 
     def reset(self):
         self.feet_contact.fill(0.0)
@@ -422,6 +424,24 @@ class WalkerBase:
 
         robot_state = self.calc_state()
         return robot_state
+
+    def reset_joint_states(self, positions, velocities):
+
+        for j, pos, vel in zip(self.ordered_joints, positions, velocities):
+            self._p.resetJointState(
+                j.bodies[j.bodyIndex], j.jointIndex, targetValue=pos, targetVelocity=vel
+            )
+
+        self._p.setJointMotorControlArray(
+            bodyIndex=self.id,
+            jointIndices=self.ordered_joint_ids,
+            controlMode=self._p.POSITION_CONTROL,
+            targetPositions=self._zeros,
+            targetVelocities=self._zeros,
+            positionGains=self._gains,
+            velocityGains=self._gains,
+            forces=self._zeros,
+        )
 
 
 class Walker3D(WalkerBase):
@@ -548,8 +568,7 @@ class Walker3D(WalkerBase):
         else:
             ps = self.base_joint_angles
 
-        for i, j in enumerate(self.ordered_joints):
-            j.reset_current_position(ps[i], self.base_joint_speeds[i])
+        self.reset_joint_states(ps, self.base_joint_speeds)
 
         pos = self.base_position if pos is None else pos
         quat = self.base_orientation if quat is None else quat
@@ -743,9 +762,7 @@ class Monkey3D(Walker3D):
             self.base_joint_angles[self._negation_joint_indices] *= -1
             self.base_orientation[0:3] *= -1
 
-        angles = self.base_joint_angles
-        for j, angle, speed in zip(self.ordered_joints, angles, self.base_joint_speeds):
-            j.reset_current_position(angle, speed)
+        self.reset_joint_states(self.base_joint_angles, self.base_joint_speeds)
 
         pos = self.base_position if pos is None else pos
         quat = self.base_orientation if quat is None else quat

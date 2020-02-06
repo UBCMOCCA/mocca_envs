@@ -48,7 +48,7 @@ class Monkey3DCustomEnv(EnvBase):
 
         # robot_state + holding state + (2 targets) * (x, y, z)
         robot_obs_dim = self.robot.observation_space.shape[0]
-        high = np.inf * np.ones(robot_obs_dim + self.lookahead * 3)
+        high = np.inf * np.ones(robot_obs_dim + 2 + self.lookahead * 3)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
         # torques + 2 for contact
