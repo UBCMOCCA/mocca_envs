@@ -7,8 +7,13 @@ This repository contains the environments used in [On Learning Symmetric Loocmot
 ## Installation
 You can use the `setup.py` for installing tha `mocca_envs` package:
 ```bash
-## You might need to use `python3` or prepend `sudo` depending on your setup 
-python setup.py install
+# Install from Github as is
+pip install git+https://github.com/UBCMOCCA/mocca_envs
+
+# Install an editable package
+git clone https://github.com/UBCMOCCA/mocca_envs.git
+cd mocca_envs
+pip install -e .
 ```
 You may also wish to install [PyBullet](https://pypi.org/project/pybullet/) separately.
 
