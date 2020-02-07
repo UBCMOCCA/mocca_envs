@@ -1,3 +1,6 @@
+import datetime
+from imageio import imwrite
+
 import gym
 import gym.utils.seeding
 import numpy as np
@@ -47,6 +50,7 @@ class EnvBase(gym.Env):
 
         self.physics_client_id = self._p._client
         self._p.configureDebugVisualizer(pybullet.COV_ENABLE_GUI, 0)
+        self._p.configureDebugVisualizer(pybullet.COV_ENABLE_KEYBOARD_SHORTCUTS, 0)
 
         self.scene = SinglePlayerStadiumScene(
             self._p,
@@ -136,15 +140,29 @@ class EnvBase(gym.Env):
     def step(self, a):
         raise NotImplementedError
 
-    def _handle_keyboard(self):
-        keys = self._p.getKeyboardEvents()
+    def _handle_keyboard(self, keys=None):
+        if keys is None:
+            keys = self._p.getKeyboardEvents()
+
+        RELEASED = self._p.KEY_WAS_RELEASED
+
         # keys is a dict, so need to check key exists
-        if ord("d") in keys and keys[ord("d")] == self._p.KEY_WAS_RELEASED:
+        if keys.get(ord("d")) == RELEASED:
             self.debug = True if not hasattr(self, "debug") else not self.debug
-        elif ord("r") in keys and keys[ord("r")] == self._p.KEY_WAS_RELEASED:
+        elif keys.get(ord("r")) == RELEASED:
             self.done = True
-        elif ord("z") in keys and keys[ord("z")] == self._p.KEY_WAS_RELEASED:
+        elif keys.get(65280) == RELEASED:
+            # F1
+            now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+            imwrite("{}.png".format(now), self.camera.dump_rgb_array())
+        elif keys.get(65281) == RELEASED:
+            # F2
+            now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+            self._p.startStateLogging(
+                self._p.STATE_LOGGING_VIDEO_MP4, "{}.mp4".format(now)
+            )
+        elif keys.get(ord(" ")) == RELEASED:
             while True:
                 keys = self._p.getKeyboardEvents()
-                if ord("z") in keys and keys[ord("z")] == self._p.KEY_WAS_RELEASED:
+                if keys.get(ord(" ")) == RELEASED:
                     break
