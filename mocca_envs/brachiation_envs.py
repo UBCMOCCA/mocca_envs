@@ -22,7 +22,7 @@ class Monkey3DCustomEnv(EnvBase):
     def __init__(self, render=False):
         # Need these before calling constructor
         # because they are used in self.create_terrain()
-        self.step_radius = 0.15
+        self.step_radius = 0.07
         self.rendered_step_count = 4
 
         super().__init__(Monkey3D, render)
@@ -37,13 +37,13 @@ class Monkey3DCustomEnv(EnvBase):
         # Env settings
         self.n_steps = 24
         self.lookahead = 2
-        self.next_step_index = 0
-        self.stop_frames = 2
+        self.next_step_index = 2
+        self.stop_frames = 20
 
         # Terrain info
         self.pitch_limit = 30
-        self.yaw_limit = 0
-        self.r_range = np.array([0.8, 0.8])
+        self.yaw_limit = 20
+        self.r_range = np.array([0.7, 0.7])
         self.terrain_info = np.zeros((self.n_steps, 4))
 
         # robot_state + holding state + (2 targets) * (x, y, z)
@@ -59,7 +59,7 @@ class Monkey3DCustomEnv(EnvBase):
     def generate_step_placements(self, n_steps=50, yaw_limit=30, pitch_limit=25):
 
         y_range = np.array([-yaw_limit, yaw_limit]) * DEG2RAD
-        p_range = np.array([90 + pitch_limit, 90 + pitch_limit]) * DEG2RAD
+        p_range = np.array([90 - 5, 90 + pitch_limit]) * DEG2RAD
 
         dr = self.np_random.uniform(*self.r_range, size=n_steps)
         dphi = self.np_random.uniform(*y_range, size=n_steps)
@@ -176,7 +176,8 @@ class Monkey3DCustomEnv(EnvBase):
         self.holding_constraint_id = np.array([-1, -1])
         self.free_fall_count = 0
 
-        self.next_step_index = 0
+        # start at 2 because first 2 are already in contact
+        self.next_step_index = 2
 
         # self._p.restoreState(self.state_id)
 
@@ -291,7 +292,7 @@ class Monkey3DCustomEnv(EnvBase):
             points = self._p.getClosestPoints(
                 self.robot.id,
                 next_step.id,
-                self.step_radius * 1.2,
+                self.step_radius * 1.5,
                 f.bodyPartIndex,
                 next_step.cover_id,
             )
