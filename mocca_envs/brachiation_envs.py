@@ -41,7 +41,7 @@ class Monkey3DCustomEnv(EnvBase):
         self.stop_frames = 2
 
         # Terrain info
-        self.pitch_limit = 0
+        self.pitch_limit = 30
         self.yaw_limit = 0
         self.r_range = np.array([0.8, 0.8])
         self.terrain_info = np.zeros((self.n_steps, 4))
@@ -59,7 +59,7 @@ class Monkey3DCustomEnv(EnvBase):
     def generate_step_placements(self, n_steps=50, yaw_limit=30, pitch_limit=25):
 
         y_range = np.array([-yaw_limit, yaw_limit]) * DEG2RAD
-        p_range = np.array([90 - pitch_limit, 90 + pitch_limit]) * DEG2RAD
+        p_range = np.array([90 + pitch_limit, 90 + pitch_limit]) * DEG2RAD
 
         dr = self.np_random.uniform(*self.r_range, size=n_steps)
         dphi = self.np_random.uniform(*y_range, size=n_steps)
@@ -137,7 +137,7 @@ class Monkey3DCustomEnv(EnvBase):
     def randomize_terrain(self):
 
         self.terrain_info = self.generate_step_placements(
-            self.n_steps, self.pitch_limit, self.yaw_limit
+            self.n_steps, self.yaw_limit, self.pitch_limit
         )
 
         mid = self.terrain_info[:, 0:3]
@@ -225,24 +225,30 @@ class Monkey3DCustomEnv(EnvBase):
 
     def calc_potential(self):
 
-        swing_foot_xyz = self.robot.feet_xyz[self.swing_leg]
-        walk_target_delta = self.walk_target - swing_foot_xyz
-
+        walk_target_delta = self.walk_target - self.robot.body_xyz
         self.distance_to_target = (
             walk_target_delta[0] ** 2 + walk_target_delta[1] ** 2
         ) ** (1 / 2)
 
+        swing_foot_xyz = self.robot.feet_xyz[self.swing_leg]
+        swing_foot_delta = self.walk_target - swing_foot_xyz
+        swing_distance = np.linalg.norm(swing_foot_delta)
+
         self.linear_potential = -self.distance_to_target / self.scene.dt
+        self.swing_potential = -swing_distance / self.scene.dt
 
     def calc_base_reward(self, action):
 
         # Bookkeeping stuff
         old_linear_potential = self.linear_potential
+        old_swing_potential = self.swing_potential
 
         self.calc_potential()
 
         linear_progress = self.linear_potential - old_linear_potential
-        self.progress = linear_progress
+        swing_progress = self.swing_potential - old_swing_potential
+        self.progress = linear_progress + swing_progress
+        print(swing_progress)
 
         self.posture_penalty = 0
         if not -0.2 < self.robot.body_rpy[1] < 0.4:
@@ -325,14 +331,19 @@ class Monkey3DCustomEnv(EnvBase):
             if self.target_reached_count >= self.stop_frames:
                 self.next_step_index += 1
                 self.target_reached_count = 0
-                p_xyz = self.terrain_info[self.next_step_index, 0:3]
-                distance = np.linalg.norm(p_xyz - self.robot.feet_xyz, axis=-1)
-                self.swing_leg = np.argmax(distance)
                 self.update_steps()
 
             # Prevent out of bound
             if self.next_step_index >= len(self.terrain_info):
                 self.next_step_index -= 1
+
+        # Swing foot
+        if (self.holding_constraint_id[i] == -1).all():
+            p_xyz = self.terrain_info[self.next_step_index, 0:3]
+            distance = np.linalg.norm(p_xyz - self.robot.feet_xyz, axis=-1)
+            self.swing_leg = np.argmax(distance)
+        else:
+            self.swing_leg = np.argmin(self.holding_constraint_id)
 
     def calc_step_reward(self):
 
