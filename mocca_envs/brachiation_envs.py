@@ -248,7 +248,6 @@ class Monkey3DCustomEnv(EnvBase):
         linear_progress = self.linear_potential - old_linear_potential
         swing_progress = self.swing_potential - old_swing_potential
         self.progress = linear_progress + swing_progress
-        print(swing_progress)
 
         self.posture_penalty = 0
         if not -0.2 < self.robot.body_rpy[1] < 0.4:
