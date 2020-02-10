@@ -502,10 +502,10 @@ class Walker3D(WalkerBase):
         # T-pose
         self.base_joint_angles = np.zeros(self.action_dim)
         self.base_joint_speeds = np.zeros(self.action_dim)
-        self.base_position = (0, 0, 1.32)
-        self.base_orientation = (0, 0, 0, 1)
-        self.base_velocity = (0, 0, 0)
-        self.base_angular_velocity = (0, 0, 0)
+        self.base_position = np.array([0, 0, 1.32])
+        self.base_orientation = np.array([0, 0, 0, 1])
+        self.base_velocity = np.array([0, 0, 0])
+        self.base_angular_velocity = np.array([0, 0, 0])
 
         # Need this to set pose and mirroring
         # hip_[x,z,y], knee, ankle, shoulder_[x,z,y], elbow
