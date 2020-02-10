@@ -22,7 +22,7 @@ class Monkey3DCustomEnv(EnvBase):
     def __init__(self, render=False):
         # Need these before calling constructor
         # because they are used in self.create_terrain()
-        self.step_radius = 0.07
+        self.step_radius = 0.08
         self.rendered_step_count = 4
 
         super().__init__(Monkey3D, render)
@@ -35,20 +35,20 @@ class Monkey3DCustomEnv(EnvBase):
         self.joints_at_limit_cost = 0.1
 
         # Env settings
-        self.n_steps = 24
+        self.n_steps = 32
         self.lookahead = 2
-        self.next_step_index = 2
-        self.stop_frames = 20
+        self.next_step_index = 0
+        self.stop_frames = 15
 
         # Terrain info
         self.pitch_limit = 30
-        self.yaw_limit = 20
-        self.r_range = np.array([0.7, 0.7])
+        self.yaw_limit = 0
+        self.r_range = np.array([0.7, 0.8])
         self.terrain_info = np.zeros((self.n_steps, 4))
 
-        # robot_state + holding state + (2 targets) * (x, y, z)
+        # robot_state + holding state + (2 targets) * (x, y, z) + 1 (time)
         robot_obs_dim = self.robot.observation_space.shape[0]
-        high = np.inf * np.ones(robot_obs_dim + 2 + self.lookahead * 3)
+        high = np.inf * np.ones(robot_obs_dim + 2 + self.lookahead * 3 + 1)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
         # torques + 2 for contact
@@ -59,7 +59,7 @@ class Monkey3DCustomEnv(EnvBase):
     def generate_step_placements(self, n_steps=50, yaw_limit=30, pitch_limit=25):
 
         y_range = np.array([-yaw_limit, yaw_limit]) * DEG2RAD
-        p_range = np.array([90 - 5, 90 + pitch_limit]) * DEG2RAD
+        p_range = np.array([90 + pitch_limit, 90 + pitch_limit]) * DEG2RAD
 
         dr = self.np_random.uniform(*self.r_range, size=n_steps)
         dphi = self.np_random.uniform(*y_range, size=n_steps)
@@ -177,7 +177,7 @@ class Monkey3DCustomEnv(EnvBase):
         self.free_fall_count = 0
 
         # start at 2 because first 2 are already in contact
-        self.next_step_index = 2
+        self.next_step_index = 0
 
         # self._p.restoreState(self.state_id)
 
@@ -194,7 +194,8 @@ class Monkey3DCustomEnv(EnvBase):
         self.calc_potential()
 
         holding = (self.holding_constraint_id > -1).astype(np.float32)
-        state = np.concatenate((self.robot_state, holding, self.targets.flatten()))
+        time = self.stop_frames - self.target_reached_count
+        state = np.concatenate((self.robot_state, holding, self.targets.flatten(), [time]))
 
         self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 1)
 
@@ -216,7 +217,8 @@ class Monkey3DCustomEnv(EnvBase):
         reward += self.tall_bonus - 0 * self.posture_penalty - self.joints_penalty
 
         holding = (self.holding_constraint_id > -1).astype(np.float32)
-        state = np.concatenate((self.robot_state, holding, self.targets.flatten()))
+        time = self.stop_frames - self.target_reached_count
+        state = np.concatenate((self.robot_state, holding, self.targets.flatten(), [time]))
 
         if self.is_rendered:
             self._handle_keyboard()
@@ -270,7 +272,7 @@ class Monkey3DCustomEnv(EnvBase):
             self.joints_at_limit_cost * self.robot.joints_at_limit
         )
 
-        self.tall_bonus = 1.5
+        self.tall_bonus = 2.0
         self.done = self.done or (self.free_fall_count > 30)
 
     def calc_feet_state(self):
@@ -292,13 +294,13 @@ class Monkey3DCustomEnv(EnvBase):
             points = self._p.getClosestPoints(
                 self.robot.id,
                 next_step.id,
-                self.step_radius * 1.5,
+                self.step_radius * 2,
                 f.bodyPartIndex,
                 next_step.cover_id,
             )
             in_contact = False
             if len(points) > 0:
-                p = points[0][6]
+                p = points[0][5]
                 in_contact = True
 
             constraint_id = self.holding_constraint_id[i]
