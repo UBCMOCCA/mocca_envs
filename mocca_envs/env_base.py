@@ -1,5 +1,4 @@
 import datetime
-from imageio import imwrite
 
 import gym
 import gym.utils.seeding
@@ -153,6 +152,8 @@ class EnvBase(gym.Env):
             self.done = True
         elif keys.get(65280) == RELEASED:
             # F1
+            from imageio import imwrite
+
             now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
             imwrite("{}.png".format(now), self.camera.dump_rgb_array())
         elif keys.get(65281) == RELEASED:
