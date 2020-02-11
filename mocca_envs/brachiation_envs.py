@@ -41,14 +41,14 @@ class Monkey3DCustomEnv(EnvBase):
         self.stop_frames = 15
 
         # Terrain info
-        self.pitch_limit = 30
+        self.pitch_limit = 15
         self.yaw_limit = 0
         self.r_range = np.array([0.7, 0.8])
         self.terrain_info = np.zeros((self.n_steps, 4))
 
-        # robot_state + holding state + (2 targets) * (x, y, z) + 1 (time)
+        # robot_state + (2 targets) * (x, y, z) + 1 (time)
         robot_obs_dim = self.robot.observation_space.shape[0]
-        high = np.inf * np.ones(robot_obs_dim + 2 + self.lookahead * 3 + 1)
+        high = np.inf * np.ones(robot_obs_dim + self.lookahead * 3 + 1)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
         # torques + 2 for contact
@@ -59,7 +59,7 @@ class Monkey3DCustomEnv(EnvBase):
     def generate_step_placements(self, n_steps=50, yaw_limit=30, pitch_limit=25):
 
         y_range = np.array([-yaw_limit, yaw_limit]) * DEG2RAD
-        p_range = np.array([90 + pitch_limit, 90 + pitch_limit]) * DEG2RAD
+        p_range = np.array([90 - pitch_limit, 90 + pitch_limit]) * DEG2RAD
 
         dr = self.np_random.uniform(*self.r_range, size=n_steps)
         dphi = self.np_random.uniform(*y_range, size=n_steps)
@@ -193,9 +193,8 @@ class Monkey3DCustomEnv(EnvBase):
         # Order is important because walk_target is set up above
         self.calc_potential()
 
-        holding = (self.holding_constraint_id > -1).astype(np.float32)
         time = self.stop_frames - self.target_reached_count
-        state = np.concatenate((self.robot_state, holding, self.targets.flatten(), [time]))
+        state = np.concatenate((self.robot_state, self.targets.flatten(), [time]))
 
         self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 1)
 
@@ -216,9 +215,8 @@ class Monkey3DCustomEnv(EnvBase):
         reward += self.step_bonus + self.target_bonus - 0 * self.speed_penalty
         reward += self.tall_bonus - 0 * self.posture_penalty - self.joints_penalty
 
-        holding = (self.holding_constraint_id > -1).astype(np.float32)
         time = self.stop_frames - self.target_reached_count
-        state = np.concatenate((self.robot_state, holding, self.targets.flatten(), [time]))
+        state = np.concatenate((self.robot_state, self.targets.flatten(), [time]))
 
         if self.is_rendered:
             self._handle_keyboard()
@@ -340,12 +338,16 @@ class Monkey3DCustomEnv(EnvBase):
                 self.next_step_index -= 1
 
         # Swing foot
-        if (self.holding_constraint_id[i] == -1).all():
+        if (self.holding_constraint_id == -1).all():
             p_xyz = self.terrain_info[self.next_step_index, 0:3]
             distance = np.linalg.norm(p_xyz - self.robot.feet_xyz, axis=-1)
             self.swing_leg = np.argmax(distance)
         else:
             self.swing_leg = np.argmin(self.holding_constraint_id)
+
+        # Foot contact
+        holding = (self.holding_constraint_id > -1).astype(np.float32)
+        self.robot.feet_contact[:] = holding
 
     def calc_step_reward(self):
 
@@ -414,26 +416,16 @@ class Monkey3DCustomEnv(EnvBase):
     def get_mirror_indices(self):
 
         global_dim = 6
-        action_dim = self.robot.action_space.shape[0]
+        robot_act_dim = self.robot.action_space.shape[0]
+        robot_obs_dim = self.robot.observation_space.shape[0]
+
         # _ + 6 accounting for global
         right = self.robot._right_joint_indices + global_dim
-        # _ + action_dim to get velocities, right foot contact and holding
-        right = np.concatenate(
-            (
-                right,
-                right + action_dim,
-                [global_dim + 2 * action_dim, global_dim + 2 * action_dim + 2],
-            )
-        )
+        # _ + robot_act_dim to get velocities, right foot contact
+        right = np.concatenate((right, right + robot_act_dim, [robot_obs_dim - 2]))
         # Do the same for left
         left = self.robot._left_joint_indices + global_dim
-        left = np.concatenate(
-            (
-                left,
-                left + action_dim,
-                [global_dim + 2 * action_dim + 1, global_dim + 2 * action_dim + 1 + 2],
-            )
-        )
+        left = np.concatenate((left, left + robot_act_dim, [robot_obs_dim - 1]))
 
         # Used for creating mirrored observations
         # 2:  vy
@@ -442,10 +434,20 @@ class Monkey3DCustomEnv(EnvBase):
         # 8:  abdomen_x pos
         # 27: abdomen_z vel
         # 29: abdomen_x vel
-        # 56: sin(-a) = -sin(a) of next step
-        # 59: sin(-a) = -sin(a) of next + 1 step
+        # 54: sin(-a) = -sin(a) of next step
+        # 57: sin(-a) = -sin(a) of next + 1 step
         negation_obs_indices = np.array(
-            [2, 4, 6, 8, 6 + action_dim, 8 + action_dim, 56, 59], dtype=np.int64
+            [
+                2,
+                4,
+                6,
+                8,
+                6 + robot_act_dim,
+                8 + robot_act_dim,
+                robot_obs_dim,
+                robot_obs_dim + 3,
+            ],
+            dtype=np.int64,
         )
         right_obs_indices = right
         left_obs_indices = left
@@ -454,7 +456,7 @@ class Monkey3DCustomEnv(EnvBase):
         negation_action_indices = self.robot._negation_joint_indices
         # 23, 24 are for holding
         right_action_indices = np.concatenate((self.robot._right_joint_indices, [23]))
-        left_action_indices = np.concatenate((self.robot._right_joint_indices, [24]))
+        left_action_indices = np.concatenate((self.robot._left_joint_indices, [24]))
 
         return (
             negation_obs_indices,
