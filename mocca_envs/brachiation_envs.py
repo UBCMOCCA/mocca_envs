@@ -37,7 +37,7 @@ class Monkey3DCustomEnv(EnvBase):
         # Env settings
         self.n_steps = 32
         self.lookahead = 2
-        self.next_step_index = 0
+        self.next_step_index = 2
         self.stop_frames = 15
 
         # Terrain info
@@ -177,7 +177,7 @@ class Monkey3DCustomEnv(EnvBase):
         self.free_fall_count = 0
 
         # start at 2 because first 2 are already in contact
-        self.next_step_index = 0
+        self.next_step_index = 2
 
         # self._p.restoreState(self.state_id)
 
@@ -292,14 +292,14 @@ class Monkey3DCustomEnv(EnvBase):
             points = self._p.getClosestPoints(
                 self.robot.id,
                 next_step.id,
-                self.step_radius * 2,
+                self.step_radius * 1.5,
                 f.bodyPartIndex,
                 next_step.cover_id,
             )
             in_contact = False
             if len(points) > 0:
                 p = points[0][5]
-                in_contact = True and (i == self.swing_leg)
+                in_contact = i == self.swing_leg
 
             constraint_id = self.holding_constraint_id[i]
             if in_contact:
@@ -331,19 +331,21 @@ class Monkey3DCustomEnv(EnvBase):
             if self.target_reached_count >= self.stop_frames:
                 self.next_step_index += 1
                 self.target_reached_count = 0
+                # hard-code alternating swing leg
+                self.swing_leg = (self.swing_leg + 1) % 2
                 self.update_steps()
 
             # Prevent out of bound
             if self.next_step_index >= len(self.terrain_info):
                 self.next_step_index -= 1
 
-        # Swing foot
-        if (self.holding_constraint_id == -1).all():
-            p_xyz = self.terrain_info[self.next_step_index, 0:3]
-            distance = np.linalg.norm(p_xyz - self.robot.feet_xyz, axis=-1)
-            self.swing_leg = np.argmax(distance)
-        else:
-            self.swing_leg = np.argmin(self.holding_constraint_id)
+        # # Swing foot
+        # if (self.holding_constraint_id == -1).all():
+        #     p_xyz = self.terrain_info[self.next_step_index, 0:3]
+        #     distance = np.linalg.norm(p_xyz - self.robot.feet_xyz, axis=-1)
+        #     self.swing_leg = np.argmax(distance)
+        # else:
+        #     self.swing_leg = np.argmin(self.holding_constraint_id)
 
         # Foot contact
         holding = (self.holding_constraint_id > -1).astype(np.float32)
