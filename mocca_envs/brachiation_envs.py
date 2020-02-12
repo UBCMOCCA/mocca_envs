@@ -41,9 +41,9 @@ class Monkey3DCustomEnv(EnvBase):
         self.stop_frames = 15
 
         # Terrain info
-        self.pitch_limit = 15
-        self.yaw_limit = 0
-        self.r_range = np.array([0.7, 0.8])
+        self.pitch_limit = 20
+        self.yaw_limit = 10
+        self.r_range = np.array([0.7, 0.9])
         self.terrain_info = np.zeros((self.n_steps, 4))
 
         # robot_state + (2 targets) * (x, y, z) + 1 (time)
@@ -94,10 +94,10 @@ class Monkey3DCustomEnv(EnvBase):
         z = np.cumsum(z_) + self.initial_height
 
         self.swing_leg = i
-        for index, (x1, y1, z1, i) in enumerate(zip(x[:2], y[:2], z[:2], [i, j])):
+        for index, (x1, y1, z1, k) in enumerate(zip(x[:2], y[:2], z[:2], [i, j])):
             id = self._p.createConstraint(
                 self.robot.id,
-                self.robot.feet[i].bodyPartIndex,
+                self.robot.feet[k].bodyPartIndex,
                 childBodyUniqueId=-1,
                 childLinkIndex=-1,
                 jointType=self._p.JOINT_POINT2POINT,
@@ -299,7 +299,7 @@ class Monkey3DCustomEnv(EnvBase):
             in_contact = False
             if len(points) > 0:
                 p = points[0][5]
-                in_contact = True
+                in_contact = True and (i == self.swing_leg)
 
             constraint_id = self.holding_constraint_id[i]
             if in_contact:
