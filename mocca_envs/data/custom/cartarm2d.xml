@@ -1,0 +1,59 @@
+<mujoco model="cartarm2d">
+  <compiler angle="degree" inertiafromgeom="true"/>
+  <default>
+    <joint armature="0.01" damping=".1" limited="true"/>
+    <geom conaffinity="0" condim="3" contype="1" density="1000" friction="1.2 .1 .1" rgba="0.8 0.6 .4 1"/>
+    <motor ctrllimited="true" ctrlrange="-1 1"/>
+  </default>
+    <asset>
+      <texture builtin="gradient" height="100" rgb1=".4 .5 .6" rgb2="0 0 0" type="skybox" width="100"/>
+      <!-- <texture builtin="gradient" height="100" rgb1="1 1 1" rgb2="0 0 0" type="skybox" width="100"/>-->
+      <texture builtin="flat" height="1278" mark="cross" markrgb="1 1 1" name="texgeom" random="0.01" rgb1="0.8 0.6 0.4" rgb2="0.8 0.6 0.4" type="cube" width="127"/>
+      <texture builtin="checker" height="100" name="texplane" rgb1="0 0 0" rgb2="0.8 0.8 0.8" type="2d" width="100"/>
+      <material name="MatPlane" reflectance="0.5" shininess="1" specular="1" texrepeat="60 60" texture="texplane"/>
+      <material name="geom" texture="texgeom" texuniform="true"/>
+    </asset>
+  <option integrator="RK4" iterations="50" solver="PGS" timestep="0.003" />
+  <worldbody>
+      <light cutoff="100" diffuse="1 1 1" dir="-0 0 -1.3" directional="true" exponent="1" pos="0 0 1.3" specular=".1 .1 .1"/>
+      <geom condim="3" friction="1 .1 .1" material="MatPlane" name="floor" pos="0 0 0" rgba="0.8 0.9 0.8 1" size="20 20 0.125" type="plane"/>
+
+    <body name="root" pos="0 0 0.5">
+        <camera name="track" mode="trackcom" pos="0 -4 0" xyaxes="1 0 0 0 0 1"/>
+      <joint armature="0" damping="0" limited="false" name="root" pos="0 0 0" stiffness="0" type="free" />
+      <geom name="root" type="box" contype="1" conaffinity="1" size="0.5 0.2 0.1" rgba="0.5 0.5 0.5 1" mass="100"/>
+      <body name="lead_wheel" pos="0.4 0 -0.3">
+        <geom name="lead_wheel" type="ellipsoid" contype="1" conaffinity="1" size="0.1 0.2 0.1" material="geom" mass="1000"/>
+<!--        <geom name="lead_wheel" type="box" contype="1" conaffinity="1" size="0.1 0.5 0.1" material="geom"/>-->
+        <joint axis="0 1 0" name="lead_wheel" pos="0 0 0" limited="false" type="hinge" damping="0.0001"/>
+      </body>
+      <body name="back_wheel" pos="-0.4 0 -0.3">
+        <geom name="back_wheel" type="ellipsoid" contype="1" conaffinity="1" size="0.1 0.2 0.1" material="geom" rgba="1 0 0 1" mass="1000"/>
+<!--        <geom name="back_wheel" type="box" contype="1" conaffinity="1" size="0.1 0.5 0.1"/>-->
+        <joint axis="0 1 0" name="back_wheel" pos="0 0 0" limited="false" type="hinge" damping="0.0001"/>
+      </body>
+        <body name="humerus" pos="0 0 0.13">
+            <geom name="humerus" type="capsule" contype="1" conaffinity="1" size="0.03" fromto="0 0 0 0 0 1.0" mass="1"/>
+            <joint axis="0 1 0" name="shoulder" pos="0 0 0" limited="true" range="-70 70" type="hinge" damping="0.01"/>
+            <body name="forearm" pos="0 0 1">
+                <geom name="forearm" type="capsule" contype="1" conaffinity="1" size="0.03" fromto="0 0 0 0 0 1.0" mass="1"/>
+                <joint axis="0 1 0" name="elbow" pos="0 0 0" limited="true" range="-120 120" type="hinge" damping="0.01"/>
+                <body name="hand" pos="0 0 1.0">
+                    <geom name="hand" contype="1" conaffinity="1" type="sphere" size="0.05" material="geom" mass="1"/>
+                </body>
+            </body>
+        </body>
+    </body>
+
+      <body name="targetball" pos="0 2 2" mocap="true">
+        <geom name="targetball" pos="0 0 0" contype="0" conaffinity="0" type="sphere" size="0.1" rgba="1 0 0 0.5"/>
+    </body>
+
+  </worldbody>
+  <actuator>
+     <motor joint="back_wheel" gear="1000" />
+     <motor joint="lead_wheel" gear="1000" />
+     <motor joint="shoulder" gear="300" />
+     <motor joint="elbow" gear="300" />
+  </actuator>
+</mujoco>

@@ -78,3 +78,9 @@ register(
     entry_point="mocca_envs.brachiation_envs:Monkey3DCustomEnv",
     max_episode_steps=1000,
 )
+
+register(
+    id="CartArm2DEnv-v0",
+    entry_point="mocca_envs.toy_envs:CartArm2DEnv",
+    max_episode_steps=1000,
+)
