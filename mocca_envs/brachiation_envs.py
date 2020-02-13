@@ -38,12 +38,12 @@ class Monkey3DCustomEnv(EnvBase):
         self.n_steps = 32
         self.lookahead = 2
         self.next_step_index = 2
-        self.stop_frames = 15
+        self.stop_frames = 2
 
         # Terrain info
-        self.pitch_limit = 20
-        self.yaw_limit = 10
-        self.r_range = np.array([0.7, 0.9])
+        self.pitch_limit = 25
+        self.yaw_limit = 0
+        self.r_range = np.array([0.7, 0.8])
         self.terrain_info = np.zeros((self.n_steps, 4))
 
         # robot_state + (2 targets) * (x, y, z) + 1 (time)
@@ -59,7 +59,7 @@ class Monkey3DCustomEnv(EnvBase):
     def generate_step_placements(self, n_steps=50, yaw_limit=30, pitch_limit=25):
 
         y_range = np.array([-yaw_limit, yaw_limit]) * DEG2RAD
-        p_range = np.array([90 - pitch_limit, 90 + pitch_limit]) * DEG2RAD
+        p_range = np.array([90 + pitch_limit, 90 + pitch_limit]) * DEG2RAD
 
         dr = self.np_random.uniform(*self.r_range, size=n_steps)
         dphi = self.np_random.uniform(*y_range, size=n_steps)
@@ -213,7 +213,7 @@ class Monkey3DCustomEnv(EnvBase):
 
         reward = self.progress - self.energy_penalty
         reward += self.step_bonus + self.target_bonus - 0 * self.speed_penalty
-        reward += self.tall_bonus - 0 * self.posture_penalty - self.joints_penalty
+        reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
 
         time = self.stop_frames - self.target_reached_count
         state = np.concatenate((self.robot_state, self.targets.flatten(), [time]))
@@ -251,10 +251,10 @@ class Monkey3DCustomEnv(EnvBase):
         self.progress = linear_progress + swing_progress
 
         self.posture_penalty = 0
-        if not -0.2 < self.robot.body_rpy[1] < 0.4:
+        if not -40 < self.robot.body_rpy[1] * RAD2DEG < 40:
             self.posture_penalty = abs(self.robot.body_rpy[1])
 
-        if not -0.4 < self.robot.body_rpy[0] < 0.4:
+        if not -40 < self.robot.body_rpy[0] * RAD2DEG < 40:
             self.posture_penalty += abs(self.robot.body_rpy[0])
 
         v = self.robot.body_vel
