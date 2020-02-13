@@ -275,6 +275,9 @@ class Cassie:
 
 
 class WalkerBase:
+
+    mirrored = False
+
     def apply_action(self, a):
         assert np.isfinite(a).all()
         normalized = np.clip(a, -1, 1)
@@ -756,16 +759,24 @@ class Monkey3D(Walker3D):
 
     def reset(self, random_pose=True, pos=None, quat=None, vel=None, ang_vel=None):
 
-        # Mirror initial pose
-        if self.np_random.rand() < 0.5:
-            self.base_joint_angles[self._rl] = self.base_joint_angles[self._lr]
-            self.base_joint_angles[self._negation_joint_indices] *= -1
-            self.base_orientation[0:3] *= -1
+        base_joint_angles = self.base_joint_angles.copy()
+        base_joint_speeds = self.base_joint_speeds.copy()
+        base_orientation = self.base_orientation.copy()
 
-        self.reset_joint_states(self.base_joint_angles, self.base_joint_speeds)
+        if self.np_random.rand() < 0.5:
+            self.mirrored = True
+            base_joint_angles[self._rl] = base_joint_angles[self._lr]
+            base_joint_angles[self._negation_joint_indices] *= -1
+            base_joint_speeds[self._rl] = base_joint_speeds[self._lr]
+            base_joint_speeds[self._negation_joint_indices] *= -1
+            base_orientation[0:3] *= -1
+        else:
+            self.mirrored = False
+
+        self.reset_joint_states(base_joint_angles, base_joint_speeds)
 
         pos = self.base_position if pos is None else pos
-        quat = self.base_orientation if quat is None else quat
+        quat = base_orientation if quat is None else quat
         self._p.resetBasePositionAndOrientation(self.id, posObj=pos, ornObj=quat)
 
         # call the WalkerBase reset, not Walker3D

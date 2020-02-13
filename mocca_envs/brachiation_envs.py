@@ -65,33 +65,36 @@ class Monkey3DCustomEnv(EnvBase):
         dphi = self.np_random.uniform(*y_range, size=n_steps)
         dtheta = self.np_random.uniform(*p_range, size=n_steps)
 
-        # special treatment for first step
+        # special treatment for first steps
         dphi[0] = 0
         dphi[1] = 0
 
-        dphi = np.cumsum(dphi)
+        phi = np.cumsum(dphi)
 
-        x_ = dr * np.sin(dtheta) * np.cos(dphi)
-        y_ = dr * np.sin(dtheta) * np.sin(dphi)
-        z_ = dr * np.cos(dtheta)
-
-        # make first step directly on hand that is in front
-
-        i = np.argmin(self.robot.feet_xyz[:, 0])
-        x_[0] = self.robot.feet_xyz[i, 0]
-        y_[0] = self.robot.feet_xyz[i, 1]
-        z_[0] = (
-            self.robot.feet_xyz[i, 2] - self.initial_height + self.step_radius + 0.05
+        dx = dr * np.sin(dtheta) * np.cos(phi + self.base_phi)
+        # clip to prevent overlapping
+        dx = np.sign(dx) * np.minimum(
+            np.maximum(np.abs(dx), self.step_radius * 2.5), self.r_range[1]
         )
+        dy = dr * np.sin(dtheta) * np.sin(phi + self.base_phi)
+        dz = dr * np.cos(dtheta)
 
+        # first step is on the arm that is behind
+        i = np.argmin(self.robot.feet_xyz[:, 0])
+        offset = -self.initial_height + self.step_radius + 0.05
+        dx[0] = self.robot.feet_xyz[i, 0]
+        dy[0] = self.robot.feet_xyz[i, 1]
+        dz[0] = self.robot.feet_xyz[i, 2] + offset
+
+        # second step on the arm that is in front
         j = np.argmax(self.robot.feet_xyz[:, 0])
-        x_[1] = self.robot.feet_xyz[j, 0] - x_[0]
-        y_[1] = self.robot.feet_xyz[j, 1] - y_[0]
-        z_[1] = self.robot.feet_xyz[j, 2] - self.robot.feet_xyz[i, 2]
+        dx[1] = self.robot.feet_xyz[j, 0] - dx[0]
+        dy[1] = self.robot.feet_xyz[j, 1] - dy[0]
+        dz[1] = self.robot.feet_xyz[j, 2] - self.robot.feet_xyz[i, 2]
 
-        x = np.cumsum(x_)
-        y = np.cumsum(y_)
-        z = np.cumsum(z_) + self.initial_height
+        x = np.cumsum(dx)
+        y = np.cumsum(dy)
+        z = np.cumsum(dz) + self.initial_height
 
         self.swing_leg = i
         for index, (x1, y1, z1, k) in enumerate(zip(x[:2], y[:2], z[:2], [i, j])):
@@ -108,7 +111,7 @@ class Monkey3DCustomEnv(EnvBase):
             self._p.changeConstraint(id, maxForce=100)
             self.holding_constraint_id[index] = id
 
-        return np.stack((x, y, z, dphi), axis=1)
+        return np.stack((x, y, z, phi), axis=1)
 
     def create_terrain(self):
         self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 0)
@@ -182,6 +185,12 @@ class Monkey3DCustomEnv(EnvBase):
         # self._p.restoreState(self.state_id)
 
         self.robot_state = self.robot.reset(random_pose=False)
+
+        self.base_phi = DEG2RAD * np.array(
+            [-10] + [20, -20] * (self.n_steps // 2 - 1) + [10]
+        )
+        self.base_phi *= np.sign(float(not self.robot.mirrored) - 0.5)
+
         self.randomize_terrain()
         self.calc_feet_state()
 
