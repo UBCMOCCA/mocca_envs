@@ -279,7 +279,7 @@ class Monkey3DCustomEnv(EnvBase):
             self.joints_at_limit_cost * self.robot.joints_at_limit
         )
 
-        self.tall_bonus = 2.0
+        self.tall_bonus = 2.0 * float((self.holding_constraint_id != -1).any())
         self.done = self.done or (self.free_fall_count > 30)
 
     def calc_feet_state(self):
