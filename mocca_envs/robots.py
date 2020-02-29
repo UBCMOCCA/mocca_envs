@@ -779,5 +779,9 @@ class Monkey3D(Walker3D):
         quat = base_orientation if quat is None else quat
         self._p.resetBasePositionAndOrientation(self.id, posObj=pos, ornObj=quat)
 
+        vel = self.base_velocity if vel is None else vel
+        ang_vel = self.base_angular_velocity if ang_vel is None else ang_vel
+        self.robot_body.reset_velocity(vel, ang_vel)
+
         # call the WalkerBase reset, not Walker3D
         return super(Walker3D, self).reset()
