@@ -22,7 +22,7 @@ class Monkey3DCustomEnv(EnvBase):
     def __init__(self, render=False):
         # Need these before calling constructor
         # because they are used in self.create_terrain()
-        self.step_radius = 0.04
+        self.step_radius = 0.015
         self.rendered_step_count = 4
 
         super().__init__(Monkey3D, render)
@@ -39,12 +39,11 @@ class Monkey3DCustomEnv(EnvBase):
         self.n_steps = 32
         self.lookahead = 2
         self.next_step_index = 2
-        self.constraint_max_force = 300
 
         # Terrain info
         self.pitch_limit = 0
         self.yaw_limit = 0
-        self.r_range = np.array([0.5, 0.5])
+        self.r_range = np.array([0.3, 0.5])
         self.terrain_info = np.zeros((self.n_steps, 4))
 
         # robot_state + (2 targets) * (x, y, z)
@@ -84,16 +83,18 @@ class Monkey3DCustomEnv(EnvBase):
 
         # first step is on the arm that is behind
         i = np.argmin(self.robot.feet_xyz[:, 0])
-        offset = -self.initial_height + self.step_radius + 0.05
         dx[0] = self.robot.feet_xyz[i, 0]
         dy[0] = self.robot.feet_xyz[i, 1]
-        dz[0] = self.robot.feet_xyz[i, 2] + offset
+        dz[0] = self.robot.feet_xyz[i, 2]
 
         # second step on the arm that is in front
         j = np.argmax(self.robot.feet_xyz[:, 0])
-        dx[1] = self.robot.feet_xyz[j, 0] - dx[0]
+        dx[1] = self.robot.feet_xyz[j, 0] - dx[0] + 0.01
         dy[1] = self.robot.feet_xyz[j, 1] - dy[0]
-        dz[1] = self.robot.feet_xyz[j, 2] - self.robot.feet_xyz[i, 2]
+        dz[1] = self.robot.feet_xyz[j, 2] - dz[0] - 0.02
+
+        dx[0] += 0.04
+        dz[0] += -self.initial_height + 0.04
 
         x = np.cumsum(dx)
         y = np.cumsum(dy)
@@ -101,29 +102,6 @@ class Monkey3DCustomEnv(EnvBase):
 
         self.swing_leg = i
         self.pivot_leg = j
-
-        # only lock the pivot leg
-        id = self._p.createConstraint(
-            self.robot.id,
-            self.robot.feet[self.pivot_leg].bodyPartIndex,
-            childBodyUniqueId=-1,
-            childLinkIndex=-1,
-            jointType=self._p.JOINT_POINT2POINT,
-            jointAxis=[1, 0, 0],
-            parentFramePosition=[0, 0, 0],
-            childFramePosition=(x[1], y[1], z[1]),
-        )
-        self._p.changeConstraint(id, maxForce=self.constraint_max_force)
-        self.holding_constraint_id[self.pivot_leg] = id
-
-        # Change current pivot bar to be non-collidable
-        self._p.setCollisionFilterPair(
-            self.robot.id,
-            self.steps[1].id,
-            self.robot.feet[self.pivot_leg].bodyPartIndex,
-            self.steps[1].cover_id,
-            enableCollision=0,
-        )
 
         return np.stack((x, y, z, phi), axis=1)
 
@@ -171,11 +149,13 @@ class Monkey3DCustomEnv(EnvBase):
             )
             self.set_step_state(next, oldest)
 
+    def get_observation_component(self):
+        return self.robot_state[:-2], self.robot.feet_contact, self.targets.flatten()
+
     def reset(self):
         self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 0)
 
         self.done = False
-        self.holding_constraint_id = np.array([-1, -1])
         self.free_fall_count = 0
 
         for i in range(self._p.getNumConstraints()):
@@ -183,7 +163,7 @@ class Monkey3DCustomEnv(EnvBase):
             self._p.removeConstraint(id)
 
         # start at 2 because first 2 are already in contact
-        self.next_step_index = 2
+        self.next_step_index = 0
 
         self._p.restoreState(self.state_id)
 
@@ -205,28 +185,27 @@ class Monkey3DCustomEnv(EnvBase):
         # Order is important because walk_target is set up above
         self.calc_potential()
 
-        state = np.concatenate((self.robot_state, self.targets.flatten()))
+        state = np.concatenate(self.get_observation_component())
 
         self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 1)
 
         return state
 
     def step(self, action):
-        base_action = action
-        # self.holding = action[-2:] > 0
+        # action[[17, 22]] = -1
 
-        self.robot.apply_action(base_action)
+        self.robot.apply_action(action)
         self.scene.global_step()
 
         # Don't calculate the contacts for now
         self.robot_state = self.robot.calc_state(contact_object_ids=None)
-        self.calc_env_state(base_action)
+        self.calc_env_state(action)
 
         reward = self.progress - self.energy_penalty
         reward += self.step_bonus + self.target_bonus - 0 * self.speed_penalty
         reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
 
-        state = np.concatenate((self.robot_state, self.targets.flatten()))
+        state = np.concatenate(self.get_observation_component())
 
         if self.is_rendered:
             self._handle_keyboard()
@@ -264,8 +243,8 @@ class Monkey3DCustomEnv(EnvBase):
         if not -40 < self.robot.body_rpy[1] * RAD2DEG < 40:
             self.posture_penalty = abs(self.robot.body_rpy[1])
 
-        # if not -40 < self.robot.body_rpy[0] * RAD2DEG < 40:
-        #     self.posture_penalty += abs(self.robot.body_rpy[0])
+        if not -60 < self.robot.body_rpy[0] * RAD2DEG < 60:
+            self.posture_penalty += abs(self.robot.body_rpy[0])
 
         v = self.robot.body_vel
         speed = (v[0] ** 2 + v[1] ** 2 + v[2] ** 2) ** (1 / 2)
@@ -280,7 +259,7 @@ class Monkey3DCustomEnv(EnvBase):
             self.joints_at_limit_cost * self.robot.joints_at_limit
         )
 
-        self.tall_bonus = 2.0 * float((self.holding_constraint_id != -1).any())
+        self.tall_bonus = 2.0 * float((self.robot.feet_contact == 1).any())
         self.done = self.done or (self.free_fall_count > 30)
 
     def calc_feet_state(self):
@@ -290,7 +269,12 @@ class Monkey3DCustomEnv(EnvBase):
         p_xyz = self.terrain_info[self.next_step_index, [0, 1, 2]]
 
         for i, f in enumerate(self.robot.feet):
-            self.robot.feet_xyz[i] = f.pose().xyz()
+
+            contact_ids = set((x[2], x[4]) for x in f.contact_list())
+            if self.all_contact_object_ids & contact_ids:
+                self.robot.feet_contact[i] = 1.0
+            else:
+                self.robot.feet_contact[i] = 0.0
 
             if i == self.swing_leg:
 
@@ -298,46 +282,12 @@ class Monkey3DCustomEnv(EnvBase):
                 distance = (delta[0] ** 2 + delta[1] ** 2) ** (1 / 2)
                 self.foot_dist_to_target = distance
 
-                points = self._p.getClosestPoints(
-                    self.robot.id,
-                    next_step.id,
-                    self.step_radius * 1.2,
-                    f.bodyPartIndex,
-                    next_step.cover_id,
+                self.target_reached = bool(
+                    {(next_step.id, next_step.cover_id)} & contact_ids
                 )
-
-                self.target_reached = len(points) > 0
 
                 if not self.target_reached:
                     continue
-
-                assert self.holding_constraint_id[self.swing_leg] == -1, "Oops"
-
-                id = self._p.createConstraint(
-                    self.robot.id,
-                    f.bodyPartIndex,
-                    childBodyUniqueId=-1,
-                    childLinkIndex=-1,
-                    jointType=self._p.JOINT_POINT2POINT,
-                    jointAxis=[1, 0, 0],
-                    parentFramePosition=[0, 0, 0],
-                    childFramePosition=points[0][5],
-                )
-                self._p.changeConstraint(id, maxForce=self.constraint_max_force)
-                self.holding_constraint_id[self.swing_leg] = id
-
-                # Change current pivot bar to be non-collidable
-                self._p.setCollisionFilterPair(
-                    self.robot.id,
-                    next_step.id,
-                    f.bodyPartIndex,
-                    next_step.cover_id,
-                    enableCollision=0,
-                )
-
-                # Remove pivot legs constraint
-                self._p.removeConstraint(self.holding_constraint_id[self.pivot_leg])
-                self.holding_constraint_id[self.pivot_leg] = -1
 
                 # Update next step
                 self.next_step_index += 1
@@ -347,10 +297,6 @@ class Monkey3DCustomEnv(EnvBase):
                 self.update_steps()
                 self.pivot_leg = self.swing_leg
                 self.swing_leg = (self.swing_leg + 1) % 2
-
-        # Foot contact
-        holding = (self.holding_constraint_id > -1).astype(np.float32)
-        self.robot.feet_contact[:] = holding
 
     def calc_step_reward(self):
 
@@ -381,7 +327,7 @@ class Monkey3DCustomEnv(EnvBase):
         self.targets = self.delta_to_k_targets(k=self.lookahead)
 
         # use contact to detect done
-        mask = float(np.sum(self.holding_constraint_id) == -2)
+        mask = float(np.sum(self.robot.feet_contact) == 0)
         self.free_fall_count = mask * self.free_fall_count + mask
 
         if cur_step_index != self.next_step_index:

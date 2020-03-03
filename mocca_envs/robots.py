@@ -696,21 +696,23 @@ class Monkey3D(Walker3D):
         "left_hip_y": 50,
         "left_knee": 30,
         "left_ankle": 10,
-        "right_shoulder_x": 120,
-        "right_shoulder_y": 120,
+        "right_shoulder_x": 100,
+        "right_shoulder_y": 100,
         "right_elbow_z": 60,
-        "right_elbow_y": 120,
-        "left_shoulder_x": 120,
-        "left_shoulder_y": 120,
+        "right_elbow_y": 100,
+        "right_hand": 80,
+        "left_shoulder_x": 100,
+        "left_shoulder_y": 100,
         "left_elbow_z": 60,
-        "left_elbow_y": 120,
+        "left_elbow_y": 100,
+        "left_hand": 80,
     }
 
     def __init__(self, bc):
         super().__init__(bc)
         self.power = 0.7
 
-        self.action_dim = 21
+        self.action_dim = 23
         high = np.ones(self.action_dim)
         self.action_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
@@ -729,10 +731,10 @@ class Monkey3D(Walker3D):
         # Need this to set pose and mirroring
         # hip_[x,z,y], knee, ankle, shoulder_[x,y], elbow
         self._right_joint_indices = np.array(
-            [3, 4, 5, 6, 7, 13, 14, 15, 16], dtype=np.int64
+            [3, 4, 5, 6, 7, 13, 14, 15, 16, 17], dtype=np.int64
         )
         self._left_joint_indices = np.array(
-            [8, 9, 10, 11, 12, 17, 18, 19, 20], dtype=np.int64
+            [8, 9, 10, 11, 12, 18, 19, 20, 21, 22], dtype=np.int64
         )
         self._negation_joint_indices = np.array([0, 2], dtype=np.int64)  # abdomen_[x,z]
         self._rl = np.concatenate((self._right_joint_indices, self._left_joint_indices))
@@ -745,8 +747,10 @@ class Monkey3D(Walker3D):
         if pose == "monkey_start":
             self.base_joint_angles[[14]] = -140 * DEG2RAD  # shoulder y
             self.base_joint_angles[[15]] = 180 * DEG2RAD  # elbow z
-            self.base_joint_angles[[18]] = -170 * DEG2RAD  # shoulder y
-            self.base_joint_angles[[19]] = 180 * DEG2RAD  # elbow z
+            self.base_joint_angles[[17]] = -90 * DEG2RAD  # finger
+            self.base_joint_angles[[19]] = -170 * DEG2RAD  # shoulder y
+            self.base_joint_angles[[20]] = 180 * DEG2RAD  # elbow z
+            self.base_joint_angles[[22]] = -90 * DEG2RAD  # finger
             self.base_joint_angles[[6, 11]] = -90 * DEG2RAD  # ankles
             self.base_joint_angles[[7, 12]] = -90 * DEG2RAD  # knees
             self.base_orientation = np.array(self._p.getQuaternionFromEuler([0, 0, 0]))

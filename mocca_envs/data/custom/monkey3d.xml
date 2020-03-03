@@ -70,8 +70,16 @@
                     <joint axis="0 0 1" name="right_elbow_z" pos="0 0 0" range="-10 190" stiffness="0" type="hinge"/>
                     <joint axis="0 1 0" name="right_elbow_y" pos="0 0 0" range="-160 0" stiffness="0" type="hinge"/>
                     <geom fromto="0 0 0 0 0 -.25" name="right_larm" size="0.04" type="capsule"/>
-                    <body name="right_hand" pos="0 0 -.30">
-                        <geom name="right_hand" pos="0 0 0" size=".045" type="sphere"/>
+                    <body pos="0 0 -.28">
+                        <body name="right_hand" pos="0 0 -0.02">
+                            <geom pos="0.04 0 0" size=".05 .06 .015" type="box"/>
+                            <geom pos="0.06 0 -0.03" size=".015 .06 .05" type="box"/>
+                            <body name="right_finger_2" pos="0 0 0">
+                                <joint axis="0 1 0" name="right_hand" pos="0 0 0" range="-90 0" stiffness="0" type="hinge"/>
+                                <geom pos="-0.04 0 0" size=".05 .06 .015" type="box"/>
+                                <geom pos="-0.06 0 -0.03" size=".015 .06 .05" type="box"/>
+                            </body>
+                        </body>
                     </body>
                 </body>
             </body>
@@ -83,8 +91,16 @@
                     <joint axis="0 0 -1" name="left_elbow_z" pos="0 0 0" range="-10 190" stiffness="0" type="hinge"/>
                     <joint axis="0 1 0" name="left_elbow_y" pos="0 0 0" range="-160 0" stiffness="0" type="hinge"/>
                     <geom fromto="0 0 0 0 0 -.25" name="left_larm" size="0.04" type="capsule"/>
-                    <body name="left_hand" pos="0 0 -.30">
-                        <geom name="left_hand" pos="0 0 0" size=".045" type="sphere"/>
+                    <body pos="0 0 -.28">
+                        <body name="left_hand" pos="0 0 -0.02">
+                            <geom pos="0.04 0 0" size=".05 .06 .015" type="box"/>
+                            <geom pos="0.06 0 -0.03" size=".015 .06 .05" type="box"/>
+                            <body name="left_finger_2" pos="0 0 0">
+                                <joint axis="0 1 0" name="left_hand" pos="0 0 0" range="-90 0" stiffness="0" type="hinge"/>
+                                <geom pos="-0.04 0 0" size=".05 .06 .015" type="box"/>
+                                <geom pos="-0.06 0 -0.03" size=".015 .06 .05" type="box"/>
+                            </body>
+                        </body>
                     </body>
                 </body>
             </body>
