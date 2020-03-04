@@ -46,9 +46,9 @@ class Monkey3DCustomEnv(EnvBase):
         self.r_range = np.array([0.3, 0.5])
         self.terrain_info = np.zeros((self.n_steps, 4))
 
-        # robot_state + (2 targets) * (x, y, z)
+        # robot_state + (2 targets) * (x, y, z) + {swing, pivot}_leg
         robot_obs_dim = self.robot.observation_space.shape[0]
-        high = np.inf * np.ones(robot_obs_dim + self.lookahead * 3)
+        high = np.inf * np.ones(robot_obs_dim + self.lookahead * 3 + 2)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
         # torques
@@ -150,20 +150,26 @@ class Monkey3DCustomEnv(EnvBase):
             self.set_step_state(next, oldest)
 
     def get_observation_component(self):
-        return self.robot_state[:-2], self.robot.feet_contact, self.targets.flatten()
+        return (
+            self.robot_state[:-2],
+            self.robot.feet_contact,
+            self.targets.flatten(),
+            [self.swing_leg, self.pivot_leg],
+        )
 
     def reset(self):
         self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 0)
 
         self.done = False
         self.free_fall_count = 0
+        self.target_reached_count = 0
 
         for i in range(self._p.getNumConstraints()):
             id = self._p.getConstraintUniqueId(i)
             self._p.removeConstraint(id)
 
         # start at 2 because first 2 are already in contact
-        self.next_step_index = 0
+        self.next_step_index = 2
 
         self._p.restoreState(self.state_id)
 
@@ -192,7 +198,11 @@ class Monkey3DCustomEnv(EnvBase):
         return state
 
     def step(self, action):
+        # action *= 0
         # action[[17, 22]] = -1
+
+        # action[17 if self.swing_leg == 0 else 22] = +1
+        action[17 if self.pivot_leg == 0 else 22] = -1
 
         self.robot.apply_action(action)
         self.scene.global_step()
@@ -201,9 +211,9 @@ class Monkey3DCustomEnv(EnvBase):
         self.robot_state = self.robot.calc_state(contact_object_ids=None)
         self.calc_env_state(action)
 
-        reward = self.progress - self.energy_penalty
+        reward = self.progress - 0 * self.energy_penalty
         reward += self.step_bonus + self.target_bonus - 0 * self.speed_penalty
-        reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
+        reward += 0 * self.tall_bonus - self.posture_penalty - self.joints_penalty
 
         state = np.concatenate(self.get_observation_component())
 
@@ -282,14 +292,32 @@ class Monkey3DCustomEnv(EnvBase):
                 distance = (delta[0] ** 2 + delta[1] ** 2) ** (1 / 2)
                 self.foot_dist_to_target = distance
 
-                self.target_reached = bool(
-                    {(next_step.id, next_step.cover_id)} & contact_ids
+                other_link_name = (
+                    "right_finger_2" if self.swing_leg == 0 else "left_finger_2"
                 )
+                other_link_id = self.robot.parts[other_link_name].bodyPartIndex
+                other_contacts = set(
+                    (x[2], x[4])
+                    for x in self._p.getContactPoints(
+                        self.robot.id, linkIndexA=other_link_id
+                    )
+                )
+
+                # self.target_reached = bool(
+                #     {(next_step.id, next_step.cover_id)} & contact_ids
+                # ) and bool({(next_step.id, next_step.cover_id)} & other_contacts)
+
+                self.target_reached_count += bool(
+                    {(next_step.id, next_step.cover_id)} & contact_ids
+                ) and bool({(next_step.id, next_step.cover_id)} & other_contacts)
+
+                self.target_reached = self.target_reached_count > 10
 
                 if not self.target_reached:
                     continue
 
                 # Update next step
+                self.target_reached_count = 0
                 self.next_step_index += 1
                 self.next_step_index = min(
                     self.next_step_index, self.terrain_info.shape[0] - 1
@@ -367,14 +395,19 @@ class Monkey3DCustomEnv(EnvBase):
         global_dim = 6
         robot_act_dim = self.robot.action_space.shape[0]
         robot_obs_dim = self.robot.observation_space.shape[0]
+        env_obs_dim = self.observation_space.shape[0]
 
         # _ + 6 accounting for global
         right = self.robot._right_joint_indices + global_dim
         # _ + robot_act_dim to get velocities, right foot contact
-        right = np.concatenate((right, right + robot_act_dim, [robot_obs_dim - 2]))
+        right = np.concatenate(
+            (right, right + robot_act_dim, [robot_obs_dim - 2, env_obs_dim - 2])
+        )
         # Do the same for left
         left = self.robot._left_joint_indices + global_dim
-        left = np.concatenate((left, left + robot_act_dim, [robot_obs_dim - 1]))
+        left = np.concatenate(
+            (left, left + robot_act_dim, [robot_obs_dim - 1, env_obs_dim - 1])
+        )
 
         # Used for creating mirrored observations
         # 2:  vy
