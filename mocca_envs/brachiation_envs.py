@@ -163,6 +163,7 @@ class Monkey3DCustomEnv(EnvBase):
         self.done = False
         self.free_fall_count = 0
         self.target_reached_count = 0
+        self.timestep = 0
 
         for i in range(self._p.getNumConstraints()):
             id = self._p.getConstraintUniqueId(i)
@@ -199,10 +200,12 @@ class Monkey3DCustomEnv(EnvBase):
 
     def step(self, action):
         # action *= 0
-        # action[[17, 22]] = -1
+        self.timestep += 1
 
         action[17 if self.swing_leg == 0 else 22] = +1
         action[17 if self.pivot_leg == 0 else 22] = -1
+
+        # action[[17, 22]] = -1
 
         self.robot.apply_action(action)
         self.scene.global_step()
@@ -211,9 +214,14 @@ class Monkey3DCustomEnv(EnvBase):
         self.robot_state = self.robot.calc_state(contact_object_ids=None)
         self.calc_env_state(action)
 
-        reward = self.progress - 0.1 * self.energy_penalty
+        reward = self.progress - 0 * self.energy_penalty
         reward += self.step_bonus + (self.target_bonus - self.speed_penalty) * 0
-        reward += (self.tall_bonus - self.posture_penalty - self.joints_penalty) * 0
+        reward += 0 * self.tall_bonus - self.posture_penalty - self.joints_penalty
+
+        contact_penalty = self.robot.feet_contact[self.swing_leg]
+        reward += -contact_penalty
+
+        self.done = self.done or (self.timestep > 180 and self.next_step_index <= 2)
 
         state = np.concatenate(self.get_observation_component())
 
@@ -250,11 +258,14 @@ class Monkey3DCustomEnv(EnvBase):
         self.progress = linear_progress + swing_progress
 
         self.posture_penalty = 0
+        if not -60 < self.robot.body_rpy[0] * RAD2DEG < 60:
+            self.posture_penalty += abs(self.robot.body_rpy[0])
+
         if not -40 < self.robot.body_rpy[1] * RAD2DEG < 40:
             self.posture_penalty = abs(self.robot.body_rpy[1])
 
-        if not -60 < self.robot.body_rpy[0] * RAD2DEG < 60:
-            self.posture_penalty += abs(self.robot.body_rpy[0])
+        if not -90 < self.robot.body_rpy[2] * RAD2DEG < 90:
+            self.posture_penalty += abs(self.robot.body_rpy[2])
 
         v = self.robot.body_vel
         speed = (v[0] ** 2 + v[1] ** 2 + v[2] ** 2) ** (1 / 2)
