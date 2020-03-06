@@ -211,9 +211,9 @@ class Monkey3DCustomEnv(EnvBase):
         self.robot_state = self.robot.calc_state(contact_object_ids=None)
         self.calc_env_state(action)
 
-        reward = self.progress - 0 * self.energy_penalty
-        reward += self.step_bonus + self.target_bonus - 0 * self.speed_penalty
-        reward += 0 * self.tall_bonus - self.posture_penalty - self.joints_penalty
+        reward = self.progress - 0.1 * self.energy_penalty
+        reward += self.step_bonus + (self.target_bonus - self.speed_penalty) * 0
+        reward += (self.tall_bonus - self.posture_penalty - self.joints_penalty) * 0
 
         state = np.concatenate(self.get_observation_component())
 
@@ -292,26 +292,22 @@ class Monkey3DCustomEnv(EnvBase):
                 distance = (delta[0] ** 2 + delta[1] ** 2) ** (1 / 2)
                 self.foot_dist_to_target = distance
 
-                other_link_name = (
-                    "right_finger_2" if self.swing_leg == 0 else "left_finger_2"
-                )
-                other_link_id = self.robot.parts[other_link_name].bodyPartIndex
-                other_contacts = set(
+                palm_name = "right_palm" if self.swing_leg == 0 else "left_palm"
+                palm_id = self.robot.parts[palm_name].bodyPartIndex
+                palm_contacts = set(
                     (x[2], x[4])
-                    for x in self._p.getContactPoints(
-                        self.robot.id, linkIndexA=other_link_id
-                    )
+                    for x in self._p.getContactPoints(self.robot.id, linkIndexA=palm_id)
                 )
 
                 # self.target_reached = bool(
                 #     {(next_step.id, next_step.cover_id)} & contact_ids
-                # ) and bool({(next_step.id, next_step.cover_id)} & other_contacts)
+                # ) and bool({(next_step.id, next_step.cover_id)} & finger_contacts)
 
                 self.target_reached_count += bool(
-                    {(next_step.id, next_step.cover_id)} & contact_ids
-                ) and bool({(next_step.id, next_step.cover_id)} & other_contacts)
+                    {(next_step.id, next_step.cover_id)} & palm_contacts
+                )
 
-                self.target_reached = self.target_reached_count > 10
+                self.target_reached = self.target_reached_count >= 1
 
                 if not self.target_reached:
                     continue
