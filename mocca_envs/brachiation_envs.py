@@ -201,7 +201,7 @@ class Monkey3DCustomEnv(EnvBase):
         # action *= 0
         # action[[17, 22]] = -1
 
-        # action[17 if self.swing_leg == 0 else 22] = +1
+        action[17 if self.swing_leg == 0 else 22] = +1
         action[17 if self.pivot_leg == 0 else 22] = -1
 
         self.robot.apply_action(action)
