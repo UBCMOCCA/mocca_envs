@@ -14,7 +14,7 @@ class Monkey3DCustomEnv(EnvBase):
 
     control_step = 1 / 60
     llc_frame_skip = 1
-    sim_frame_skip = 8
+    sim_frame_skip = 4
 
     initial_height = 20
     bar_length = 5
@@ -46,9 +46,10 @@ class Monkey3DCustomEnv(EnvBase):
         self.r_range = np.array([0.3, 0.5])
         self.terrain_info = np.zeros((self.n_steps, 4))
 
-        # robot_state + (2 targets) * (x, y, z) + {swing, pivot}_leg
+        # robot_state + (2 targets) * (x, y, z) + {swing, pivot}_leg + swing_{xyz, quat}
         robot_obs_dim = self.robot.observation_space.shape[0]
-        high = np.inf * np.ones(robot_obs_dim + self.lookahead * 3 + 2)
+        base_env_dim = robot_obs_dim + self.lookahead * 3 + 2 + 7
+        high = np.inf * np.ones(base_env_dim)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
         # torques
@@ -150,11 +151,18 @@ class Monkey3DCustomEnv(EnvBase):
             self.set_step_state(next, oldest)
 
     def get_observation_component(self):
+        swing_foot_name = "right_palm" if self.swing_leg == 0 else "left_palm"
+        swing_foot_xyz = self.robot.parts[swing_foot_name].pose().xyz()
+        swing_foot_delta = self.walk_target - swing_foot_xyz
+        swing_foot_quat = self.robot.parts[swing_foot_name].pose().orientation()
+
         return (
             self.robot_state[:-2],
             self.robot.feet_contact,
             self.targets.flatten(),
             [self.swing_leg, self.pivot_leg],
+            swing_foot_delta,
+            swing_foot_quat,
         )
 
     def reset(self):
@@ -216,7 +224,7 @@ class Monkey3DCustomEnv(EnvBase):
 
         reward = self.progress - 0 * self.energy_penalty
         reward += self.step_bonus + (self.target_bonus - self.speed_penalty) * 0
-        reward += 0 * self.tall_bonus - self.posture_penalty - self.joints_penalty
+        reward += 0 * (self.tall_bonus - self.posture_penalty - self.joints_penalty)
 
         contact_penalty = self.robot.feet_contact[self.swing_leg]
         reward += -contact_penalty
@@ -238,7 +246,8 @@ class Monkey3DCustomEnv(EnvBase):
             walk_target_delta[0] ** 2 + walk_target_delta[1] ** 2
         ) ** (1 / 2)
 
-        swing_foot_xyz = self.robot.feet_xyz[self.swing_leg]
+        swing_foot_name = "right_palm" if self.swing_leg == 0 else "left_palm"
+        swing_foot_xyz = self.robot.parts[swing_foot_name].pose().xyz()
         swing_foot_delta = self.walk_target - swing_foot_xyz
         swing_distance = np.linalg.norm(swing_foot_delta)
 
@@ -255,7 +264,7 @@ class Monkey3DCustomEnv(EnvBase):
 
         linear_progress = self.linear_potential - old_linear_potential
         swing_progress = self.swing_potential - old_swing_potential
-        self.progress = linear_progress + swing_progress
+        self.progress = 0 * linear_progress + swing_progress
 
         self.posture_penalty = 0
         if not -60 < self.robot.body_rpy[0] * RAD2DEG < 60:

@@ -15,4 +15,3 @@ for i in range(1000):
     env.unwrapped._handle_keyboard()
 
     time.sleep(1 / 30)
-
