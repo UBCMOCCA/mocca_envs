@@ -442,29 +442,29 @@ class WalkerBase:
 class Walker3D(WalkerBase):
 
     foot_names = ["right_foot", "left_foot"]
-
+    power_amplifier = 1.0
     power_coef = {
-        "abdomen_z": 60,
-        "abdomen_y": 80,
-        "abdomen_x": 60,
-        "right_hip_x": 80,
-        "right_hip_z": 60,
-        "right_hip_y": 100,
-        "right_knee": 90,
-        "right_ankle": 60,
-        "left_hip_x": 80,
-        "left_hip_z": 60,
-        "left_hip_y": 100,
-        "left_knee": 90,
-        "left_ankle": 60,
-        "right_shoulder_x": 60,
-        "right_shoulder_z": 60,
-        "right_shoulder_y": 50,
-        "right_elbow": 60,
-        "left_shoulder_x": 60,
-        "left_shoulder_z": 60,
-        "left_shoulder_y": 50,
-        "left_elbow": 60,
+        "abdomen_z": 60*power_amplifier,#120,
+        "abdomen_y": 80*power_amplifier,#160,
+        "abdomen_x": 60*power_amplifier,#120,
+        "right_hip_x": 80*power_amplifier,#160,
+        "right_hip_z": 60*power_amplifier,#120,
+        "right_hip_y": 100*power_amplifier,#200,
+        "right_knee": 90*power_amplifier,#180,
+        "right_ankle": 60*power_amplifier,#120,
+        "left_hip_x": 80*power_amplifier,#160,
+        "left_hip_z": 60*power_amplifier,#120,
+        "left_hip_y": 100*power_amplifier,#200,
+        "left_knee": 90*power_amplifier,#180,
+        "left_ankle": 60*power_amplifier,#120,
+        "right_shoulder_x": 60*power_amplifier,#120,
+        "right_shoulder_z": 60*power_amplifier,#120,
+        "right_shoulder_y": 50*power_amplifier,#100,
+        "right_elbow": 60*power_amplifier,#120,
+        "left_shoulder_x": 60*power_amplifier,#120,
+        "left_shoulder_z": 60*power_amplifier,#120,
+        "left_shoulder_y": 50*power_amplifier,#100,
+        "left_elbow": 60*power_amplifier,#120,
     }
 
     def __init__(self, bc):
@@ -685,3 +685,138 @@ class Crab2D(WalkerBase):
         model_path = os.path.join(current_dir, "data", "custom", "crab2d.xml")
         root_link_name = "pelvis"
         super(Crab2D, self).load_robot_model(model_path, flags, root_link_name)
+
+class Mike(WalkerBase):
+
+    foot_names = ["right_foot", "left_foot"]
+    power_amplifier = 1.0
+    power_coef = {
+        "abdomen_z": 60*power_amplifier,#120,
+        "abdomen_y": 80*power_amplifier,#160,
+        "abdomen_x": 60*power_amplifier,#120,
+        "right_hip_x": 80*power_amplifier,#160,
+        "right_hip_z": 60*power_amplifier,#120,
+        "right_hip_y": 100*power_amplifier,#200,
+        "right_knee": 90*power_amplifier,#180,
+        "right_ankle": 60*power_amplifier,#120,
+        "left_hip_x": 80*power_amplifier,#160,
+        "left_hip_z": 60*power_amplifier,#120,
+        "left_hip_y": 100*power_amplifier,#200,
+        "left_knee": 90*power_amplifier,#180,
+        "left_ankle": 60*power_amplifier,#120,
+        "right_shoulder_x": 60*power_amplifier,#120,
+        "right_shoulder_z": 60*power_amplifier,#120,
+        "right_shoulder_y": 50*power_amplifier,#100,
+        "right_elbow": 60*power_amplifier,#120,
+        "left_shoulder_x": 60*power_amplifier,#120,
+        "left_shoulder_z": 60*power_amplifier,#120,
+        "left_shoulder_y": 50*power_amplifier,#100,
+        "left_elbow": 60*power_amplifier,#120,
+    }
+
+    def __init__(self, bc):
+        self._p = bc
+        self.power = 1.0
+
+        self.action_dim = 21
+        high = np.ones(self.action_dim)
+        self.action_space = gym.spaces.Box(-high, high, dtype=np.float32)
+
+        # globals + angles + speeds + contacts
+        self.state_dim = 6 + self.action_dim * 2 + 2
+        high = np.inf * np.ones(self.state_dim)
+        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
+        self.P = np.array([60,80,60,80,60,100,90,60,80,60,100,90,60,60,60,50,60,60,60,50,60])
+        self.D = self.P / 10.0
+        # print("hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh")
+
+    # def apply_action(self, a):
+    #     assert np.isfinite(a).all()
+    #     x = np.clip(a, -1, 1)
+    #     for n, j in enumerate(self.ordered_joints):
+    #         #print(j.current_relative_position())
+    #         torque = self.P[n] * (float(x[n])-j.current_relative_position()[0]) - self.D[n] * j.current_relative_position()[1]
+    #         #print(torque)
+    #         j.set_motor_torque(torque)
+
+    def load_robot_model(self):
+        flags = (
+            self._p.MJCF_COLORS_FROM_FILE
+            | self._p.URDF_USE_SELF_COLLISION
+            | self._p.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
+        )
+        model_path = os.path.join(current_dir, "data", "custom", "mike.xml")
+        root_link_name = None
+
+        # Need to call this first to parse body
+        super(Mike, self).load_robot_model(model_path, flags, root_link_name)
+
+        # T-pose
+        self.base_joint_angles = np.zeros(self.action_dim)
+        self.base_position = (0, 0, 1.32)
+        self.base_orientation = (0, 0, 0, 1)
+
+        # Need this to set pose and mirroring
+        # hip_[x,z,y], knee, ankle, shoulder_[x,z,y], elbow
+        self._right_joint_indices = np.array(
+            [3, 4, 5, 6, 7, 13, 14, 15, 16], dtype=np.int64
+        )
+        self._left_joint_indices = np.array(
+            [8, 9, 10, 11, 12, 17, 18, 19, 20], dtype=np.int64
+        )
+        # abdomen_[x,z]
+        self._negation_joint_indices = np.array([0, 2], dtype=np.int64)
+
+        self._rl = np.concatenate((self._right_joint_indices, self._left_joint_indices))
+        self._lr = np.concatenate((self._left_joint_indices, self._right_joint_indices))
+
+    def set_base_pose(self, pose=None):
+        self.base_joint_angles[:] = 0  # reset
+
+        if pose == "running_start":
+            self.base_joint_angles[[5, 6]] = -np.pi / 8  # Right leg
+            self.base_joint_angles[10] = np.pi / 10  # Left leg back
+            self.base_joint_angles[[13, 17]] = np.pi / 3  # Shoulder x
+            self.base_joint_angles[[14]] = -np.pi / 6  # Right shoulder back
+            self.base_joint_angles[[18]] = np.pi / 6  # Left shoulder forward
+            self.base_joint_angles[[16, 20]] = np.pi / 3  # Elbow
+            #print("something")
+
+    def reset(self, random_pose=True, pos=None, quat=None, pose=None, vel=None):
+        base_joint_angles = np.copy(self.base_joint_angles)
+        if self.np_random.rand() < 0.5:
+            self.mirrored = True
+            base_joint_angles[self._rl] = base_joint_angles[self._lr]
+            base_joint_angles[self._negation_joint_indices] *= -1
+        else:
+            self.mirrored = False
+
+        if random_pose:
+            # Mirror initial pose
+
+            # Add small deviations
+            ds = self.np_random.uniform(low=-0.1, high=0.1, size=self.action_dim)
+            ps = self.to_normalized(base_joint_angles + ds)
+            ps = self.to_radians(np.clip(ps, -0.95, 0.95))
+
+            for i, j in enumerate(self.ordered_joints):
+                j.reset_current_position(ps[i], 0)
+        else:
+            for i, j in enumerate(self.ordered_joints):
+                j.reset_current_position(base_joint_angles[i], 0)
+
+        if pose is not None:
+            for i, j in enumerate(self.ordered_joints):
+                j.reset_current_position(pose[i], 0)
+
+        pos = self.base_position if pos is None else pos
+        quat = self.base_orientation if quat is None else quat
+        vel = np.zeros(3) if vel is None else vel
+
+        self._p.resetBasePositionAndOrientation(
+            self.object_id[0], posObj=pos, ornObj=quat
+        )
+
+        self._p.resetBaseVelocity(self.object_id[0], linearVelocity=vel)
+
+        return super(Mike, self).reset()

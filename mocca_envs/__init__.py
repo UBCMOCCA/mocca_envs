@@ -130,6 +130,12 @@ register(
 )
 
 register(
+    id="MikeStepperEnv-v0",
+    entry_point="mocca_envs.mike:MikeStepperEnv",
+    max_episode_steps=1000,
+)
+
+register(
     id="Walker2DCustomEnv-v0",
     entry_point="mocca_envs.walker3d_envs:Walker2DCustomEnv",
     max_episode_steps=1000,
