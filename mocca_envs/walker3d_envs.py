@@ -580,7 +580,7 @@ class Walker3DStepperEnv(EnvBase):
         window = slice(half_size-self.specialist, half_size+self.specialist+1)
         prev_window = slice(half_size-prev_specialist, half_size+prev_specialist+1)
         self.yaw_pitch_r_tilt_prob *= 0
-        self.yaw_pitch_r_tilt_prob[window, window, 0:self.specialist * 2 + 1, window, window, window] = prob
+        self.yaw_pitch_r_tilt_prob[window, window, 0:self.specialist * 2 + 1, window, window] = prob
         self.yaw_pitch_r_tilt_prob[prev_window, prev_window, 1:self.specialist * 2 - 1, prev_window, prev_window] = 0
 
     def generate_step_placements(
