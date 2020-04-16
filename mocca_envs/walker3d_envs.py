@@ -1177,8 +1177,16 @@ class Walker3DStepperEnv(EnvBase):
         # self.yaw_pitch_r_prob[window, window, 0:self.curriculum * 2 + 1] = prob
 
     def update_curriculum(self, curriculum):
+        # self.yaw_pitch_r_tilt_prob *= 0
+        # self.yaw_pitch_r_tilt_prob[(self.yaw_sample_size-1)//2, (self.pitch_sample_size-1)//2, 0, (self.x_tilt_sample_size-1)//2, (self.y_tilt_sample_size-1)//2] = 1
+        self.curriculum = min(curriculum, self.max_curriculum)
+        half_size = (self.sample_size-1)//2
+        if self.curriculum >= half_size:
+            self.curriculum = half_size
         self.yaw_pitch_r_tilt_prob *= 0
-        self.yaw_pitch_r_tilt_prob[(self.yaw_sample_size-1)//2, (self.pitch_sample_size-1)//2, 0, (self.x_tilt_sample_size-1)//2, (self.y_tilt_sample_size-1)//2] = 1
+        prob = 1.0 / (self.curriculum * 2 + 1)**5
+        window = slice(half_size-self.curriculum, half_size+self.curriculum+1)
+        self.yaw_pitch_r_tilt_prob[window, window, 0:self.curriculum * 2 + 1, window, window] = prob
 
     def get_mirror_indices(self):
 
