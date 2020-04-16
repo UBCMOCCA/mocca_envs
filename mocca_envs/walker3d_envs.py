@@ -524,8 +524,8 @@ class Walker3DStepperEnv(EnvBase):
         self.yaw_samples = np.linspace(-0, -0, num=self.yaw_sample_size) * DEG2RAD
         self.pitch_samples = np.linspace(-0, 0, num=self.pitch_sample_size) * DEG2RAD
         self.r_samples = np.linspace(1.2, 1.2, num=self.r_sample_size)
-        self.x_tilt_samples = np.linspace(0, 0, num=self.x_tilt_sample_size) * DEG2RAD
-        self.y_tilt_samples = np.linspace(0, 0, num=self.y_tilt_sample_size) * DEG2RAD
+        self.x_tilt_samples = np.linspace(-20, 20, num=self.x_tilt_sample_size) * DEG2RAD
+        self.y_tilt_samples = np.linspace(-20, 20, num=self.y_tilt_sample_size) * DEG2RAD
 
         self.yaw_pitch_prob = np.ones((self.yaw_sample_size, self.pitch_sample_size)) / (self.yaw_sample_size*self.pitch_sample_size)
         self.yaw_pitch_r_prob = np.ones((self.yaw_sample_size, self.pitch_sample_size, self.r_sample_size)) / (self.yaw_sample_size*self.pitch_sample_size*self.r_sample_size)
@@ -552,7 +552,7 @@ class Walker3DStepperEnv(EnvBase):
     def set_mirror(self, mirror):
         pass
 
-    def update_specialist(self, specialist):
+    def update_specialist_2(self, specialist):
         self.specialist = min(specialist, 5)
         prev_specialist = self.specialist - 1
         #print((self.specialist * 2 + 1)**2 - (prev_specialist*2+1)**2)
@@ -567,6 +567,21 @@ class Walker3DStepperEnv(EnvBase):
         self.yaw_pitch_prob[window, window] = prob
         self.yaw_pitch_prob[prev_window, prev_window] = 0
         print(np.round(self.yaw_pitch_prob, 2))
+
+    def update_specialist(self, specialist):
+        self.specialist = min(specialist, 5)
+        prev_specialist = self.specialist - 1
+        #print((self.specialist * 2 + 1)**2 - (prev_specialist*2+1)**2)
+        half_size = (self.sample_size-1)//2
+        if specialist == 0:
+            prob = 1
+        else:
+            prob = 1.0 / ((self.specialist * 2 + 1)**5 - (prev_specialist*2+1)**5)
+        window = slice(half_size-self.specialist, half_size+self.specialist+1)
+        prev_window = slice(half_size-prev_specialist, half_size+prev_specialist+1)
+        self.yaw_pitch_r_tilt_prob *= 0
+        self.yaw_pitch_r_tilt_prob[window, window, 0:self.specialist * 2 + 1, window, window, window] = prob
+        self.yaw_pitch_r_tilt_prob[prev_window, prev_window, 1:self.specialist * 2 - 1, prev_window, prev_window] = 0
 
     def generate_step_placements(
         self,
