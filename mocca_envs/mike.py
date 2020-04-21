@@ -28,7 +28,7 @@ class MikeStepperEnv(EnvBase):
 
     def __init__(self, render=False):
 
-        self.done_height = 0.6
+        self.done_height = 0.7
 
         # Need these before calling constructor
         # because they are used in self.create_terrain()
@@ -60,16 +60,26 @@ class MikeStepperEnv(EnvBase):
 
         self.sample_size = 11
         self.yaw_sample_size = 11
-        self.pitch_sample_size = 51
-        self.r_sample_size = 6
-        self.yaw_samples = np.linspace(-0, 0, num=self.yaw_sample_size) * DEG2RAD
-        self.pitch_samples = np.linspace(-0, 0, num=self.pitch_sample_size) * DEG2RAD
+        self.pitch_sample_size = 11
+        self.r_sample_size = 11
+        self.x_tilt_sample_size = 11
+        self.y_tilt_sample_size = 11
+       
+        self.yaw_samples = np.linspace(-20, 20, num=self.yaw_sample_size) * DEG2RAD
+        self.pitch_samples = np.linspace(-40, 40, num=self.pitch_sample_size) * DEG2RAD
         self.r_samples = np.linspace(0.65, 0.8, num=self.r_sample_size)
+        self.x_tilt_samples = np.linspace(-20, 20, num=self.x_tilt_sample_size) * DEG2RAD
+        self.y_tilt_samples = np.linspace(-20, 20, num=self.y_tilt_sample_size) * DEG2RAD
+
         self.yaw_pitch_prob = np.ones((self.yaw_sample_size, self.pitch_sample_size)) / (self.yaw_sample_size*self.pitch_sample_size)
         self.yaw_pitch_r_prob = np.ones((self.yaw_sample_size, self.pitch_sample_size, self.r_sample_size)) / (self.yaw_sample_size*self.pitch_sample_size*self.r_sample_size)
+        self.yaw_pitch_r_tilt_prob = np.ones((self.yaw_sample_size, self.pitch_sample_size, self.r_sample_size, self.x_tilt_sample_size, self.y_tilt_sample_size)) / (self.yaw_sample_size*self.pitch_sample_size * self.r_sample_size * self.x_tilt_sample_size * self.y_tilt_sample_size)
+
         self.fake_yaw_samples = np.linspace(-20, 20, num=self.yaw_sample_size) * DEG2RAD
         self.fake_pitch_samples = np.linspace(-50, 50, num=self.pitch_sample_size) * DEG2RAD
         self.fake_r_samples = np.linspace(0.65, 1.5, num=self.r_sample_size)
+        self.fake_x_tilt_samples = np.linspace(-20, 20, num=self.x_tilt_sample_size) * DEG2RAD
+        self.fake_y_tilt_samples = np.linspace(-20, 20, num=self.y_tilt_sample_size) * DEG2RAD
 
         # x, y, z, phi, x_tilt, y_tilt
         self.terrain_info = np.zeros((self.n_steps, 6))
@@ -86,7 +96,7 @@ class MikeStepperEnv(EnvBase):
     def set_mirror(self, mirror):
         pass
 
-    def update_specialist(self, specialist):
+    def update_specialist_2(self, specialist):
         self.specialist = min(specialist, 5)
         prev_specialist = self.specialist - 1
         #print((self.specialist * 2 + 1)**2 - (prev_specialist*2+1)**2)
@@ -102,6 +112,21 @@ class MikeStepperEnv(EnvBase):
         self.yaw_pitch_prob[prev_window, prev_window] = 0
         print(np.round(self.yaw_pitch_prob, 2))
 
+    def update_specialist(self, specialist):
+        self.specialist = min(specialist, 5)
+        prev_specialist = self.specialist - 1
+        #print((self.specialist * 2 + 1)**2 - (prev_specialist*2+1)**2)
+        half_size = (self.sample_size-1)//2
+        if specialist == 0:
+            prob = 1
+        else:
+            prob = 1.0 / ((self.specialist * 2 + 1)**5 - (prev_specialist*2+1)**5)
+        window = slice(half_size-self.specialist, half_size+self.specialist+1)
+        prev_window = slice(half_size-prev_specialist, half_size+prev_specialist+1)
+        self.yaw_pitch_r_tilt_prob *= 0
+        self.yaw_pitch_r_tilt_prob[window, window, 0:self.specialist * 2 + 1, window, window] = prob
+        self.yaw_pitch_r_tilt_prob[prev_window, prev_window, 1:self.specialist * 2 - 1, prev_window, prev_window] = 0
+
     def generate_step_placements(
         self,
         n_steps=50,
@@ -110,11 +135,11 @@ class MikeStepperEnv(EnvBase):
         tilt_limit=10,
     ):
 
-        y_range = np.array([-yaw_limit, yaw_limit]) * DEG2RAD
-        p_range = np.array([90 - pitch_limit, 90 + pitch_limit]) * DEG2RAD
+        y_range = np.array([-0, 0]) * DEG2RAD
+        p_range = np.array([90 - 0, 90 + 0]) * DEG2RAD
         t_range = np.array([-tilt_limit, tilt_limit]) * DEG2RAD
 
-        dr = self.np_random.uniform(*self.r_range, size=n_steps)
+        dr = self.np_random.uniform(0.8, 0.8, size=n_steps)
         dphi = self.np_random.uniform(*y_range, size=n_steps)
         dtheta = self.np_random.uniform(*p_range, size=n_steps)
         #dtheta = np.array([75, 70] * 12) * DEG2RAD
@@ -140,12 +165,26 @@ class MikeStepperEnv(EnvBase):
         dphi[1] = 0.0
         dtheta[1] = np.pi / 2
 
-        dr[2] = 0.7
+        dr[2] = 0.75
         dphi[2] = 0.0
         dtheta[2] = np.pi / 2
 
+        test_r = 0.8
+        dr[3] = test_r
+        dtheta[3] = (90 - 50) * DEG2RAD
+        # for i in range(10):
+        #     dr[3 + i * 2] = test_r
+        #     dphi[3 + i * 2] = 0 * DEG2RAD
+        #     dtheta[3 + i * 2] = (90 + 20) * DEG2RAD
+
+        #     dr[4 + i * 2] = test_r
+        #     dphi[4 + i * 2] = 0 * DEG2RAD
+        #     dtheta[4 + i * 2] = (90 + 20) * DEG2RAD
+
         x_tilt = self.np_random.uniform(*t_range, size=n_steps)
         y_tilt = self.np_random.uniform(*t_range, size=n_steps)
+        x_tilt[0:3] = 0
+        y_tilt[0:3] = 0
 
         dphi = np.cumsum(dphi)
 
@@ -173,8 +212,8 @@ class MikeStepperEnv(EnvBase):
 
         for index in range(self.rendered_step_count):
             # p = Pillar(self._p, self.step_radius)
-            # p = Plank(self._p, self.step_radius)
-            p = LargePlank(self._p, self.step_radius)
+            p = Plank(self._p, self.step_radius)
+            #p = LargePlank(self._p, self.step_radius)
             self.steps.append(p)
             step_ids = step_ids | {(p.id, p.base_id)}
             cover_ids = cover_ids | {(p.id, p.cover_id)}
@@ -232,6 +271,10 @@ class MikeStepperEnv(EnvBase):
 
         self.next_next_pitch = np.pi/2
         self.next_next_yaw = 0
+        self.next_x_tilt = 0
+        self.next_y_tilt = 0
+        self.next_next_x_tilt = 0
+        self.next_next_y_tilt = 0
         self.next_dr = 0.8
         self.next_next_dr = 0.8
 
@@ -246,7 +289,7 @@ class MikeStepperEnv(EnvBase):
         state = np.concatenate((self.robot_state, self.targets.flatten()))
         height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
         state[0] = height
-        #import time; time.sleep(5)
+        # import time; time.sleep(5)
 
         return state
 
@@ -462,7 +505,7 @@ class MikeStepperEnv(EnvBase):
         self.steps[body_index].set_position(pos=pos, quat=quaternion)
         self.targets = self.delta_to_k_targets(k=self.lookahead)
 
-    def sample_next_next_step_2(self):
+    def sample_next_next_step_1(self):
         pairs = np.indices(dimensions=(self.yaw_sample_size, self.pitch_sample_size))
         self.yaw_pitch_prob /= self.yaw_pitch_prob.sum()
         inds = self.np_random.choice(np.arange(self.yaw_sample_size*self.pitch_sample_size), p=self.yaw_pitch_prob.reshape(-1), size=1, replace=False)
@@ -482,7 +525,7 @@ class MikeStepperEnv(EnvBase):
 
         self.set_next_next_step_location(self.next_next_pitch, self.next_next_yaw, self.next_next_dr)
 
-    def sample_next_next_step(self):
+    def sample_next_next_step_2(self):
         pairs = np.indices(dimensions=(self.yaw_sample_size, self.pitch_sample_size, self.r_sample_size))
         self.yaw_pitch_r_prob /= self.yaw_pitch_r_prob.sum()
         inds = self.np_random.choice(np.arange(self.yaw_sample_size*self.pitch_sample_size*self.r_sample_size), p=self.yaw_pitch_r_prob.reshape(-1), size=1, replace=False)
@@ -503,12 +546,40 @@ class MikeStepperEnv(EnvBase):
 
         self.set_next_next_step_location(self.next_next_pitch, self.next_next_yaw, self.next_next_dr)
 
+    def sample_next_next_step(self):
+        pairs = np.indices(dimensions=(self.yaw_sample_size, self.pitch_sample_size, self.r_sample_size, self.x_tilt_sample_size, self.y_tilt_sample_size))
+        self.yaw_pitch_r_tilt_prob /= self.yaw_pitch_r_tilt_prob.sum()
+        inds = self.np_random.choice(np.arange(self.yaw_sample_size*self.pitch_sample_size*self.r_sample_size*self.x_tilt_sample_size*self.y_tilt_sample_size), 
+            p=self.yaw_pitch_r_tilt_prob.reshape(-1), size=1, replace=False)
+
+        inds = pairs.reshape(5, self.yaw_sample_size*self.pitch_sample_size*self.r_sample_size*self.x_tilt_sample_size*self.y_tilt_sample_size)[:, inds].squeeze()
+        #print(self.yaw_pitch_prob, inds)
+        yaw = self.yaw_samples[inds[0]]
+        pitch = self.pitch_samples[inds[1]] + np.pi / 2
+        dr = self.r_samples[inds[2]]
+        x_tilt = self.x_tilt_samples[inds[3]]
+        y_tilt = self.y_tilt_samples[inds[4]]
+
+        self.next_pitch = self.next_next_pitch
+        self.next_yaw = self.next_next_yaw
+        self.next_dr = np.copy(self.next_next_dr)
+        self.next_x_tilt = np.copy(self.next_next_x_tilt)
+        self.next_y_tilt = np.copy(self.next_next_y_tilt)
+        
+        self.next_next_pitch = pitch
+        self.next_next_yaw = yaw
+        self.next_next_dr = dr
+        self.next_next_x_tilt = x_tilt
+        self.next_next_y_tilt = y_tilt
+
+        self.set_next_next_step_location(self.next_next_pitch, self.next_next_yaw, self.next_next_dr, x_tilt=x_tilt, y_tilt=y_tilt)
+
     def get_temp_state(self):
         obs = self.get_state()
         target = self.delta_to_k_targets(k=self.lookahead)
         return np.concatenate((obs, target.flatten()))
 
-    def create_temp_states_2(self):
+    def create_temp_states_1(self):
         if self.update_terrain:
             temp_states = []
             for yaw in self.fake_yaw_samples:
@@ -526,7 +597,7 @@ class MikeStepperEnv(EnvBase):
             ret = self.temp_states
         return ret
 
-    def create_temp_states(self):
+    def create_temp_states_2(self):
         if self.update_terrain:
             temp_states = []
             for yaw in self.fake_yaw_samples:
@@ -544,7 +615,26 @@ class MikeStepperEnv(EnvBase):
             ret = self.temp_states
         return ret
 
-    def set_next_next_step_location(self, pitch, yaw, dr):
+    def create_temp_states(self):
+        if self.update_terrain:
+            temp_states = []
+            for yaw in self.fake_yaw_samples:
+                for pitch in self.fake_pitch_samples:
+                    for r in self.fake_r_samples:
+                        for x_tilt in self.fake_x_tilt_samples:
+                            for y_tilt in self.fake_y_tilt_samples:
+                                actual_pitch = np.pi/2 - pitch
+                                self.set_next_next_step_location(actual_pitch, yaw, r, x_tilt, y_tilt)
+                                temp_state = self.get_temp_state()
+                                temp_states.append(temp_state)
+            #self.set_next_step_location(self.next_pitch, self.next_yaw, self.next_dr)
+            self.set_next_next_step_location(self.next_next_pitch, self.next_next_yaw, self.next_next_dr, self.next_next_x_tilt, self.next_next_y_tilt)
+            ret = np.stack(temp_states)
+        else:
+            ret = self.temp_states
+        return ret
+
+    def set_next_next_step_location(self, pitch, yaw, dr, x_tilt=0, y_tilt=0):
         next_step_xyz = self.terrain_info[self.next_step_index]
         bound_checked_index = (self.next_step_index + 1) % self.n_steps
 
@@ -572,8 +662,10 @@ class MikeStepperEnv(EnvBase):
         self.terrain_info[bound_checked_index, 1] = y
         self.terrain_info[bound_checked_index, 2] = z
         self.terrain_info[bound_checked_index, 3] = yaw + base_yaw
+        self.terrain_info[bound_checked_index, 4] = x_tilt
+        self.terrain_info[bound_checked_index, 5] = y_tilt
 
-    def set_next_step_location(self, pitch, yaw, dr):
+    def set_next_step_location(self, pitch, yaw, dr, x_tilt=0, y_tilt=0):
         next_step_xyz = self.terrain_info[self.next_step_index-1]
         bound_checked_index = (self.next_step_index) % self.n_steps
         
@@ -601,18 +693,25 @@ class MikeStepperEnv(EnvBase):
         self.terrain_info[bound_checked_index, 1] = y
         self.terrain_info[bound_checked_index, 2] = z
         self.terrain_info[bound_checked_index, 3] = yaw + base_yaw
+        self.terrain_info[bound_checked_index, 4] = x_tilt
+        self.terrain_info[bound_checked_index, 5] = y_tilt
 
-    def update_sample_prob_2(self, sample_prob):
+    def update_sample_prob_1(self, sample_prob):
         if self.update_terrain:
             self.yaw_pitch_prob = sample_prob
             self.update_terrain_info()
 
-    def update_sample_prob(self, sample_prob):
+    def update_sample_prob_2(self, sample_prob):
         if self.update_terrain:
             self.yaw_pitch_r_prob = sample_prob
             self.update_terrain_info()
 
-    def update_curriculum_2(self, curriculum):
+    def update_sample_prob(self, sample_prob):
+        if self.update_terrain:
+            self.yaw_pitch_r_tilt_prob = sample_prob
+            self.update_terrain_info()
+
+    def update_curriculum_1(self, curriculum):
         self.yaw_pitch_prob *= 0
         self.yaw_pitch_prob[(self.yaw_sample_size-1)//2, (self.pitch_sample_size-1)//2] = 1
         #self.curriculum = min(curriculum, self.max_curriculum)
@@ -624,7 +723,7 @@ class MikeStepperEnv(EnvBase):
         #window = slice(half_size-self.curriculum, half_size+self.curriculum+1)
         #self.yaw_pitch_prob[window, window] = prob
 
-    def update_curriculum(self, curriculum):
+    def update_curriculum_2(self, curriculum):
         self.yaw_pitch_r_prob *= 0
         self.yaw_pitch_r_prob[(self.yaw_sample_size-1)//2, (self.pitch_sample_size-1)//2, 0] = 1
         # self.curriculum = min(curriculum, self.max_curriculum)
@@ -634,7 +733,19 @@ class MikeStepperEnv(EnvBase):
         # self.yaw_pitch_r_prob *= 0
         # prob = 1.0 / (self.curriculum * 2 + 1)**3
         # window = slice(half_size-self.curriculum, half_size+self.curriculum+1)
-        # self.yaw_pitch_r_prob[window, window, window] = prob
+        # self.yaw_pitch_r_prob[window, window, 0:self.curriculum * 2 + 1] = prob
+
+    def update_curriculum(self, curriculum):
+        # self.yaw_pitch_r_tilt_prob *= 0
+        # self.yaw_pitch_r_tilt_prob[(self.yaw_sample_size-1)//2, (self.pitch_sample_size-1)//2, 0, (self.x_tilt_sample_size-1)//2, (self.y_tilt_sample_size-1)//2] = 1
+        self.curriculum = min(curriculum, self.max_curriculum)
+        half_size = (self.sample_size-1)//2
+        if self.curriculum >= half_size:
+            self.curriculum = half_size
+        self.yaw_pitch_r_tilt_prob *= 0
+        prob = 1.0 / (self.curriculum * 2 + 1)**5
+        window = slice(half_size-self.curriculum, half_size+self.curriculum+1)
+        self.yaw_pitch_r_tilt_prob[window, window, 0:self.curriculum * 2 + 1, window, window] = prob
 
     def get_mirror_indices(self):
 

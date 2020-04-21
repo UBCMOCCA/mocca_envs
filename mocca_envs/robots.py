@@ -523,6 +523,15 @@ class Walker3D(WalkerBase):
         self._rl = np.concatenate((self._right_joint_indices, self._left_joint_indices))
         self._lr = np.concatenate((self._left_joint_indices, self._right_joint_indices))
 
+        # waist_part = self.parts['pelvis']
+        # waist_body_index = waist_part.bodyIndex
+        # waist_part_index = waist_part.bodyPartIndex
+        # info = self._p.getDynamicsInfo(waist_part.bodies[waist_body_index], waist_part_index)
+        # print('before mass', info[0])
+        # self._p.changeDynamics(waist_part.bodies[waist_body_index], waist_part_index, mass=25)
+        # info = self._p.getDynamicsInfo(waist_part.bodies[waist_body_index], waist_part_index)
+        # print('after mass', info[0])
+
     def set_base_pose(self, pose=None):
         self.base_joint_angles[:] = 0  # reset
 
@@ -691,9 +700,9 @@ class Mike(WalkerBase):
     foot_names = ["right_foot", "left_foot"]
     power_amplifier = 1.0
     power_coef = {
-        "abdomen_z": 60*power_amplifier,#120,
-        "abdomen_y": 80*power_amplifier,#160,
-        "abdomen_x": 60*power_amplifier,#120,
+        "abdomen_z": 0*power_amplifier,#120,
+        "abdomen_y": 0*power_amplifier,#160,
+        "abdomen_x": 0*power_amplifier,#120,
         "right_hip_x": 80*power_amplifier,#160,
         "right_hip_z": 60*power_amplifier,#120,
         "right_hip_y": 100*power_amplifier,#200,
@@ -704,14 +713,14 @@ class Mike(WalkerBase):
         "left_hip_y": 100*power_amplifier,#200,
         "left_knee": 90*power_amplifier,#180,
         "left_ankle": 60*power_amplifier,#120,
-        "right_shoulder_x": 60*power_amplifier,#120,
-        "right_shoulder_z": 60*power_amplifier,#120,
-        "right_shoulder_y": 50*power_amplifier,#100,
-        "right_elbow": 60*power_amplifier,#120,
-        "left_shoulder_x": 60*power_amplifier,#120,
-        "left_shoulder_z": 60*power_amplifier,#120,
-        "left_shoulder_y": 50*power_amplifier,#100,
-        "left_elbow": 60*power_amplifier,#120,
+        "right_shoulder_x": 30*power_amplifier,#120,
+        "right_shoulder_z": 30*power_amplifier,#120,
+        "right_shoulder_y": 25*power_amplifier,#100,
+        "right_elbow": 30*power_amplifier,#120,
+        "left_shoulder_x": 30*power_amplifier,#120,
+        "left_shoulder_z": 30*power_amplifier,#120,
+        "left_shoulder_y": 25*power_amplifier,#100,
+        "left_elbow": 30*power_amplifier,#120,
     }
 
     def __init__(self, bc):
@@ -728,6 +737,7 @@ class Mike(WalkerBase):
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.P = np.array([60,80,60,80,60,100,90,60,80,60,100,90,60,60,60,50,60,60,60,50,60])
         self.D = self.P / 10.0
+
         # print("hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh")
 
     # def apply_action(self, a):
@@ -769,6 +779,15 @@ class Mike(WalkerBase):
 
         self._rl = np.concatenate((self._right_joint_indices, self._left_joint_indices))
         self._lr = np.concatenate((self._left_joint_indices, self._right_joint_indices))
+
+        waist_part = self.parts['waist']
+        waist_body_index = waist_part.bodyIndex
+        waist_part_index = waist_part.bodyPartIndex
+        # info = self._p.getDynamicsInfo(waist_part.bodies[waist_body_index], waist_part_index)
+        # print('before mass', info[0])
+        self._p.changeDynamics(waist_part.bodies[waist_body_index], waist_part_index, mass=8)
+        # info = self._p.getDynamicsInfo(waist_part.bodies[waist_body_index], waist_part_index)
+        # print('after mass', info[0])
 
     def set_base_pose(self, pose=None):
         self.base_joint_angles[:] = 0  # reset
