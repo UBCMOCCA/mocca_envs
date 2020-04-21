@@ -521,9 +521,9 @@ class Walker3DStepperEnv(EnvBase):
         self.x_tilt_sample_size = 11
         self.y_tilt_sample_size = 11
        
-        self.yaw_samples = np.linspace(-0, -0, num=self.yaw_sample_size) * DEG2RAD
-        self.pitch_samples = np.linspace(-0, 0, num=self.pitch_sample_size) * DEG2RAD
-        self.r_samples = np.linspace(1.2, 1.2, num=self.r_sample_size)
+        self.yaw_samples = np.linspace(-20, 20, num=self.yaw_sample_size) * DEG2RAD
+        self.pitch_samples = np.linspace(-40, 40, num=self.pitch_sample_size) * DEG2RAD
+        self.r_samples = np.linspace(0.65, 0.8, num=self.r_sample_size)
         self.x_tilt_samples = np.linspace(-20, 20, num=self.x_tilt_sample_size) * DEG2RAD
         self.y_tilt_samples = np.linspace(-20, 20, num=self.y_tilt_sample_size) * DEG2RAD
 
@@ -576,12 +576,16 @@ class Walker3DStepperEnv(EnvBase):
         if specialist == 0:
             prob = 1
         else:
-            prob = 1.0 / ((self.specialist * 2 + 1)**5 - (prev_specialist*2+1)**5)
+            prob = 1.0 / ((self.specialist * 2 + 1)**2 - (prev_specialist*2+1)**2) / 3
+            #prob = 1/4
         window = slice(half_size-self.specialist, half_size+self.specialist+1)
         prev_window = slice(half_size-prev_specialist, half_size+prev_specialist+1)
-        self.yaw_pitch_r_tilt_prob *= 0
-        self.yaw_pitch_r_tilt_prob[window, window, 0:self.specialist * 2 + 1, window, window] = prob
-        self.yaw_pitch_r_tilt_prob[prev_window, prev_window, 1:self.specialist * 2 - 1, prev_window, prev_window] = 0
+        r_index = [0]
+        if self.specialist > 0:
+            r_index.append(specialist*2-1)
+            r_index.append(specialist*2)
+        self.yaw_pitch_r_prob *= 0
+        self.yaw_pitch_r_prob[window, window, r_index] = prob
 
     def generate_step_placements(
         self,
