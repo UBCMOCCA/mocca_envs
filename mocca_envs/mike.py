@@ -8,6 +8,7 @@ import numpy as np
 from mocca_envs.env_base import EnvBase
 from mocca_envs.bullet_objects import VSphere, Pillar, Plank, LargePlank
 from mocca_envs.robots import Walker2D, Walker3D, Mike
+from mocca_envs.bullet_objects import HeightField
 
 import torch
 from mocca_envs.model import ActorCriticNet
@@ -95,6 +96,7 @@ class MikeStepperEnv(EnvBase):
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.action_space = self.robot.action_space
         self.temp_states = np.zeros((self.sample_size ** 2, self.observation_space.shape[0]))
+
         # print(self.observation_space.shape)
 
     def set_mirror(self, mirror):
@@ -140,11 +142,11 @@ class MikeStepperEnv(EnvBase):
     ):
 
         # y_range = np.array([-0, 0]) * DEG2RAD
-        y_range = np.array([-10, 10]) * DEG2RAD
+        y_range = np.array([0, 0]) * DEG2RAD
         # p_range = np.array([90 - 0, 90 + 0]) * DEG2RAD
-        p_range = np.array([90 - 30, 90 + 30]) * DEG2RAD
+        p_range = np.array([90 - 20, 90 + 20]) * DEG2RAD
         # t_range = np.array([-tilt_limit, tilt_limit]) * DEG2RAD
-        t_range = np.array([-20, 20]) * DEG2RAD
+        t_range = np.array([0, 0]) * DEG2RAD
 
         # dr = self.np_random.uniform(0.8, 0.8, size=n_steps)
         dr = self.np_random.uniform(0.65, 0.8, size=n_steps)
@@ -208,7 +210,7 @@ class MikeStepperEnv(EnvBase):
 
         x = np.cumsum(x_)
         y = np.cumsum(y_)
-        z = np.cumsum(z_) + 20
+        z = np.cumsum(z_) + 5
 
         min_z = self.step_radius * np.sin(self.tilt_limit * DEG2RAD) + 0.01
         np.clip(z, a_min=min_z, a_max=None, out=z)
@@ -229,6 +231,10 @@ class MikeStepperEnv(EnvBase):
             step_ids = step_ids | {(p.id, p.base_id)}
             cover_ids = cover_ids | {(p.id, p.cover_id)}
 
+        self.terrain = HeightField(self._p, (256, 256))
+        self.ground_ids = {(self.terrain, -1)}
+        #self.terrain.reload(rendered=True)
+
         # Need set for detecting contact
         self.all_contact_object_ids = set(step_ids) | set(cover_ids) | self.ground_ids
 
@@ -242,7 +248,8 @@ class MikeStepperEnv(EnvBase):
         )
 
         for index in range(self.rendered_step_count):
-            pos = self.terrain_info[index, 0:3]
+            pos = np.copy(self.terrain_info[index, 0:3])
+            pos[2] -= 20
             phi, x_tilt, y_tilt = self.terrain_info[index, 3:6]
             quaternion = np.array(self._p.getQuaternionFromEuler([x_tilt, y_tilt, phi]))
             self.steps[index].set_position(pos=pos, quat=quaternion)
@@ -266,10 +273,10 @@ class MikeStepperEnv(EnvBase):
         self.done = False
         self.target_reached_count = 0
 
-        self._p.restoreState(self.state_id)
+        #self._p.restoreState(self.state_id)
 
         # self.robot_state = self.robot.reset(random_pose=True)
-        self.robot_state = self.robot.reset(random_pose=True, pos=(0.3, 0, 21.00), vel=[0.0, 0, 0])
+        self.robot_state = self.robot.reset(random_pose=True, pos=(0.3, 0, 6.00), vel=[0.0, 0, 0])
         self.base_phi = DEG2RAD * np.array(
             [-10] + [20, -20] * (self.n_steps // 2 - 1) + [10]
         )
@@ -278,6 +285,7 @@ class MikeStepperEnv(EnvBase):
 
         # Randomize platforms
         self.randomize_terrain()
+        self.terrain.generate_height_field_from_step(self.terrain_info)
         self.next_step_index = 1
 
         self.next_next_pitch = np.pi / 2
@@ -416,7 +424,9 @@ class MikeStepperEnv(EnvBase):
             distance = (delta[0] ** 2 + delta[1] ** 2) ** (1 / 2)
             self.foot_dist_to_target[i] = distance
 
-            if target_cover_id & contact_ids:
+            #if target_cover_id & contact_ids:
+            #    self.target_reached = True
+            if contact_ids and ((delta[0] ** 2 + delta[1] ** 2 + delta[2]**2) < 0.2):
                 self.target_reached = True
 
         # At least one foot is on the plank
@@ -509,7 +519,8 @@ class MikeStepperEnv(EnvBase):
         body_index = next_next_step % self.rendered_step_count
 
         bound_checked_index = next_next_step % self.n_steps
-        pos = self.terrain_info[bound_checked_index, 0:3]
+        pos = np.copy(self.terrain_info[bound_checked_index, 0:3])
+        pos[2] -= 20
         phi, x_tilt, y_tilt = self.terrain_info[bound_checked_index, 3:6]
         quaternion = self._p.getQuaternionFromEuler([x_tilt, y_tilt, phi])
         self.steps[body_index].set_position(pos=pos, quat=quaternion)
