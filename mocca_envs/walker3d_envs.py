@@ -22,7 +22,6 @@ RAD2DEG = 180 / np.pi
 
 
 class Walker3DCustomEnv(EnvBase):
-
     control_step = 1 / 60
     llc_frame_skip = 1
     sim_frame_skip = 4
@@ -118,8 +117,8 @@ class Walker3DCustomEnv(EnvBase):
         self.angle_to_target = walk_target_theta - self.robot.body_rpy[2]
 
         self.distance_to_target = (
-            walk_target_delta[0] ** 2 + walk_target_delta[1] ** 2
-        ) ** (1 / 2)
+                                          walk_target_delta[0] ** 2 + walk_target_delta[1] ** 2
+                                  ) ** (1 / 2)
 
         self.linear_potential = -self.distance_to_target / self.scene.dt
         self.angular_potential = np.cos(self.angle_to_target)
@@ -232,12 +231,14 @@ class Walker3DMocapEnv(Walker3DCustomEnv):
 
     def __init__(self, render=False):
         super(Walker3DCustomEnv, self).__init__(Walker3D, render)
+        self.make_phantoms_yes = True
+        self.phantoms = []
         self.mirror = True
         self.phase = 0
         self.max_phase = 38
         self.kp = self.robot.torque_limits / self.robot.torque_limits
-        #self.kp[0:3] = 100
-        #print(self.kp)
+        # self.kp[0:3] = 100
+        # print(self.kp)
         self.kd = self.kp / 10
 
         self.electricity_cost = 4.5
@@ -262,7 +263,7 @@ class Walker3DMocapEnv(Walker3DCustomEnv):
         quaternion_index = [0, 1, 2, 3]
         for pose in mocap.data:
             robot_pose = np.zeros(21)
-            
+
             chest = pose[8:12]
             l_hip = pose[16:20]
             l_knee = pose[20:21]
@@ -295,22 +296,22 @@ class Walker3DMocapEnv(Walker3DCustomEnv):
             self.mocap_x.append(pose[1])
 
         (
-                negation_obs_indices,
-                right_obs_indices,
-                left_obs_indices,
-                negation_action_indices,
-                right_action_indices,
-                left_action_indices,
+            negation_obs_indices,
+            right_obs_indices,
+            left_obs_indices,
+            negation_action_indices,
+            right_action_indices,
+            left_action_indices,
         ) = self.get_mirror_indices()
-        for i in range(19,self.max_phase):
+        for i in range(19, self.max_phase):
             rl = np.concatenate((right_action_indices, left_action_indices))
             lr = np.concatenate((left_action_indices, right_action_indices))
-            self.mocap_poses[i][rl] = self.mocap_poses[i-19][lr]
+            self.mocap_poses[i][rl] = self.mocap_poses[i - 19][lr]
 
     def pd_control(self, target):
         j, jv = self.robot.cal_j_and_jv()
         a = self.kp * (target - j) - self.kd * jv * 0.5
-        #print("a", max(abs(a)))
+        # print("a", max(abs(a)))
         self.robot.apply_action(a)
         self.scene.global_step()
 
@@ -328,19 +329,19 @@ class Walker3DMocapEnv(Walker3DCustomEnv):
             lr = np.concatenate((left_action_indices, right_action_indices))
             action[rl] = action[lr]
 
-        target = action + self.mocap_poses[(self.phase + 1)%self.max_phase]
+        target = action + self.mocap_poses[(self.phase + 1) % self.max_phase]
         for i in range(self.llc_frame_skip):
-            #self.robot.apply_action(action)
-            #self.scene.global_step()
+            # self.robot.apply_action(action)
+            # self.scene.global_step()
             self.pd_control(target)
 
         self.phase = (self.phase + 1)
         if self.phase >= self.max_phase:
             self.phase = 0
             self.counter += 1
-        
+
         reward = self.compute_reward()
-                
+
         self.robot_state = self.robot.calc_state(self.ground_ids)
         state = np.concatenate((self.robot_state, [self.phase * 1.0 / self.max_phase]))
         height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
@@ -355,7 +356,7 @@ class Walker3DMocapEnv(Walker3DCustomEnv):
                 right_action_indices,
                 left_action_indices,
             ) = self.get_mirror_indices()
-            state[negation_obs_indices] *=-1
+            state[negation_obs_indices] *= -1
             rl = np.concatenate((right_obs_indices, left_obs_indices))
             lr = np.concatenate((left_obs_indices, right_obs_indices))
             state[rl] = state[lr]
@@ -372,30 +373,32 @@ class Walker3DMocapEnv(Walker3DCustomEnv):
         # print("j,", j)
         # print("desire", self.mocap_poses[self.phase])
         # import time; time.sleep(0.03)
-        
+
         return state, reward, self.done, {}
 
     def compute_reward(self):
         desire_pose = self.mocap_poses[self.phase]
         j, jv = self.robot.cal_j_and_jv()
-        pose_error = np.sum((j - desire_pose)**2) / 21
+        pose_error = np.sum((j - desire_pose) ** 2) / 21
 
-        #vel_error = np.sum((self.robot.robot_body.speed() - np.array([1, 0, 0]))**2)
+        # vel_error = np.sum((self.robot.robot_body.speed() - np.array([1, 0, 0]))**2)
         desire_x = self.mocap_x[self.phase] + self.counter * 1.2
-        pos_error = (self.robot.body_xyz[0] - desire_x)**2 + self.robot.body_xyz[1]**2 + (self.robot.body_xyz[2] - 1.2) ** 2
+        pos_error = (self.robot.body_xyz[0] - desire_x) ** 2 + self.robot.body_xyz[1] ** 2 + (
+                    self.robot.body_xyz[2] - 1.2) ** 2
 
         roll, pitch, yaw = self.robot.body_rpy
-        orientation_error = np.sum(np.array([roll, pitch, yaw])**2)
+        orientation_error = np.sum(np.array([roll, pitch, yaw]) ** 2)
 
         wx, wy, wz = self.robot.robot_body.angular_speed()
-        angular_vel_error = np.sum(np.array([wx, wy, wz])**2)
+        angular_vel_error = np.sum(np.array([wx, wy, wz]) ** 2)
 
-        #vx, vy, vz = self.robot.robot_body.acceleration()
-        #print(vx, vy, vz)
+        # vx, vy, vz = self.robot.robot_body.acceleration()
+        # print(vx, vy, vz)
 
-        #print(0.5 * np.exp(-pose_error * 10), 0.3 * np.exp(-pos_error), 0.1 * np.exp(-5*orientation_error), 0.1 * np.exp(-angular_vel_error))
-        #print(wx, wy, wz)
-        return 0.5 * np.exp(-pose_error * 10) + 0.3 * np.exp(-pos_error) + 0.1 * np.exp(-5*orientation_error) + 0.1 * np.exp(-1 * angular_vel_error)
+        # print(0.5 * np.exp(-pose_error * 10), 0.3 * np.exp(-pos_error), 0.1 * np.exp(-5*orientation_error), 0.1 * np.exp(-angular_vel_error))
+        # print(wx, wy, wz)
+        return 0.5 * np.exp(-pose_error * 10) + 0.3 * np.exp(-pos_error) + 0.1 * np.exp(
+            -5 * orientation_error) + 0.1 * np.exp(-1 * angular_vel_error)
 
     def reset(self, phase=None, height_adj=0):
         self.done = False
@@ -409,7 +412,9 @@ class Walker3DMocapEnv(Walker3DCustomEnv):
 
         self.init_phase = self.phase
 
-        self.robot_state = self.robot.reset(random_pose=False, pose=self.mocap_poses[self.phase], pos=[self.mocap_x[self.phase],0,self.mocap_heights[self.phase]+0.46+height_adj], vel=[1, 0, 0])
+        self.robot_state = self.robot.reset(random_pose=False, pose=self.mocap_poses[self.phase],
+                                            pos=[self.mocap_x[self.phase], 0,
+                                                 self.mocap_heights[self.phase] + 0.46 + height_adj], vel=[1, 0, 0])
 
         # Reset camera
         if self.is_render:
@@ -418,7 +423,6 @@ class Walker3DMocapEnv(Walker3DCustomEnv):
         state = np.concatenate((self.robot_state, [self.phase * 1.0 / self.max_phase]))
         height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
         state[0] = height
-        
 
         if self.mirror and self.phase >= self.max_phase / 2:
             (
@@ -429,12 +433,12 @@ class Walker3DMocapEnv(Walker3DCustomEnv):
                 right_action_indices,
                 left_action_indices,
             ) = self.get_mirror_indices()
-            state[negation_obs_indices] *=-1
+            state[negation_obs_indices] *= -1
             rl = np.concatenate((right_obs_indices, left_obs_indices))
             lr = np.concatenate((left_obs_indices, right_obs_indices))
             state[rl] = state[lr]
             state[-1] -= 0.5
-        #import time; time.sleep(5)
+        # import time; time.sleep(5)
         return state
 
     def get_mirror_indices(self):
@@ -443,10 +447,10 @@ class Walker3DMocapEnv(Walker3DCustomEnv):
         # _ + 6 accounting for global
         right = self.robot._right_joint_indices + 10
         # _ + action_dim to get velocities, 48 is right foot contact
-        right = np.concatenate((right, right + action_dim, [48+4]))
+        right = np.concatenate((right, right + action_dim, [48 + 4]))
         # Do the same for left, except using 49 for left foot contact
         left = self.robot._left_joint_indices + 10
-        left = np.concatenate((left, left + action_dim, [49+4]))
+        left = np.concatenate((left, left + action_dim, [49 + 4]))
 
         # Used for creating mirrored observations
         # 2:  vy
@@ -456,7 +460,7 @@ class Walker3DMocapEnv(Walker3DCustomEnv):
         # 27: abdomen_z vel
         # 29: abdomen_x vel
         # 50: sin(-a) = -sin(a)
-        negation_obs_indices = np.array([2, 4, 6, 7, 9, 6+4, 8+4, 27+4, 29+4], dtype=np.int64)
+        negation_obs_indices = np.array([2, 4, 6, 7, 9, 6 + 4, 8 + 4, 27 + 4, 29 + 4], dtype=np.int64)
         right_obs_indices = right
         left_obs_indices = left
 
@@ -475,15 +479,15 @@ class Walker3DMocapEnv(Walker3DCustomEnv):
         )
 
 
-
 class Walker3DStepperEnv(EnvBase):
-
     control_step = 1 / 60
     llc_frame_skip = 1
     sim_frame_skip = 4
 
     def __init__(self, render=False):
 
+        self.make_phantoms_yes = True
+        self.phantoms = []
         self.done_height = 0.7
 
         # Need these before calling constructor
@@ -520,16 +524,20 @@ class Walker3DStepperEnv(EnvBase):
         self.r_sample_size = 11
         self.x_tilt_sample_size = 11
         self.y_tilt_sample_size = 11
-       
+
         self.yaw_samples = np.linspace(-10, -10, num=self.yaw_sample_size) * DEG2RAD
         self.pitch_samples = np.linspace(0, 0, num=self.pitch_sample_size) * DEG2RAD
         self.r_samples = np.linspace(0.65, 0.65, num=self.r_sample_size)
         self.x_tilt_samples = np.linspace(0, 0, num=self.x_tilt_sample_size) * DEG2RAD
         self.y_tilt_samples = np.linspace(0, 0, num=self.y_tilt_sample_size) * DEG2RAD
 
-        self.yaw_pitch_prob = np.ones((self.yaw_sample_size, self.pitch_sample_size)) / (self.yaw_sample_size*self.pitch_sample_size)
-        self.yaw_pitch_r_prob = np.ones((self.yaw_sample_size, self.pitch_sample_size, self.r_sample_size)) / (self.yaw_sample_size*self.pitch_sample_size*self.r_sample_size)
-        self.yaw_pitch_r_tilt_prob = np.ones((self.yaw_sample_size, self.pitch_sample_size, self.r_sample_size, self.x_tilt_sample_size, self.y_tilt_sample_size)) / (self.yaw_sample_size*self.pitch_sample_size * self.r_sample_size * self.x_tilt_sample_size * self.y_tilt_sample_size)
+        self.yaw_pitch_prob = np.ones((self.yaw_sample_size, self.pitch_sample_size)) / (
+                    self.yaw_sample_size * self.pitch_sample_size)
+        self.yaw_pitch_r_prob = np.ones((self.yaw_sample_size, self.pitch_sample_size, self.r_sample_size)) / (
+                    self.yaw_sample_size * self.pitch_sample_size * self.r_sample_size)
+        self.yaw_pitch_r_tilt_prob = np.ones((self.yaw_sample_size, self.pitch_sample_size, self.r_sample_size,
+                                              self.x_tilt_sample_size, self.y_tilt_sample_size)) / (
+                                                 self.yaw_sample_size * self.pitch_sample_size * self.r_sample_size * self.x_tilt_sample_size * self.y_tilt_sample_size)
 
         self.fake_yaw_samples = np.linspace(-20, 20, num=self.yaw_sample_size) * DEG2RAD
         self.fake_pitch_samples = np.linspace(-50, 50, num=self.pitch_sample_size) * DEG2RAD
@@ -546,8 +554,8 @@ class Walker3DStepperEnv(EnvBase):
         )
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.action_space = self.robot.action_space
-        self.temp_states = np.zeros((self.sample_size**2, self.observation_space.shape[0]))
-        #print(self.observation_space.shape)
+        self.temp_states = np.zeros((self.sample_size ** 2, self.observation_space.shape[0]))
+        # print(self.observation_space.shape)
 
     def set_mirror(self, mirror):
         pass
@@ -555,14 +563,14 @@ class Walker3DStepperEnv(EnvBase):
     def update_specialist_2(self, specialist):
         self.specialist = min(specialist, 5)
         prev_specialist = self.specialist - 1
-        #print((self.specialist * 2 + 1)**2 - (prev_specialist*2+1)**2)
-        half_size = (self.sample_size-1)//2
+        # print((self.specialist * 2 + 1)**2 - (prev_specialist*2+1)**2)
+        half_size = (self.sample_size - 1) // 2
         if specialist == 0:
             prob = 1
         else:
-            prob = 1.0 / ((self.specialist * 2 + 1)**2 - (prev_specialist*2+1)**2)
-        window = slice(half_size-self.specialist, half_size+self.specialist+1)
-        prev_window = slice(half_size-prev_specialist, half_size+prev_specialist+1)
+            prob = 1.0 / ((self.specialist * 2 + 1) ** 2 - (prev_specialist * 2 + 1) ** 2)
+        window = slice(half_size - self.specialist, half_size + self.specialist + 1)
+        prev_window = slice(half_size - prev_specialist, half_size + prev_specialist + 1)
         self.yaw_pitch_prob *= 0
         self.yaw_pitch_prob[window, window] = prob
         self.yaw_pitch_prob[prev_window, prev_window] = 0
@@ -571,29 +579,29 @@ class Walker3DStepperEnv(EnvBase):
     def update_specialist(self, specialist):
         self.specialist = min(specialist, 5)
         prev_specialist = self.specialist - 1
-        #print((self.specialist * 2 + 1)**2 - (prev_specialist*2+1)**2)
-        half_size = (self.sample_size-1)//2
+        # print((self.specialist * 2 + 1)**2 - (prev_specialist*2+1)**2)
+        half_size = (self.sample_size - 1) // 2
         if specialist == 0:
             prob = 1
         else:
-            prob = 1.0 / ((self.specialist * 2 + 1)**4 - (prev_specialist*2+1)**4) / 3
-            #prob = 1/4
-        window = slice(half_size-self.specialist, half_size+self.specialist+1)
-        prev_window = slice(half_size-prev_specialist, half_size+prev_specialist+1)
+            prob = 1.0 / ((self.specialist * 2 + 1) ** 4 - (prev_specialist * 2 + 1) ** 4) / 3
+            # prob = 1/4
+        window = slice(half_size - self.specialist, half_size + self.specialist + 1)
+        prev_window = slice(half_size - prev_specialist, half_size + prev_specialist + 1)
         r_index = [0]
         if self.specialist > 0:
-            r_index.append(specialist*2-1)
-            r_index.append(specialist*2)
+            r_index.append(specialist * 2 - 1)
+            r_index.append(specialist * 2)
         self.yaw_pitch_r_tilt_prob *= 0
         self.yaw_pitch_r_tilt_prob[window, window, r_index, window, window] = prob
         self.yaw_pitch_r_tilt_prob[prev_window, prev_window, r_index, prev_window, prev_window] = 0
 
     def generate_step_placements(
-        self,
-        n_steps=50,
-        yaw_limit=30,
-        pitch_limit=25,
-        tilt_limit=10,
+            self,
+            n_steps=50,
+            yaw_limit=30,
+            pitch_limit=25,
+            tilt_limit=10,
     ):
 
         y_range = np.array([-10, -10]) * DEG2RAD
@@ -603,7 +611,7 @@ class Walker3DStepperEnv(EnvBase):
         dr = self.np_random.uniform(0.65, 0.65, size=n_steps)
         dphi = self.np_random.uniform(*y_range, size=n_steps)
         dtheta = self.np_random.uniform(*p_range, size=n_steps)
-        #dtheta = np.array([75, 70] * 12) * DEG2RAD
+        # dtheta = np.array([75, 70] * 12) * DEG2RAD
 
         # dr = self.np_random.randint(0, 11, n_steps) / 10.0
         # dr = dr * min_gap + (1-dr) * max_gap
@@ -616,7 +624,7 @@ class Walker3DStepperEnv(EnvBase):
         # dphi[0] = 0.0
         # dtheta[0] = np.pi / 2
 
-        #make first step below feet
+        # make first step below feet
         dr[0] = 0.0
         dphi[0] = 0.0
         dtheta[0] = np.pi / 2
@@ -664,7 +672,7 @@ class Walker3DStepperEnv(EnvBase):
 
         terrain_info = np.stack((x, y, z, dphi, x_tilt, y_tilt), axis=1)
 
-        for i in range(2, self.n_steps - 1):        
+        for i in range(2, self.n_steps - 1):
             next_step_xyz = terrain_info[i]
             bound_checked_index = (i + 1) % self.n_steps
 
@@ -710,7 +718,7 @@ class Walker3DStepperEnv(EnvBase):
         for index in range(self.rendered_step_count):
             # p = Pillar(self._p, self.step_radius)
             p = Plank(self._p, self.step_radius)
-            #p = LargePlank(self._p, self.step_radius)
+            # p = LargePlank(self._p, self.step_radius)
             self.steps.append(p)
             step_ids = step_ids | {(p.id, p.base_id)}
             cover_ids = cover_ids | {(p.id, p.cover_id)}
@@ -735,7 +743,7 @@ class Walker3DStepperEnv(EnvBase):
 
         for index in range(self.rendered_step_count):
             pos = np.copy(self.terrain_info[index, 0:3])
-            #pos[2] -= 20
+            # pos[2] -= 20
             phi, x_tilt, y_tilt = self.terrain_info[index, 3:6]
             quaternion = np.array(self._p.getQuaternionFromEuler([x_tilt, y_tilt, phi]))
             self.steps[index].set_position(pos=pos, quat=quaternion)
@@ -762,9 +770,9 @@ class Walker3DStepperEnv(EnvBase):
         self.done = False
         self.target_reached_count = 0
 
-        #self._p.restoreState(self.state_id)
+        # self._p.restoreState(self.state_id)
 
-        #self.robot_state = self.robot.reset(random_pose=True)
+        # self.robot_state = self.robot.reset(random_pose=True)
         self.robot_state = self.robot.reset(random_pose=True, pos=(0.3, 0, 1.25), vel=[0.0, 0, 0])
         self.base_phi = DEG2RAD * np.array(
             [-10] + [20, -20] * (self.n_steps // 2 - 1) + [10]
@@ -774,11 +782,11 @@ class Walker3DStepperEnv(EnvBase):
 
         # Randomize platforms
         self.randomize_terrain()
-        #self.terrain.generate_height_field_from_step_2d(self.terrain_info)
+        # self.terrain.generate_height_field_from_step_2d(self.terrain_info)
         self.terrain_info = self.terrain.get_p_noise_height_field()
         self.next_step_index = 1
 
-        self.next_next_pitch = np.pi/2
+        self.next_next_pitch = np.pi / 2
         self.next_next_yaw = 0
         self.next_x_tilt = 0
         self.next_y_tilt = 0
@@ -837,7 +845,7 @@ class Walker3DStepperEnv(EnvBase):
 
         height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
         state[0] = height
-        #print(height)
+        # print(height)
 
         return state, reward, self.done, {}
 
@@ -857,8 +865,8 @@ class Walker3DStepperEnv(EnvBase):
         self.angle_to_target = walk_target_theta - self.robot.body_rpy[2]
 
         self.distance_to_target = (
-            walk_target_delta[0] ** 2 + walk_target_delta[1] ** 2
-        ) ** (1 / 2)
+                                          walk_target_delta[0] ** 2 + walk_target_delta[1] ** 2
+                                  ) ** (1 / 2)
 
         self.linear_potential = -self.distance_to_target / self.scene.dt
 
@@ -882,7 +890,7 @@ class Walker3DStepperEnv(EnvBase):
         v = self.robot.body_vel
         speed = (v[0] ** 2 + v[1] ** 2 + v[2] ** 2) ** (1 / 2)
         self.speed_penalty = max(speed - 1.6, 0) * 0
-        #print(speed)
+        # print(speed)
 
         self.energy_penalty = self.electricity_cost * float(
             np.abs(action * self.robot.joint_speeds).mean()
@@ -920,7 +928,7 @@ class Walker3DStepperEnv(EnvBase):
 
             # if target_cover_id & contact_ids:
             #     self.target_reached = True
-            if contact_ids and ((delta[0] ** 2 + delta[1] ** 2 + delta[2]**2) < 0.3):
+            if contact_ids and ((delta[0] ** 2 + delta[1] ** 2 + delta[2] ** 2) < 0.3):
                 self.target_reached = True
 
         # At least one foot is on the plank
@@ -946,8 +954,8 @@ class Walker3DStepperEnv(EnvBase):
         # For last step only
         self.target_bonus = 0
         if (
-            self.next_step_index == len(self.terrain_info) - 1
-            and self.distance_to_target < 0.15
+                self.next_step_index == len(self.terrain_info) - 1
+                and self.distance_to_target < 0.15
         ):
             self.target_bonus = 2.0
 
@@ -973,7 +981,7 @@ class Walker3DStepperEnv(EnvBase):
 
     def delta_to_k_targets(self, k=1):
         """ Return positions (relative to root) of target, and k-1 step after """
-        targets = self.terrain_info[self.next_step_index : self.next_step_index + k]
+        targets = self.terrain_info[self.next_step_index: self.next_step_index + k]
         if len(targets) < k:
             # If running out of targets, repeat last target
             targets = np.concatenate(
@@ -1008,33 +1016,37 @@ class Walker3DStepperEnv(EnvBase):
         # print(env.next_step_index)
         next_next_step = self.next_step_index + 1
         # env.terrain_info[next_next_step, 2] = 30    
-        #self.sample_next_next_step()
+        # self.sample_next_next_step()
         # +1 because first body is worldBody
         body_index = next_next_step % self.rendered_step_count
 
-
         bound_checked_index = next_next_step % self.n_steps
         pos = np.copy(self.terrain_info[bound_checked_index, 0:3])
-        #pos[2] -= 20
+        # pos[2] -= 20
         phi, x_tilt, y_tilt = self.terrain_info[bound_checked_index, 3:6]
         quaternion = self._p.getQuaternionFromEuler([x_tilt, y_tilt, phi])
         self.steps[body_index].set_position(pos=pos, quat=quaternion)
         self.targets = self.delta_to_k_targets(k=self.lookahead)
 
+        # make phantom
+        if self.make_phantoms_yes:
+            pass
+
     def sample_next_next_step_1(self):
         pairs = np.indices(dimensions=(self.yaw_sample_size, self.pitch_sample_size))
         self.yaw_pitch_prob /= self.yaw_pitch_prob.sum()
-        inds = self.np_random.choice(np.arange(self.yaw_sample_size*self.pitch_sample_size), p=self.yaw_pitch_prob.reshape(-1), size=1, replace=False)
+        inds = self.np_random.choice(np.arange(self.yaw_sample_size * self.pitch_sample_size),
+                                     p=self.yaw_pitch_prob.reshape(-1), size=1, replace=False)
 
-        inds = pairs.reshape(2, self.yaw_sample_size*self.pitch_sample_size)[:, inds].squeeze()
-        #print(self.yaw_pitch_prob, inds)
+        inds = pairs.reshape(2, self.yaw_sample_size * self.pitch_sample_size)[:, inds].squeeze()
+        # print(self.yaw_pitch_prob, inds)
         yaw = self.yaw_samples[inds[0]]
         pitch = self.pitch_samples[inds[1]] + np.pi / 2
 
         self.next_pitch = self.next_next_pitch
         self.next_yaw = self.next_next_yaw
         self.next_dr = np.copy(self.next_next_dr)
-        
+
         self.next_next_pitch = pitch
         self.next_next_yaw = yaw
         self.next_next_dr = self.np_random.uniform(*self.r_range)
@@ -1044,10 +1056,11 @@ class Walker3DStepperEnv(EnvBase):
     def sample_next_next_step_2(self):
         pairs = np.indices(dimensions=(self.yaw_sample_size, self.pitch_sample_size, self.r_sample_size))
         self.yaw_pitch_r_prob /= self.yaw_pitch_r_prob.sum()
-        inds = self.np_random.choice(np.arange(self.yaw_sample_size*self.pitch_sample_size*self.r_sample_size), p=self.yaw_pitch_r_prob.reshape(-1), size=1, replace=False)
+        inds = self.np_random.choice(np.arange(self.yaw_sample_size * self.pitch_sample_size * self.r_sample_size),
+                                     p=self.yaw_pitch_r_prob.reshape(-1), size=1, replace=False)
 
-        inds = pairs.reshape(3, self.yaw_sample_size*self.pitch_sample_size*self.r_sample_size)[:, inds].squeeze()
-        #print(self.yaw_pitch_prob, inds)
+        inds = pairs.reshape(3, self.yaw_sample_size * self.pitch_sample_size * self.r_sample_size)[:, inds].squeeze()
+        # print(self.yaw_pitch_prob, inds)
         yaw = self.yaw_samples[inds[0]]
         pitch = self.pitch_samples[inds[1]] + np.pi / 2
         dr = self.r_samples[inds[2]]
@@ -1055,7 +1068,7 @@ class Walker3DStepperEnv(EnvBase):
         self.next_pitch = self.next_next_pitch
         self.next_yaw = self.next_next_yaw
         self.next_dr = np.copy(self.next_next_dr)
-        
+
         self.next_next_pitch = pitch
         self.next_next_yaw = yaw
         self.next_next_dr = dr
@@ -1063,13 +1076,18 @@ class Walker3DStepperEnv(EnvBase):
         self.set_next_next_step_location(self.next_next_pitch, self.next_next_yaw, self.next_next_dr)
 
     def sample_next_next_step(self):
-        pairs = np.indices(dimensions=(self.yaw_sample_size, self.pitch_sample_size, self.r_sample_size, self.x_tilt_sample_size, self.y_tilt_sample_size))
+        pairs = np.indices(dimensions=(
+        self.yaw_sample_size, self.pitch_sample_size, self.r_sample_size, self.x_tilt_sample_size,
+        self.y_tilt_sample_size))
         self.yaw_pitch_r_tilt_prob /= self.yaw_pitch_r_tilt_prob.sum()
-        inds = self.np_random.choice(np.arange(self.yaw_sample_size*self.pitch_sample_size*self.r_sample_size*self.x_tilt_sample_size*self.y_tilt_sample_size), 
-            p=self.yaw_pitch_r_tilt_prob.reshape(-1), size=1, replace=False)
+        inds = self.np_random.choice(np.arange(
+            self.yaw_sample_size * self.pitch_sample_size * self.r_sample_size * self.x_tilt_sample_size * self.y_tilt_sample_size),
+                                     p=self.yaw_pitch_r_tilt_prob.reshape(-1), size=1, replace=False)
 
-        inds = pairs.reshape(5, self.yaw_sample_size*self.pitch_sample_size*self.r_sample_size*self.x_tilt_sample_size*self.y_tilt_sample_size)[:, inds].squeeze()
-        #print(self.yaw_pitch_prob, inds)
+        inds = pairs.reshape(5,
+                             self.yaw_sample_size * self.pitch_sample_size * self.r_sample_size * self.x_tilt_sample_size * self.y_tilt_sample_size)[
+               :, inds].squeeze()
+        # print(self.yaw_pitch_prob, inds)
         yaw = self.yaw_samples[inds[0]]
         pitch = self.pitch_samples[inds[1]] + np.pi / 2
         dr = self.r_samples[inds[2]]
@@ -1081,14 +1099,15 @@ class Walker3DStepperEnv(EnvBase):
         self.next_dr = np.copy(self.next_next_dr)
         self.next_x_tilt = np.copy(self.next_next_x_tilt)
         self.next_y_tilt = np.copy(self.next_next_y_tilt)
-        
+
         self.next_next_pitch = pitch
         self.next_next_yaw = yaw
         self.next_next_dr = dr
         self.next_next_x_tilt = x_tilt
         self.next_next_y_tilt = y_tilt
 
-        self.set_next_next_step_location(self.next_next_pitch, self.next_next_yaw, self.next_next_dr, x_tilt=x_tilt, y_tilt=y_tilt)
+        self.set_next_next_step_location(self.next_next_pitch, self.next_next_yaw, self.next_next_dr, x_tilt=x_tilt,
+                                         y_tilt=y_tilt)
 
     def get_temp_state(self):
         obs = self.get_state()
@@ -1100,13 +1119,13 @@ class Walker3DStepperEnv(EnvBase):
             temp_states = []
             for yaw in self.fake_yaw_samples:
                 for pitch in self.fake_pitch_samples:
-                    actual_pitch = np.pi/2 - pitch
-                    #print(actual_pitch / np.pi * 180)
-                    #self.set_next_step_location(actual_pitch, yaw, 0.7)
+                    actual_pitch = np.pi / 2 - pitch
+                    # print(actual_pitch / np.pi * 180)
+                    # self.set_next_step_location(actual_pitch, yaw, 0.7)
                     self.set_next_next_step_location(actual_pitch, yaw, 0.7)
                     temp_state = self.get_temp_state()
                     temp_states.append(temp_state)
-            #self.set_next_step_location(self.next_pitch, self.next_yaw, self.next_dr)
+            # self.set_next_step_location(self.next_pitch, self.next_yaw, self.next_dr)
             self.set_next_next_step_location(self.next_next_pitch, self.next_next_yaw, self.next_next_dr)
             ret = np.stack(temp_states)
         else:
@@ -1119,12 +1138,12 @@ class Walker3DStepperEnv(EnvBase):
             for yaw in self.fake_yaw_samples:
                 for pitch in self.fake_pitch_samples:
                     for r in self.fake_r_samples:
-                        actual_pitch = np.pi/2 - pitch
-                        #self.set_next_step_location(actual_pitch, yaw, r)
+                        actual_pitch = np.pi / 2 - pitch
+                        # self.set_next_step_location(actual_pitch, yaw, r)
                         self.set_next_next_step_location(actual_pitch, yaw, r)
                         temp_state = self.get_temp_state()
                         temp_states.append(temp_state)
-            #self.set_next_step_location(self.next_pitch, self.next_yaw, self.next_dr)
+            # self.set_next_step_location(self.next_pitch, self.next_yaw, self.next_dr)
             self.set_next_next_step_location(self.next_next_pitch, self.next_next_yaw, self.next_next_dr)
             ret = np.stack(temp_states)
         else:
@@ -1139,12 +1158,13 @@ class Walker3DStepperEnv(EnvBase):
                     for r in self.fake_r_samples:
                         for x_tilt in self.fake_x_tilt_samples:
                             for y_tilt in self.fake_y_tilt_samples:
-                                actual_pitch = np.pi/2 - pitch
+                                actual_pitch = np.pi / 2 - pitch
                                 self.set_next_next_step_location(actual_pitch, yaw, r, x_tilt, y_tilt)
                                 temp_state = self.get_temp_state()
                                 temp_states.append(temp_state)
-            #self.set_next_step_location(self.next_pitch, self.next_yaw, self.next_dr)
-            self.set_next_next_step_location(self.next_next_pitch, self.next_next_yaw, self.next_next_dr, self.next_next_x_tilt, self.next_next_y_tilt)
+            # self.set_next_step_location(self.next_pitch, self.next_yaw, self.next_dr)
+            self.set_next_next_step_location(self.next_next_pitch, self.next_next_yaw, self.next_next_dr,
+                                             self.next_next_x_tilt, self.next_next_y_tilt)
             ret = np.stack(temp_states)
         else:
             ret = self.temp_states
@@ -1164,7 +1184,7 @@ class Walker3DStepperEnv(EnvBase):
         dy = dr * np.sin(pitch) * np.sin(yaw + base_phi)
 
         matrix = np.array([
-            [np.cos(base_yaw), -np.sin(base_yaw)], 
+            [np.cos(base_yaw), -np.sin(base_yaw)],
             [np.sin(base_yaw), np.cos(base_yaw)]
         ])
 
@@ -1182,12 +1202,12 @@ class Walker3DStepperEnv(EnvBase):
         self.terrain_info[bound_checked_index, 5] = y_tilt
 
     def set_next_step_location(self, pitch, yaw, dr, x_tilt=0, y_tilt=0):
-        next_step_xyz = self.terrain_info[self.next_step_index-1]
+        next_step_xyz = self.terrain_info[self.next_step_index - 1]
         bound_checked_index = (self.next_step_index) % self.n_steps
-        
+
         dr = dr
         base_phi = self.base_phi[bound_checked_index]
-        base_yaw = self.terrain_info[self.next_step_index-1, 3]
+        base_yaw = self.terrain_info[self.next_step_index - 1, 3]
 
         dx = dr * np.sin(pitch) * np.cos(yaw + base_phi)
         # clip to prevent overlapping
@@ -1229,19 +1249,19 @@ class Walker3DStepperEnv(EnvBase):
 
     def update_curriculum_1(self, curriculum):
         self.yaw_pitch_prob *= 0
-        self.yaw_pitch_prob[(self.yaw_sample_size-1)//2, (self.pitch_sample_size-1)//2] = 1
-        #self.curriculum = min(curriculum, self.max_curriculum)
-        #half_size = (self.sample_size-1)//2
-        #if self.curriculum >= half_size:
+        self.yaw_pitch_prob[(self.yaw_sample_size - 1) // 2, (self.pitch_sample_size - 1) // 2] = 1
+        # self.curriculum = min(curriculum, self.max_curriculum)
+        # half_size = (self.sample_size-1)//2
+        # if self.curriculum >= half_size:
         #    self.curriculum = half_size
-        #self.yaw_pitch_prob *= 0
-        #prob = 1.0 / (self.curriculum * 2 + 1)**2
-        #window = slice(half_size-self.curriculum, half_size+self.curriculum+1)
-        #self.yaw_pitch_prob[window, window] = prob
+        # self.yaw_pitch_prob *= 0
+        # prob = 1.0 / (self.curriculum * 2 + 1)**2
+        # window = slice(half_size-self.curriculum, half_size+self.curriculum+1)
+        # self.yaw_pitch_prob[window, window] = prob
 
     def update_curriculum_2(self, curriculum):
         self.yaw_pitch_r_prob *= 0
-        self.yaw_pitch_r_prob[(self.yaw_sample_size-1)//2, (self.pitch_sample_size-1)//2, 0] = 1
+        self.yaw_pitch_r_prob[(self.yaw_sample_size - 1) // 2, (self.pitch_sample_size - 1) // 2, 0] = 1
         # self.curriculum = min(curriculum, self.max_curriculum)
         # half_size = (self.sample_size-1)//2
         # if self.curriculum >= half_size:
@@ -1255,12 +1275,12 @@ class Walker3DStepperEnv(EnvBase):
         # self.yaw_pitch_r_tilt_prob *= 0
         # self.yaw_pitch_r_tilt_prob[(self.yaw_sample_size-1)//2, (self.pitch_sample_size-1)//2, 0, (self.x_tilt_sample_size-1)//2, (self.y_tilt_sample_size-1)//2] = 1
         self.curriculum = min(curriculum, self.max_curriculum)
-        half_size = (self.sample_size-1)//2
+        half_size = (self.sample_size - 1) // 2
         if self.curriculum >= half_size:
             self.curriculum = half_size
         self.yaw_pitch_r_tilt_prob *= 0
-        prob = 1.0 / (self.curriculum * 2 + 1)**5
-        window = slice(half_size-self.curriculum, half_size+self.curriculum+1)
+        prob = 1.0 / (self.curriculum * 2 + 1) ** 5
+        window = slice(half_size - self.curriculum, half_size + self.curriculum + 1)
         self.yaw_pitch_r_tilt_prob[window, window, 0:self.curriculum * 2 + 1, window, window] = prob
 
     def get_mirror_indices(self):
@@ -1291,7 +1311,7 @@ class Walker3DStepperEnv(EnvBase):
             [
                 2,  # vy
                 4,  # roll
-                6, #yaw, wx, wz
+                6,  # yaw, wx, wz
                 6,  # abdomen_z pos
                 8,  # abdomen_x pos
                 27,  # abdomen_z vel
@@ -1320,7 +1340,6 @@ class Walker3DStepperEnv(EnvBase):
 
 
 class Walker2DCustomEnv(Walker3DCustomEnv):
-
     control_step = 1 / 60
     llc_frame_skip = 1
     sim_frame_skip = 4
@@ -1338,13 +1357,11 @@ class Walker2DCustomEnv(Walker3DCustomEnv):
 
 
 class Walker2DStepperEnv(Walker3DStepperEnv):
-
     control_step = 1 / 60
     llc_frame_skip = 1
     sim_frame_skip = 4
 
     def __init__(self, render=False):
-
         self.done_height = 0.7
 
         # Need these before calling constructor
@@ -1677,7 +1694,7 @@ class Walker2DStepperEnv(Walker3DStepperEnv):
 #         # dr = self.np_random.uniform(*r_range, size=n_steps)
 #         # dphi = self.np_random.uniform(*y_range, size=n_steps)
 #         # dtheta = self.np_random.uniform(*p_range, size=n_steps)
-        
+
 #         dr = np.random.randint(0, 2) - np.array(self.generating_sequence)
 #         dr = dr * min_gap + (1-dr) * max_gap
 #         dphi = self.np_random.randint(0, 11, n_steps) / 10.0
@@ -1755,7 +1772,7 @@ class Walker2DStepperEnv(Walker3DStepperEnv):
 #         # n_steps = np.random.randint(10, 11)
 #         #n_steps = 4
 #         #self.rendered_step_count = min(n_steps, 4)
-        
+
 #         self.terrain_info = self.generate_step_placements(
 #             min_gap=self.min_gap_limit,
 #             max_gap=self.max_gap_limit,
