@@ -34,7 +34,8 @@ class BulletClient(object):
                 return
             else:
                 connection_mode = pybullet.DIRECT
-        self._client = pybullet.connect(connection_mode, options='--background_color_red=1.0 --background_color_green=1.0 --background_color_blue=1.0')
+        self._client = pybullet.connect(connection_mode,
+                                        options='--background_color_red=1.0 --background_color_green=1.0 --background_color_blue=1.0 --width=1920 --height=1080')
 
     def __del__(self):
         """Clean up connection if not already done."""
@@ -85,7 +86,7 @@ class BodyPart:
         self.bp_pose = Pose_Helper(self)
 
     def state_fields_of_pose_of(
-        self, body_id, link_id=-1
+            self, body_id, link_id=-1
     ):  # a method you will most probably need a lot to get pose and orientation
         if link_id == -1:
             (x, y, z), (a, b, c, d) = self._p.getBasePositionAndOrientation(body_id)
@@ -163,7 +164,7 @@ class BodyPart:
 
 class Joint:
     def __init__(
-        self, bullet_client, joint_name, bodies, bodyIndex, jointIndex, torque_limit=0
+            self, bullet_client, joint_name, bodies, bodyIndex, jointIndex, torque_limit=0
     ):
         self.bodies = bodies
         self._p = bullet_client
@@ -332,7 +333,6 @@ class World:
 
 
 class StadiumScene(Scene):
-
     stadium_halflen = 105 * 0.25  # FOOBALL_FIELD_HALFLEN
     stadium_halfwidth = 50 * 0.25  # FOOBALL_FIELD_HALFWID
 
@@ -358,7 +358,6 @@ class SinglePlayerStadiumScene(StadiumScene):
 
 class Camera:
     def __init__(self, bc, fps=60, dist=2.5, yaw=0, pitch=-5):
-
         self._p = bc
         self._cam_dist = dist
         self._cam_yaw = yaw
@@ -370,7 +369,6 @@ class Camera:
         self._counter = time.perf_counter()
 
     def track(self, pos, smooth_coef=None):
-
         self.wait()
 
         smooth_coef = self._coef if smooth_coef is None else smooth_coef
@@ -392,27 +390,31 @@ class Camera:
         )
 
     def dump_rgb_array(self):
-
         width, height, view_mat, proj_mat = self._p.getDebugVisualizerCamera()[0:4]
+        width = 1920
+        height = 1080
 
-        distance = 50
+        distance = 200
         target = np.array(self.camera_target)
         target[-1] -= 0.5
-        view_mat = self._p.computeViewMatrixFromYawPitchRoll(target, distance, self._cam_yaw, self._cam_pitch, 0, upAxisIndex=2)
+        yaw = self._cam_yaw - 30
+        pitch = self._cam_pitch
+        # view_mat = self._p.computeViewMatrixFromYawPitchRoll(target, distance, self._cam_yaw, self._cam_pitch, 0, upAxisIndex=2)
+        # view_mat = self._p.computeViewMatrixFromYawPitchRoll(target, distance, yaw, pitch, 0, upAxisIndex=2)
 
         fov = 3
         aspect = width / height
         nearVal = 0.01
         farVal = 1000
 
-        proj_mat = self._p.computeProjectionMatrixFOV(fov, aspect, nearVal, farVal)
-
+        # proj_mat = self._p.computeProjectionMatrixFOV(fov, aspect, nearVal, farVal)
 
         (_, _, rgb_array, _, _) = self._p.getCameraImage(
-            width=int(width * 2),
-            height=int(height * 2),
+            width=int(width),
+            height=int(height),
             viewMatrix=view_mat,
             projectionMatrix=proj_mat,
+            # renderer=pybullet.ER_BULLET_HARDWARE_OPENGL,
             renderer=pybullet.ER_BULLET_HARDWARE_OPENGL,
             flags=pybullet.ER_NO_SEGMENTATION_MASK,
         )
