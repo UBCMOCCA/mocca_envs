@@ -521,9 +521,9 @@ class Walker3DStepperEnv(EnvBase):
         self.x_tilt_sample_size = 11
         self.y_tilt_sample_size = 11
        
-        self.yaw_samples = np.linspace(-20, 20, num=self.yaw_sample_size) * DEG2RAD
-        self.pitch_samples = np.linspace(-20, 20, num=self.pitch_sample_size) * DEG2RAD
-        self.r_samples = np.linspace(0.65, 0.8, num=self.r_sample_size)
+        self.yaw_samples = np.linspace(-10, -10, num=self.yaw_sample_size) * DEG2RAD
+        self.pitch_samples = np.linspace(0, 0, num=self.pitch_sample_size) * DEG2RAD
+        self.r_samples = np.linspace(0.65, 0.65, num=self.r_sample_size)
         self.x_tilt_samples = np.linspace(0, 0, num=self.x_tilt_sample_size) * DEG2RAD
         self.y_tilt_samples = np.linspace(0, 0, num=self.y_tilt_sample_size) * DEG2RAD
 
@@ -596,11 +596,11 @@ class Walker3DStepperEnv(EnvBase):
         tilt_limit=10,
     ):
 
-        y_range = np.array([-0, 0]) * DEG2RAD
-        p_range = np.array([90 - 20, 90 + 20]) * DEG2RAD
-        t_range = np.array([-tilt_limit, tilt_limit]) * DEG2RAD
+        y_range = np.array([-10, -10]) * DEG2RAD
+        p_range = np.array([90 - 0, 90 + 0]) * DEG2RAD
+        t_range = np.array([-20, -20]) * DEG2RAD
 
-        dr = self.np_random.uniform(0.65, 0.8, size=n_steps)
+        dr = self.np_random.uniform(0.65, 0.65, size=n_steps)
         dphi = self.np_random.uniform(*y_range, size=n_steps)
         dtheta = self.np_random.uniform(*p_range, size=n_steps)
         #dtheta = np.array([75, 70] * 12) * DEG2RAD
@@ -643,29 +643,65 @@ class Walker3DStepperEnv(EnvBase):
         #     dtheta[4 + i * 2] = (90 + 20) * DEG2RAD
 
         x_tilt = self.np_random.uniform(*t_range, size=n_steps)
-        y_tilt = self.np_random.uniform(*t_range, size=n_steps)
+        y_tilt = self.np_random.uniform(0, 0, size=n_steps)
         x_tilt[0:3] = 0
         y_tilt[0:3] = 0
 
+        dphi_copy = np.copy(dphi)
         dphi = np.cumsum(dphi)
 
-        x_ = dr * np.sin(dtheta) * np.cos(dphi)
-        y_ = dr * np.sin(dtheta) * np.sin(dphi)
-        z_ = dr * np.cos(dtheta)
-
-        # Prevent steps from overlapping
+        x_ = dr * np.sin(dtheta) * np.cos(dphi + self.base_phi)
         x_[2:] = np.sign(x_[2:]) * np.minimum(np.maximum(np.abs(x_[2:]), self.step_radius * 2.5), self.r_range[1])
+        y_ = dr * np.sin(dtheta) * np.sin(dphi + self.base_phi)
+        z_ = dr * np.cos(dtheta)
 
         x = np.cumsum(x_)
         y = np.cumsum(y_)
-        z = np.cumsum(z_) + 5
+        z = np.cumsum(z_) + 0
 
         min_z = self.step_radius * np.sin(self.tilt_limit * DEG2RAD) + 0.01
         np.clip(z, a_min=min_z, a_max=None, out=z)
 
-        return np.stack((x, y, z, dphi, x_tilt, y_tilt), axis=1)
+        terrain_info = np.stack((x, y, z, dphi, x_tilt, y_tilt), axis=1)
+
+        for i in range(2, self.n_steps - 1):        
+            next_step_xyz = terrain_info[i]
+            bound_checked_index = (i + 1) % self.n_steps
+
+            base_phi = self.base_phi[bound_checked_index]
+            base_yaw = terrain_info[i, 3]
+
+            pitch = dtheta[bound_checked_index]
+            yaw = dphi_copy[bound_checked_index]
+
+            dx = dr[bound_checked_index] * np.sin(pitch) * np.cos(yaw + base_phi)
+            # clip to prevent overlapping
+            dx = np.sign(dx) * min(max(abs(dx), self.step_radius * 2.5), self.r_range[1])
+            dy = dr[bound_checked_index] * np.sin(pitch) * np.sin(yaw + base_phi)
+
+            matrix = np.array([
+                [np.cos(base_yaw), -np.sin(base_yaw)],
+                [np.sin(base_yaw), np.cos(base_yaw)]
+            ])
+
+            dxy = np.dot(matrix, np.concatenate(([dx], [dy])))
+
+            x = next_step_xyz[0] + dxy[0]
+            y = next_step_xyz[1] + dxy[1]
+            z = next_step_xyz[2] + dr[bound_checked_index] * np.cos(pitch)
+
+            terrain_info[bound_checked_index, 0] = x
+            terrain_info[bound_checked_index, 1] = y
+            terrain_info[bound_checked_index, 2] = z
+            terrain_info[bound_checked_index, 3] = yaw + base_yaw
+            terrain_info[bound_checked_index, 4] = -20 * DEG2RAD
+            # terrain_info[bound_checked_index, 5] = 0#y_tilt
+
+        return terrain_info
 
     def create_terrain(self):
+        if self.is_render:
+            self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 0)
 
         self.steps = []
         step_ids = set()
@@ -684,6 +720,9 @@ class Walker3DStepperEnv(EnvBase):
         from mocca_envs.bullet_objects import HeightField
         self.terrain = HeightField(self._p, (256, 256))
         self.ground_ids = {(self.terrain, -1)}
+
+        if self.is_render:
+            self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 1)
 
     def randomize_terrain(self):
 
@@ -716,6 +755,9 @@ class Walker3DStepperEnv(EnvBase):
             self.steps[oldest].set_position(pos=pos, quat=quaternion)
 
     def reset(self):
+        if self.is_render:
+            self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 0)
+
         self.robot.set_base_pose(pose="running_start")
         self.done = False
         self.target_reached_count = 0
@@ -723,7 +765,7 @@ class Walker3DStepperEnv(EnvBase):
         #self._p.restoreState(self.state_id)
 
         #self.robot_state = self.robot.reset(random_pose=True)
-        self.robot_state = self.robot.reset(random_pose=True, pos=(0.3, 0, 6.25), vel=[0.0, 0, 0])
+        self.robot_state = self.robot.reset(random_pose=True, pos=(0.3, 0, 1.25), vel=[0.0, 0, 0])
         self.base_phi = DEG2RAD * np.array(
             [-10] + [20, -20] * (self.n_steps // 2 - 1) + [10]
         )
@@ -732,7 +774,8 @@ class Walker3DStepperEnv(EnvBase):
 
         # Randomize platforms
         self.randomize_terrain()
-        self.terrain.generate_height_field_from_step(self.terrain_info)
+        #self.terrain.generate_height_field_from_step_2d(self.terrain_info)
+        self.terrain_info = self.terrain.get_p_noise_height_field()
         self.next_step_index = 1
 
         self.next_next_pitch = np.pi/2
@@ -756,6 +799,9 @@ class Walker3DStepperEnv(EnvBase):
         height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
         state[0] = height
         # import time; time.sleep(5)
+
+        if self.is_render:
+            self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 1)
 
         return state
 
