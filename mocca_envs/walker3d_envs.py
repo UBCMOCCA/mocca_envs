@@ -384,7 +384,7 @@ class Walker3DMocapEnv(Walker3DCustomEnv):
         # vel_error = np.sum((self.robot.robot_body.speed() - np.array([1, 0, 0]))**2)
         desire_x = self.mocap_x[self.phase] + self.counter * 1.2
         pos_error = (self.robot.body_xyz[0] - desire_x) ** 2 + self.robot.body_xyz[1] ** 2 + (
-                    self.robot.body_xyz[2] - 1.2) ** 2
+                self.robot.body_xyz[2] - 1.2) ** 2
 
         roll, pitch, yaw = self.robot.body_rpy
         orientation_error = np.sum(np.array([roll, pitch, yaw]) ** 2)
@@ -488,6 +488,7 @@ class Walker3DStepperEnv(EnvBase):
 
         self.make_phantoms_yes = True
         self.phantoms = []
+        self.current_phantom_idx = 0
         self.done_height = 0.7
 
         # Need these before calling constructor
@@ -532,12 +533,12 @@ class Walker3DStepperEnv(EnvBase):
         self.y_tilt_samples = np.linspace(0, 0, num=self.y_tilt_sample_size) * DEG2RAD
 
         self.yaw_pitch_prob = np.ones((self.yaw_sample_size, self.pitch_sample_size)) / (
-                    self.yaw_sample_size * self.pitch_sample_size)
+                self.yaw_sample_size * self.pitch_sample_size)
         self.yaw_pitch_r_prob = np.ones((self.yaw_sample_size, self.pitch_sample_size, self.r_sample_size)) / (
-                    self.yaw_sample_size * self.pitch_sample_size * self.r_sample_size)
+                self.yaw_sample_size * self.pitch_sample_size * self.r_sample_size)
         self.yaw_pitch_r_tilt_prob = np.ones((self.yaw_sample_size, self.pitch_sample_size, self.r_sample_size,
                                               self.x_tilt_sample_size, self.y_tilt_sample_size)) / (
-                                                 self.yaw_sample_size * self.pitch_sample_size * self.r_sample_size * self.x_tilt_sample_size * self.y_tilt_sample_size)
+                                             self.yaw_sample_size * self.pitch_sample_size * self.r_sample_size * self.x_tilt_sample_size * self.y_tilt_sample_size)
 
         self.fake_yaw_samples = np.linspace(-20, 20, num=self.yaw_sample_size) * DEG2RAD
         self.fake_pitch_samples = np.linspace(-50, 50, num=self.pitch_sample_size) * DEG2RAD
@@ -556,6 +557,30 @@ class Walker3DStepperEnv(EnvBase):
         self.action_space = self.robot.action_space
         self.temp_states = np.zeros((self.sample_size ** 2, self.observation_space.shape[0]))
         # print(self.observation_space.shape)
+
+        # add lots of phantoms
+
+        if self.is_render:
+            self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 0)
+
+        if self.make_phantoms_yes:
+            for _ in range(20):
+                phantom = self.robot_class(self._p, **self.robot_kwargs)
+                phantom.np_random = self.np_random
+                phantom.initialize()
+                # set the phantom pose to current pose
+                self.phantoms.append(phantom)
+
+                # add the phantom to the environment and set collision filter
+                self.scene.actor_introduce(phantom)
+                for _, body_part in phantom.parts.items():
+                    self._p.setCollisionFilterGroupMask(phantom.object_id[0], -1, 0, 0)
+                    self._p.setCollisionFilterGroupMask(phantom.object_id[0], body_part.bodyPartIndex, 0, 0)
+                    self._p.changeDynamics(phantom.object_id[0], -1, mass=0)
+                    self._p.changeDynamics(phantom.object_id[0], body_part.bodyPartIndex, mass=0)
+
+        if self.is_render:
+            self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 1)
 
     def set_mirror(self, mirror):
         pass
@@ -808,6 +833,11 @@ class Walker3DStepperEnv(EnvBase):
         state[0] = height
         # import time; time.sleep(5)
 
+        if self.make_phantoms_yes:
+            self.current_phantom_idx = 0
+            for phantom in self.phantoms:
+                phantom.reset(pos=[-1000, -1000, -1000])
+
         if self.is_render:
             self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 1)
 
@@ -1030,24 +1060,15 @@ class Walker3DStepperEnv(EnvBase):
 
         # make phantom
         if self.make_phantoms_yes:
-            phantom = self.robot_class(self._p, **self.robot_kwargs)
-            phantom.np_random = self.np_random
-            phantom.initialize()
+            phantom = self.phantoms[self.current_phantom_idx]
             # set the phantom pose to current pose
             current_pose = self.robot.to_radians(self.robot.joint_angles)
             current_pos = self.robot.body_xyz
             current_orientation = self.robot.robot_body.pose().orientation()
             phantom.reset(pos=current_pos, pose=current_pose, quat=current_orientation)
-            self.phantoms.append(phantom)
 
-            # add the phantom to the environment and set collision filter
-            self.scene.actor_introduce(phantom)
-            for _, body_part in phantom.parts.items():
-                self._p.setCollisionFilterGroupMask(phantom.object_id[0], -1, 0, 0)
-                self._p.setCollisionFilterGroupMask(phantom.object_id[0], body_part.bodyPartIndex, 0, 0)
-                self._p.changeDynamics(phantom.object_id[0], -1, mass=0)
-                self._p.changeDynamics(phantom.object_id[0], body_part.bodyPartIndex, mass=0)
-
+            self.current_phantom_idx += 1
+            self.current_phantom_idx %= 20
 
     def sample_next_next_step_1(self):
         pairs = np.indices(dimensions=(self.yaw_sample_size, self.pitch_sample_size))
@@ -1094,12 +1115,12 @@ class Walker3DStepperEnv(EnvBase):
 
     def sample_next_next_step(self):
         pairs = np.indices(dimensions=(
-        self.yaw_sample_size, self.pitch_sample_size, self.r_sample_size, self.x_tilt_sample_size,
-        self.y_tilt_sample_size))
+            self.yaw_sample_size, self.pitch_sample_size, self.r_sample_size, self.x_tilt_sample_size,
+            self.y_tilt_sample_size))
         self.yaw_pitch_r_tilt_prob /= self.yaw_pitch_r_tilt_prob.sum()
         inds = self.np_random.choice(np.arange(
             self.yaw_sample_size * self.pitch_sample_size * self.r_sample_size * self.x_tilt_sample_size * self.y_tilt_sample_size),
-                                     p=self.yaw_pitch_r_tilt_prob.reshape(-1), size=1, replace=False)
+            p=self.yaw_pitch_r_tilt_prob.reshape(-1), size=1, replace=False)
 
         inds = pairs.reshape(5,
                              self.yaw_sample_size * self.pitch_sample_size * self.r_sample_size * self.x_tilt_sample_size * self.y_tilt_sample_size)[
