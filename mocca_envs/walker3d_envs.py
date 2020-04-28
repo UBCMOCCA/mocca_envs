@@ -1030,7 +1030,24 @@ class Walker3DStepperEnv(EnvBase):
 
         # make phantom
         if self.make_phantoms_yes:
-            pass
+            phantom = self.robot_class(self._p, **self.robot_kwargs)
+            phantom.np_random = self.np_random
+            phantom.initialize()
+            # set the phantom pose to current pose
+            current_pose = self.robot.to_radians(self.robot.joint_angles)
+            current_pos = self.robot.body_xyz
+            current_orientation = self.robot.robot_body.pose().orientation()
+            phantom.reset(pos=current_pos, pose=current_pose, quat=current_orientation)
+            self.phantoms.append(phantom)
+
+            # add the phantom to the environment and set collision filter
+            self.scene.actor_introduce(phantom)
+            for _, body_part in phantom.parts.items():
+                self._p.setCollisionFilterGroupMask(phantom.object_id[0], -1, 0, 0)
+                self._p.setCollisionFilterGroupMask(phantom.object_id[0], body_part.bodyPartIndex, 0, 0)
+                self._p.changeDynamics(phantom.object_id[0], -1, mass=0)
+                self._p.changeDynamics(phantom.object_id[0], body_part.bodyPartIndex, mass=0)
+
 
     def sample_next_next_step_1(self):
         pairs = np.indices(dimensions=(self.yaw_sample_size, self.pitch_sample_size))
