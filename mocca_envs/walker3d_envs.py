@@ -833,6 +833,7 @@ class Walker3DStepperEnv(EnvBase):
         state[0] = height
         # import time; time.sleep(5)
 
+        self.current_phantom_idx = 0
         if self.make_phantoms_yes:
             self.current_phantom_idx = 0
             for phantom in self.phantoms:
@@ -1059,7 +1060,7 @@ class Walker3DStepperEnv(EnvBase):
         self.targets = self.delta_to_k_targets(k=self.lookahead)
 
         # make phantom
-        if self.make_phantoms_yes:
+        if self.make_phantoms_yes and self.next_step_index % 2 == 0:
             phantom = self.phantoms[self.current_phantom_idx]
             # set the phantom pose to current pose
             current_pose = self.robot.to_radians(self.robot.joint_angles)
