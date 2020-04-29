@@ -504,7 +504,7 @@ class Walker3DStepperEnv(EnvBase):
         self.stall_torque_cost = 0.225
         self.joints_at_limit_cost = 0.1
 
-        self.n_steps = 30
+        self.n_steps = 40
         self.lookahead = 2
         self.next_step_index = 0
 
@@ -798,7 +798,7 @@ class Walker3DStepperEnv(EnvBase):
         # self._p.restoreState(self.state_id)
 
         # self.robot_state = self.robot.reset(random_pose=True)
-        self.robot_state = self.robot.reset(random_pose=True, pos=(0.3, 0, 1.25), vel=[0.0, 0, 0])
+        self.robot_state = self.robot.reset(random_pose=False, pos=(0.3, 0, 1.25), vel=[0.0, 0, 0])
         self.base_phi = DEG2RAD * np.array(
             [-10] + [20, -20] * (self.n_steps // 2 - 1) + [10]
         )

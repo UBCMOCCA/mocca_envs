@@ -580,7 +580,7 @@ class Walker3D(WalkerBase):
 
     def reset(self, random_pose=True, pos=None, quat=None, pose=None, vel=None):
         base_joint_angles = np.copy(self.base_joint_angles)
-        if self.np_random.rand() < 0.5:
+        if self.np_random.rand() < 0:
             self.mirrored = True
             base_joint_angles[self._rl] = base_joint_angles[self._lr]
             base_joint_angles[self._negation_joint_indices] *= -1
