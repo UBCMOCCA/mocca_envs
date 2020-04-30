@@ -314,9 +314,9 @@ class HeightField:
 
 
             dr = np.random.uniform(0.65, 0.65, 1)
-            yaw = 10*DEG2RAD
-            if yaw + base_yaw >= np.pi/2 + 0.2:
-                yaw = np.pi/2+0.2-base_yaw
+            yaw = 5*DEG2RAD
+            # if yaw + base_yaw >= np.pi/2 + 0.2:
+            #     yaw = np.pi/2+0.2-base_yaw
             dx = dr * np.cos(yaw + base_phi)
             dy = dr * np.sin(yaw - base_phi)
 
@@ -343,10 +343,10 @@ class HeightField:
             ])
             x_tilt, y_tilt = np.dot(matrix, np.concatenate(([-y_tilt], [x_tilt])))
 
-            x_tilt = min(x_tilt, 15*DEG2RAD)
-            x_tilt = max(x_tilt, -15*DEG2RAD)
-            y_tilt = min(y_tilt, 15*DEG2RAD)
-            y_tilt = max(y_tilt, -15*DEG2RAD)
+            x_tilt = min(x_tilt, 20*DEG2RAD)
+            x_tilt = max(x_tilt, -20*DEG2RAD)
+            y_tilt = min(y_tilt, 20*DEG2RAD)
+            y_tilt = max(y_tilt, -20*DEG2RAD)
 
             terrain_info[bound_checked_index, 0] = x
             terrain_info[bound_checked_index, 1] = y
@@ -362,12 +362,14 @@ class HeightField:
         hfield = np.zeros((256, 256))
         scale = 30.0
         octaves = 6
-        persistence = 0.5
-        lacunarity = 2
+        persistence = 0.55
+        lacunarity = 0.65
         for i in range(256):
             for j in range(256):
-                hfield[i][j] = noise.pnoise2((max(126-i,i-129)) /scale, 
-                    (max(120-j,j-140))/scale, 
+                z = np.random.randn(1)
+                #print(z)
+                hfield[i][j] = noise.pnoise3((max(126-i,129-i)) /scale, 
+                    (max(120-j,140-j))/scale, 0/100, 
                     octaves=octaves, 
                     persistence=persistence, 
                     lacunarity=lacunarity, 
@@ -423,9 +425,9 @@ class HeightField:
             specularColor=[0, 0, 0],
         )
 
-        self._p.setCollisionFilterGroupMask(self.id, -1, 0, 0)
+        #self._p.setCollisionFilterGroupMask(self.id, -1, 0, 0)
 
-        self.set_position(pos=(0, 0, height-1.75-0.45))
+        self.set_position(pos=(0, 0, height-1.75-0.405))
         #print(hfield_data.min(), hfield_data.max(), height-1.3)
         return self.generate_step_placements(hfield, height_scale)
         #print(z_min, z_max, terrain_info[:, 2])
