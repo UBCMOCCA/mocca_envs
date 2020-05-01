@@ -148,7 +148,7 @@ class HeightField:
         self.height_field_size = height_field_size
         self.id = -1
         self.shape_id = -1
-        self.n_steps = 40
+        self.n_steps = 100
 
         texture_file = os.path.join(current_dir, "data", "misc", "checker_blue2.png")
         self.texture_id = self._p.loadTexture(texture_file)
@@ -343,10 +343,10 @@ class HeightField:
             ])
             x_tilt, y_tilt = np.dot(matrix, np.concatenate(([-y_tilt], [x_tilt])))
 
-            x_tilt = min(x_tilt, 20*DEG2RAD)
-            x_tilt = max(x_tilt, -20*DEG2RAD)
-            y_tilt = min(y_tilt, 20*DEG2RAD)
-            y_tilt = max(y_tilt, -20*DEG2RAD)
+            # x_tilt = min(x_tilt, 20*DEG2RAD)
+            # x_tilt = max(x_tilt, -20*DEG2RAD)
+            # y_tilt = min(y_tilt, 20*DEG2RAD)
+            # y_tilt = max(y_tilt, -20*DEG2RAD)
 
             terrain_info[bound_checked_index, 0] = x
             terrain_info[bound_checked_index, 1] = y
@@ -414,7 +414,10 @@ class HeightField:
                 )
             self.id = self._p.createMultiBody(0, self.shape_id, -1, (0, 0, 0))
 
-            self._p.changeDynamics(self.id, -1, lateralFriction=0.7, restitution=0.2)
+            self._p.changeDynamics(self.id, -1, lateralFriction=1.0,
+                restitution=0.1,
+                contactStiffness=30000,
+                contactDamping=1000)
 
         self._p.changeVisualShape(
             self.id,
@@ -427,7 +430,7 @@ class HeightField:
 
         #self._p.setCollisionFilterGroupMask(self.id, -1, 0, 0)
 
-        self.set_position(pos=(0, 0, height-1.75-0.405))
+        self.set_position(pos=(0, 0, height-1.75-0.408))
         #print(hfield_data.min(), hfield_data.max(), height-1.3)
         return self.generate_step_placements(hfield, height_scale)
         #print(z_min, z_max, terrain_info[:, 2])
