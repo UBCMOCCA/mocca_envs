@@ -142,13 +142,14 @@ class Rectangle:
             self.id, posObj=self._pos, ornObj=self._quat
         )
 
+
 class HeightField:
-    def __init__(self, bc, height_field_size):
+    def __init__(self, bc, height_field_size, n_steps=40):
         self._p = bc
         self.height_field_size = height_field_size
         self.id = -1
         self.shape_id = -1
-        self.n_steps = 40
+        self.n_steps = n_steps
 
         texture_file = os.path.join(current_dir, "data", "misc", "checker_blue2.png")
         self.texture_id = self._p.loadTexture(texture_file)
@@ -166,9 +167,7 @@ class HeightField:
         pos = np.zeros(3) if pos is None else pos
         quat = np.array([0, 0, 0, 1]) if quat is None else quat
 
-        self._p.resetBasePositionAndOrientation(
-            self.id, posObj=pos, ornObj=quat
-        )
+        self._p.resetBasePositionAndOrientation(self.id, posObj=pos, ornObj=quat)
 
     def reload(self, data=None, pos=(0, 0, 20), rendered=False):
         rows = self.height_field_size[0]
@@ -247,7 +246,7 @@ class HeightField:
 
         # Add some ripples
         noise = rng.uniform(-1, 1, size=self.height_field_size)
-        #peaks += gaussian_filter(noise, 1).flatten()
+        # peaks += gaussian_filter(noise, 1).flatten()
 
         # Make a flat platform in the centre
         rows = self.height_field_size[0]
@@ -271,7 +270,7 @@ class HeightField:
         dr = np.random.uniform(0.65, 0.65, size=n_steps)
         dphi = np.random.uniform(*y_range, size=n_steps)
         dtheta = np.random.uniform(*p_range, size=n_steps)
-        #make first step below feet
+        # make first step below feet
         dr[0] = 0.0
         dphi[0] = 0.0
         dtheta[0] = np.pi / 2
@@ -285,13 +284,11 @@ class HeightField:
         dphi[2] = 0.0
         dtheta[2] = np.pi / 2
 
-
         x_tilt = np.random.uniform(*t_range, size=n_steps)
         y_tilt = np.random.uniform(*t_range, size=n_steps)
         x_tilt[0:3] = 0
         y_tilt[0:3] = 0
 
-        dphi_copy = np.copy(dphi)
         dphi = np.cumsum(dphi)
 
         x_ = dr * np.sin(dtheta) * np.cos(dphi)
@@ -302,51 +299,57 @@ class HeightField:
         y = np.cumsum(y_)
         z = np.cumsum(z_) + 0
 
-
         terrain_info = np.stack((x, y, z, dphi, x_tilt, y_tilt), axis=1)
 
-        for i in range(2, n_steps - 1):        
+        for i in range(2, n_steps - 1):
             next_step_xyz = terrain_info[i]
             bound_checked_index = (i + 1) % n_steps
 
             base_yaw = terrain_info[i, 3]
             base_phi = self.base_phi[bound_checked_index]
 
-
-            dr = np.random.uniform(0.65, 0.65, 1)
-            yaw = 5*DEG2RAD
-            # if yaw + base_yaw >= np.pi/2 + 0.2:
-            #     yaw = np.pi/2+0.2-base_yaw
+            dr = 0.7
+            yaw = 5 * DEG2RAD
             dx = dr * np.cos(yaw + base_phi)
             dy = dr * np.sin(yaw - base_phi)
 
-            matrix = np.array([
-                [np.cos(base_yaw), -np.sin(base_yaw)],
-                [np.sin(base_yaw), np.cos(base_yaw)]
-            ])
+            matrix = np.array(
+                [
+                    [np.cos(base_yaw), -np.sin(base_yaw)],
+                    [np.sin(base_yaw), np.cos(base_yaw)],
+                ]
+            )
             dxy = np.dot(matrix, np.concatenate(([dx], [dy])))
 
             x = next_step_xyz[0] + dxy[0]
             y = next_step_xyz[1] + dxy[1]
-            length_per_index = (self.total_length/128)
+            length_per_index = self.total_length / 128
             x_index = int(x / length_per_index) + 128
             y_index = int(y / length_per_index) + 128
-            z = hfield[y_index, x_index] * height_scale 
-            y_tilt = np.arctan2((hfield[y_index+1, x_index] - hfield[y_index-1, x_index]) * height_scale, length_per_index*2)
-            x_tilt = np.arctan2((hfield[y_index, x_index+1] - hfield[y_index, x_index-1]) * height_scale, length_per_index*2)
-            print("tilt", x_tilt, y_tilt)
-            
+            z = hfield[y_index, x_index] * height_scale
+            y_tilt = np.arctan2(
+                (hfield[y_index + 1, x_index] - hfield[y_index - 1, x_index])
+                * height_scale,
+                length_per_index * 2,
+            )
+            x_tilt = np.arctan2(
+                (hfield[y_index, x_index + 1] - hfield[y_index, x_index - 1])
+                * height_scale,
+                length_per_index * 2,
+            )
 
-            matrix = np.array([
-                [-np.cos(base_yaw+yaw), -np.sin(base_yaw+yaw)],
-                [np.sin(base_yaw+yaw), -np.cos(base_yaw+yaw)]
-            ])
+            matrix = np.array(
+                [
+                    [-np.cos(base_yaw + yaw), -np.sin(base_yaw + yaw)],
+                    [np.sin(base_yaw + yaw), -np.cos(base_yaw + yaw)],
+                ]
+            )
             x_tilt, y_tilt = np.dot(matrix, np.concatenate(([-y_tilt], [x_tilt])))
 
-            x_tilt = min(x_tilt, 20*DEG2RAD)
-            x_tilt = max(x_tilt, -20*DEG2RAD)
-            y_tilt = min(y_tilt, 20*DEG2RAD)
-            y_tilt = max(y_tilt, -20*DEG2RAD)
+            x_tilt = min(x_tilt, 20 * DEG2RAD)
+            x_tilt = max(x_tilt, -20 * DEG2RAD)
+            y_tilt = min(y_tilt, 20 * DEG2RAD)
+            y_tilt = max(y_tilt, -20 * DEG2RAD)
 
             terrain_info[bound_checked_index, 0] = x
             terrain_info[bound_checked_index, 1] = y
@@ -359,6 +362,7 @@ class HeightField:
 
     def get_p_noise_height_field(self):
         import noise
+
         hfield = np.zeros((256, 256))
         scale = 30.0
         octaves = 6
@@ -366,249 +370,69 @@ class HeightField:
         lacunarity = 0.65
         for i in range(256):
             for j in range(256):
-                z = np.random.randn(1)
-                #print(z)
-                hfield[i][j] = noise.pnoise3((max(126-i,129-i)) /scale, 
-                    (max(120-j,140-j))/scale, 0/100, 
-                    octaves=octaves, 
-                    persistence=persistence, 
-                    lacunarity=lacunarity, 
+                hfield[i][j] = noise.pnoise3(
+                    (max(126 - i, 129 - i)) / scale,
+                    (max(120 - j, 140 - j)) / scale,
+                    0 / 100,
+                    octaves=octaves,
+                    persistence=persistence,
+                    lacunarity=lacunarity,
                     repeatx=256,
-                    repeaty=256, 
-                    base=0)
-                if i > 120 and i < 140:
-                    print(i, j, hfield[i][j])
-                #hfield[i][j] = max(0.01, hfield[i][j])
-        # for i in range(256):
-        #     for j in range(256):
-        #         hfield[i][j] = 1+np.cos((i - 130)/20.0*np.pi*2)
-        #hfield -= hfield.min()
+                    repeaty=256,
+                    base=0,
+                )
+
+        print(hfield.max(), hfield.min())
+
         height_scale = 5
-        hfield[126:129, 125:140] = 0
-        #hfield -= hfield.min()
-        hfield_data = hfield.reshape(256*256) * height_scale
-        
+        hfield[126:129, 125:142] = 0
+        hfield_data = hfield.reshape(256 * 256) * height_scale
+
         hfield_data = hfield_data - hfield_data.min()
-        height = hfield_data.max() / 2 
+        height = hfield_data.max() / 2
         hfield_data = hfield_data
 
         if self.id >= 0:
             self.set_position(pos=(-100000, -100000, -100000))
             self.shape_id = self._p.createCollisionShape(
-                    shapeType=self._p.GEOM_HEIGHTFIELD,
-                    meshScale=[self.total_length/128, self.total_length/128, 1],
-                    heightfieldTextureScaling=self.texture_scaling,
-                    heightfieldData=hfield_data,
-                    numHeightfieldRows=256,
-                    numHeightfieldColumns=256,
-                    #replaceHeightfieldIndex=self.shape_id,
-                )
+                shapeType=self._p.GEOM_HEIGHTFIELD,
+                meshScale=[self.total_length / 128, self.total_length / 128, 1],
+                heightfieldTextureScaling=self.texture_scaling,
+                heightfieldData=hfield_data,
+                numHeightfieldRows=256,
+                numHeightfieldColumns=256,
+                # replaceHeightfieldIndex=self.shape_id,
+            )
         else:
             self.shape_id = self._p.createCollisionShape(
-                    shapeType=self._p.GEOM_HEIGHTFIELD,
-                    meshScale=[self.total_length/128, self.total_length/128, 1],
-                    heightfieldTextureScaling=self.texture_scaling,
-                    heightfieldData=hfield_data,
-                    numHeightfieldRows=256,
-                    numHeightfieldColumns=256,
-                )
+                shapeType=self._p.GEOM_HEIGHTFIELD,
+                meshScale=[self.total_length / 128, self.total_length / 128, 1],
+                heightfieldTextureScaling=self.texture_scaling,
+                heightfieldData=hfield_data,
+                numHeightfieldRows=256,
+                numHeightfieldColumns=256,
+            )
             self.id = self._p.createMultiBody(0, self.shape_id, -1, (0, 0, 0))
 
-            self._p.changeDynamics(self.id, -1, lateralFriction=0.7, restitution=0.2)
+            self._p.changeDynamics(
+                self.id,
+                -1,
+                lateralFriction=1.0,
+                restitution=0.1,
+                contactStiffness=30000,
+                contactDamping=1000,
+            )
 
         self._p.changeVisualShape(
             self.id,
             -1,
             textureUniqueId=self.texture_id,
-            #rgbaColor=[0.65, 0.37, 0.04, 1],
+            # rgbaColor=[0.65, 0.37, 0.04, 1],
             rgbaColor=[1, 1, 1, 1],
             specularColor=[0, 0, 0],
         )
 
-        #self._p.setCollisionFilterGroupMask(self.id, -1, 0, 0)
+        # self._p.setCollisionFilterGroupMask(self.id, -1, 0, 0)
 
-        self.set_position(pos=(0, 0, height-1.75-0.405))
-        #print(hfield_data.min(), hfield_data.max(), height-1.3)
+        self.set_position(pos=(0, 0, height - 1.75 - 0.405))
         return self.generate_step_placements(hfield, height_scale)
-        #print(z_min, z_max, terrain_info[:, 2])
-
-    def generate_height_field_from_step(self, terrain_info):
-        num_steps, _ = terrain_info.shape
-        height_field_col = self.height_field_size[1]
-        height_field_row = self.height_field_size[0]
-        #height_field_size = np.copy(self.sim.model.hfield_size)
-
-        height_field_data = np.zeros((height_field_row, height_field_col))
-        height_field_data = height_field_data.reshape(height_field_col, height_field_row)
-
-        z_max = -100
-        z_min = 0
-        plank_radius = 0.25
-        for i in range(num_steps):
-            if terrain_info[i, 2] > z_max:
-                z_max = terrain_info[i, 2]
-        z_scale = z_max - z_min
-
-        x_min = min(terrain_info[:, 0])
-        x_max = max(terrain_info[:, 0])
-        x_scale = (x_max - x_min + plank_radius*2) / 2
-        y_scale = 25.6
-        x_pos = (x_max+x_min) / 2
-        z_pos = z_min
-
-        from scipy import interpolate
-        u = np.copy(terrain_info[:, 0])
-        tick, u = interpolate.splprep(terrain_info[:, 2:3].T, u=u, k=3, s=0)
-        u = np.linspace(x_min-plank_radius, x_max+plank_radius, 256)
-        out = interpolate.splev(u, tick)
-        
-        height_field_data[:, :] = 0
-        length_per_index = x_scale * 2 / 256
-        width_per_index = y_scale * 2 / 256
-        for i in range(256):
-            y_indices = 127
-            h_data = out[0][i]#(out[0][i]-z_min)/(z_max-z_min)
-            height_field_data[y_indices-3:y_indices+3, i] = h_data#(out[0][i]-z_min)/(z_max-z_min)#*z_scale
-            #print((out[0][i]-z_min)/(z_max-z_min)*z_scale)
-
-        hfield_data = height_field_data.reshape(height_field_col*height_field_row)
-        z_pos = z_min
-
-        if self.id >= 0:
-            self.shape_id = self._p.createCollisionShape(
-                    shapeType=self._p.GEOM_HEIGHTFIELD,
-                    meshScale=[x_scale/128, y_scale/128, 1],
-                    heightfieldTextureScaling=self.texture_scaling,
-                    heightfieldData=hfield_data,
-                    numHeightfieldRows=256,
-                    numHeightfieldColumns=256,
-                    replaceHeightfieldIndex=self.shape_id,
-                )
-        else:
-            self.shape_id = self._p.createCollisionShape(
-                    shapeType=self._p.GEOM_HEIGHTFIELD,
-                    meshScale=[x_scale/128, y_scale/128, 1],
-                    heightfieldTextureScaling=self.texture_scaling,
-                    heightfieldData=hfield_data,
-                    numHeightfieldRows=256,
-                    numHeightfieldColumns=256,
-                )
-            self.id = self._p.createMultiBody(0, self.shape_id, -1, (0, 0, 0))
-
-            self._p.changeDynamics(self.id, -1, lateralFriction=0.7, restitution=0.2)
-
-        self._p.changeVisualShape(
-            self.id,
-            -1,
-            textureUniqueId=self.texture_id,
-            rgbaColor=[0.65, 0.37, 0.04, 1],
-            specularColor=[0, 0, 0],
-        )
-
-        self._p.setCollisionFilterGroupMask(self.id, -1, 0, 0)
-
-        self.set_position(pos=(x_pos, 0, 2.5))
-        print(z_min, z_max, terrain_info[:, 2])
-
-
-    def generate_height_field_from_step_2d(self, terrain_info):
-        num_steps, _ = terrain_info.shape
-        height_field_col = self.height_field_size[1]
-        height_field_row = self.height_field_size[0]
-        #height_field_size = np.copy(self.sim.model.hfield_size)
-
-        height_field_data = np.zeros((height_field_row, height_field_col))
-        height_field_data = height_field_data.reshape(height_field_col, height_field_row)
-
-        z_max = -100
-        z_min = 0
-        plank_radius = 0.25
-        for i in range(num_steps):
-            if terrain_info[i, 2] > z_max:
-                z_max = terrain_info[i, 2]
-        z_scale = z_max - z_min
-
-        x_min = min(terrain_info[:, 0])
-        x_max = max(terrain_info[:, 0])
-        x_scale = (x_max - x_min + 5*2) / 2
-        y_min = min(terrain_info[:, 1])
-        y_max = max(terrain_info[:, 1])
-        y_scale = 12.8
-        x_pos = (x_max+x_min) / 2
-        y_pos = 0#(y_max+y_min) / 2
-        z_pos = z_min
-
-        height_field_data[:, :] = 0
-
-        for displacement in np.linspace(-0.4, 0.4, 160):
-            from scipy import interpolate
-            u = np.arange(num_steps)
-            terrain_info_translate = np.copy(terrain_info)
-            terrain_info_translate[:, 0] -= displacement * np.sin(terrain_info[:, 3])
-            terrain_info_translate[:, 1] += displacement * np.cos(terrain_info[:, 3])
-            tick, u = interpolate.splprep(terrain_info_translate[:, 0:3].T, u=u, k=3, s=0)
-            u = np.linspace(0, num_steps-1, 256)
-            out = interpolate.splev(u, tick)
-            
-            length_per_index = x_scale * 2 / 256
-            width_per_index = y_scale * 2 / 256
-            for i in range(255):
-                x_indices = (out[0][i]-x_pos)/length_per_index
-                x_next_indices = (out[0][i+1]-x_pos)/length_per_index
-                x_indices = int(x_indices+127)
-                x_next_indices = int(x_next_indices+127)
-                if x_indices > x_next_indices:
-                    temp = x_indices
-                    x_indices = x_next_indices
-                    x_next_indices = temp
-
-                y_indices = (out[1][i])/width_per_index
-                y_next_indices = (out[1][i+1])/width_per_index
-                y_indices = int(y_indices+127)
-                y_next_indices = int(y_next_indices+127)
-                if y_indices > y_next_indices:
-                    temp = y_indices
-                    y_indices = y_next_indices
-                    y_next_indices = temp
-                #y_indices = int((out[1][i] - 0)/width_per_index+127)
-                height_field_data[y_indices, x_indices:x_next_indices+1] = out[2][i]
-                print(x_indices,x_next_indices)
-
-        hfield_data = height_field_data.reshape(height_field_col*height_field_row)
-        z_pos = z_min
-
-        if self.id >= 0:
-            self.shape_id = self._p.createCollisionShape(
-                    shapeType=self._p.GEOM_HEIGHTFIELD,
-                    meshScale=[x_scale/128, y_scale/128, 1],
-                    heightfieldTextureScaling=self.texture_scaling,
-                    heightfieldData=hfield_data,
-                    numHeightfieldRows=256,
-                    numHeightfieldColumns=256,
-                    replaceHeightfieldIndex=self.shape_id,
-                )
-        else:
-            self.shape_id = self._p.createCollisionShape(
-                    shapeType=self._p.GEOM_HEIGHTFIELD,
-                    meshScale=[x_scale/128, y_scale/128, 1],
-                    heightfieldTextureScaling=self.texture_scaling,
-                    heightfieldData=hfield_data,
-                    numHeightfieldRows=256,
-                    numHeightfieldColumns=256,
-                )
-            self.id = self._p.createMultiBody(0, self.shape_id, -1, (0, 0, 0))
-
-            self._p.changeDynamics(self.id, -1, lateralFriction=0.7, restitution=0.2)
-
-        self._p.changeVisualShape(
-            self.id,
-            -1,
-            # textureUniqueId=self.texture_id,
-            rgbaColor=[0.65, 0.37, 0.04, 1],
-            specularColor=[0.65, 0.37, 0.04],
-        )
-
-        self._p.setCollisionFilterGroupMask(self.id, -1, 0, 0)
-
-        self.set_position(pos=(x_pos, 0, 2.5))
-        print(z_min, z_max, terrain_info[:, 2])

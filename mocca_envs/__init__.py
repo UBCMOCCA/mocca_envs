@@ -93,7 +93,7 @@ register(
     id="CassiePhaseEnv-v0",
     entry_point="mocca_envs.cassie_envs:CassieMirrorEnv",
     max_episode_steps=1000,
-    kwargs={"phase_in_obs": True, "residual_control": True, "rsi":True},
+    kwargs={"phase_in_obs": True, "residual_control": True, "rsi": True},
 )
 
 register(
@@ -126,7 +126,7 @@ register(
 register(
     id="Walker3DStepperEnv-v0",
     entry_point="mocca_envs.walker3d_envs:Walker3DStepperEnv",
-    max_episode_steps=1000,
+    max_episode_steps=2400,
 )
 
 register(
