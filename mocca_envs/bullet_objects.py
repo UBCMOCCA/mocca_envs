@@ -468,10 +468,10 @@ class HeightField:
             ])
             x_tilt, y_tilt = np.dot(matrix, np.concatenate(([-y_tilt], [x_tilt])))
 
-            x_tilt = min(x_tilt, 20*DEG2RAD)
-            x_tilt = max(x_tilt, -20*DEG2RAD)
-            y_tilt = min(y_tilt, 20*DEG2RAD)
-            y_tilt = max(y_tilt, -20*DEG2RAD)
+            # x_tilt = min(x_tilt, 20*DEG2RAD)
+            # x_tilt = max(x_tilt, -20*DEG2RAD)
+            # y_tilt = min(y_tilt, 20*DEG2RAD)
+            # y_tilt = max(y_tilt, -20*DEG2RAD)
 
             terrain_info[bound_checked_index, 0] = x
             terrain_info[bound_checked_index, 1] = y
@@ -538,9 +538,9 @@ class HeightField:
             self.id = self._p.createMultiBody(0, self.shape_id, -1, (0, 0, 0))
 
             self._p.changeDynamics(self.id, -1, lateralFriction=1.0,
-                                   restitution=0.2)
-                                   #contactStiffness=30000,
-                                   #contactDamping=1000)
+                                   restitution=0.2,
+                                   contactStiffness=30000,
+                                   contactDamping=1000)
 
         self._p.changeVisualShape(
             self.id,
