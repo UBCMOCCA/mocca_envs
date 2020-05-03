@@ -102,7 +102,7 @@ class LargePlank(BaseStep):
 
 class Rectangle:
     def __init__(
-            self, bc, hdx, hdy, hdz, mass=0.0, lateral_friction=0.8, pos=None, rgba=None
+            self, bc, hdx, hdy, hdz, mass=0.0, lateral_friction=0.8, pos=None, quat=None, rgba=None
     ):
         self._p = bc
 
@@ -112,12 +112,54 @@ class Rectangle:
         rgba = (55 / 255, 55 / 255, 55 / 255, 1) if rgba is None else rgba
 
         self._pos = pos
-        self._quat = np.array([0.0, 0.0, 0.0, 1.0])
+        if quat is None:
+            self._quat = np.array([0.0, 0.0, 0.0, 1.0])
+        else:
+            self._quat = quat
 
         box_shape = self._p.createCollisionShape(self._p.GEOM_BOX, halfExtents=dims)
         box_vshape = self._p.createVisualShape(
             self._p.GEOM_BOX,
             halfExtents=dims,
+            rgbaColor=rgba,
+            specularColor=(0.4, 0.4, 0),
+        )
+
+        self.id = self._p.createMultiBody(
+            baseMass=mass,
+            baseCollisionShapeIndex=box_shape,
+            baseVisualShapeIndex=box_vshape,
+            basePosition=self._pos,
+            baseOrientation=self._quat
+        )
+
+    def set_position(self, pos=None, quat=None):
+        pos = self._pos if pos is None else pos
+        quat = self._quat if quat is None else quat
+
+        self._pos = pos
+        self._quat = quat
+
+        self._p.resetBasePositionAndOrientation(
+            self.id, posObj=self._pos, ornObj=self._quat
+        )
+
+class Cylinder:
+    def __init__(
+            self, bc, hr, hdz, mass=0.0, lateral_friction=0.8, pos=None, rgba=None
+    ):
+        self._p = bc
+
+        pos = np.array([1.0, 1.0, 1.0]) if pos is None else pos
+        rgba = (55 / 255, 55 / 255, 55 / 255, 1) if rgba is None else rgba
+
+        self._pos = pos
+        self._quat = np.array([0.0, 0.0, 0.0, 1.0])
+
+        box_shape = self._p.createCollisionShape(self._p.GEOM_CYLINDER, radius=hr, height=hdz)
+        box_vshape = self._p.createVisualShape(
+            self._p.GEOM_CYLINDER,
+            radius=hr, length=hdz,
             rgbaColor=rgba,
             specularColor=(0.4, 0.4, 0),
         )
@@ -140,6 +182,55 @@ class Rectangle:
             self.id, posObj=self._pos, ornObj=self._quat
         )
 
+class Sphere:
+    def __init__(
+            self, bc, hr, mass=0.0, lateral_friction=0.8, pos=None, rgba=None
+    ):
+        self._p = bc
+
+        pos = np.array([1.0, 1.0, 1.0]) if pos is None else pos
+        rgba = (55 / 255, 55 / 255, 55 / 255, 1) if rgba is None else rgba
+
+        self._pos = pos
+        self._quat = np.array([0.0, 0.0, 0.0, 1.0])
+
+        box_shape = self._p.createCollisionShape(self._p.GEOM_SPHERE, radius=hr)
+        box_vshape = self._p.createVisualShape(
+            self._p.GEOM_SPHERE,
+            radius=hr,
+            rgbaColor=rgba,
+            specularColor=(0.4, 0.4, 0),
+        )
+
+        self.id = self._p.createMultiBody(
+            baseMass=mass,
+            baseCollisionShapeIndex=box_shape,
+            baseVisualShapeIndex=box_vshape,
+            basePosition=self._pos,
+        )
+
+    def set_position(self, pos=None, quat=None):
+        pos = self._pos if pos is None else pos
+        quat = self._quat if quat is None else quat
+
+        self._pos = pos
+        self._quat = quat
+
+        self._p.resetBasePositionAndOrientation(
+            self.id, posObj=self._pos, ornObj=self._quat
+        )
+
+class Tree:
+    def __init__(self, bc):
+        self._p = bc
+        self.tree_root = Cylinder(self._p, 0.1, 4, mass=0.0, lateral_friction=0.8, pos=(0, 0, 0), rgba=(116.0/255, 96.0/255, 84.0/255, 1)
+            )
+        self.tree_top = Sphere(self._p, 0.4, pos=(0, 0, 1), rgba=(66.0/255, 105.0/255, 47.0/255, 1))
+        self.root_base_pos = (0, 0, 0)
+        self.top_base_pos = (0, 0, 2)
+    def set_position(self, pos=(0, 0, 0)):
+        self.tree_root.set_position(pos=(pos[0]+self.root_base_pos[0], pos[1]+self.root_base_pos[1], pos[2]+self.root_base_pos[2]))
+        self.tree_top.set_position(pos=(pos[0]+self.top_base_pos[0], pos[1]+self.top_base_pos[1], pos[2]+self.top_base_pos[2]))
 
 class HeightField:
     def __init__(self, bc, height_field_size):
@@ -310,9 +401,12 @@ class HeightField:
             base_phi = self.base_phi[bound_checked_index]
 
             dr = np.random.uniform(0.65, 0.65, 1)
+            # if i >= 10 and i <= 20:
+            #     yaw = 0
+            # else:
             yaw = 5 * DEG2RAD
-            # if yaw + base_yaw >= np.pi/2 + 0.2:
-            #     yaw = np.pi/2+0.2-base_yaw
+            if i > 42:
+                yaw = 3 * DEG2RAD
             dx = dr * np.cos(yaw + base_phi)
             dy = dr * np.sin(yaw - base_phi)
 
@@ -332,7 +426,41 @@ class HeightField:
                                 length_per_index * 2)
             x_tilt = np.arctan2((hfield[y_index, x_index + 1] - hfield[y_index, x_index - 1]) * height_scale,
                                 length_per_index * 2)
-            print("tilt", x_tilt, y_tilt)
+            if i == 32:
+                print("x, y, z", x, y, z)
+            if i == 22:
+                z_remember = z
+            elif i >= 22 and i <= 32:
+                z = z_remember + (i-22)*0.1
+                x_tilt = 0
+                y_tilt = 0
+                quaternion = np.array(self._p.getQuaternionFromEuler([0, 0, yaw+base_yaw]))
+                p = Plank(self._p, 0.25, pos=(x,y,z), quat=quaternion)
+            elif i > 32 and i <= 42:
+                #z = z_remember + 1 + (32-i)*0.2
+                x_tilt = 0
+                y_tilt = 0
+                yaw = 0
+                dx = dr * np.cos(yaw + base_phi)
+                dy = dr * np.sin(yaw - base_phi)
+                dxy = np.dot(matrix, np.concatenate(([dx], [dy])))
+                x = next_step_xyz[0] + dxy[0]
+                y = next_step_xyz[1] + dxy[1]
+                z = z_remember + 1
+                quaternion = np.array(self._p.getQuaternionFromEuler([0, 0, yaw+base_yaw]))
+                quaternion_remember = np.copy(quaternion)
+                p = Plank(self._p, 0.25, pos=(x,y,z), quat=quaternion)
+            elif i > 42 and z_remember + 1 + (42-i)*0.2 > z:
+                z = z_remember + 1 + (42-i)*0.2
+                x_tilt = 0
+                y_tilt = 0
+                if i % 2 == 0:
+                    tree = Tree(self._p)
+                    tree.set_position(pos=(x+0.7, y+0.7, 1))
+                quaternion = np.array(self._p.getQuaternionFromEuler([0, 0, yaw+base_yaw]))
+                p = Plank(self._p, 0.25, pos=(x,y,z), quat=quaternion)
+            if i == 42:
+                r = Rectangle(self._p, 3.2, 0.5, 0.1, pos=(1.25,14.7, 1.58), quat=quaternion_remember)
 
             matrix = np.array([
                 [-np.cos(base_yaw + yaw), -np.sin(base_yaw + yaw)],
@@ -340,10 +468,10 @@ class HeightField:
             ])
             x_tilt, y_tilt = np.dot(matrix, np.concatenate(([-y_tilt], [x_tilt])))
 
-            # x_tilt = min(x_tilt, 20*DEG2RAD)
-            # x_tilt = max(x_tilt, -20*DEG2RAD)
-            # y_tilt = min(y_tilt, 20*DEG2RAD)
-            # y_tilt = max(y_tilt, -20*DEG2RAD)
+            x_tilt = min(x_tilt, 20*DEG2RAD)
+            x_tilt = max(x_tilt, -20*DEG2RAD)
+            y_tilt = min(y_tilt, 20*DEG2RAD)
+            y_tilt = max(y_tilt, -20*DEG2RAD)
 
             terrain_info[bound_checked_index, 0] = x
             terrain_info[bound_checked_index, 1] = y
@@ -373,15 +501,13 @@ class HeightField:
                                              repeatx=256,
                                              repeaty=256,
                                              base=0)
-                if i > 120 and i < 140:
-                    print(i, j, hfield[i][j])
                 # hfield[i][j] = max(0.01, hfield[i][j])
         # for i in range(256):
         #     for j in range(256):
         #         hfield[i][j] = 1+np.cos((i - 130)/20.0*np.pi*2)
         # hfield -= hfield.min()
         height_scale = 5
-        hfield[126:129, 125:140] = 0
+        hfield[125:129, 125:143] = 0
         # hfield -= hfield.min()
         hfield_data = hfield.reshape(256 * 256) * height_scale
 
@@ -412,9 +538,9 @@ class HeightField:
             self.id = self._p.createMultiBody(0, self.shape_id, -1, (0, 0, 0))
 
             self._p.changeDynamics(self.id, -1, lateralFriction=1.0,
-                                   restitution=0.1,
-                                   contactStiffness=30000,
-                                   contactDamping=1000)
+                                   restitution=0.2)
+                                   #contactStiffness=30000,
+                                   #contactDamping=1000)
 
         self._p.changeVisualShape(
             self.id,
@@ -428,7 +554,10 @@ class HeightField:
         # self._p.setCollisionFilterGroupMask(self.id, -1, 0, 0)
 
         self.set_position(pos=(0, 0, height - 1.75 - 0.408))
-        # print(hfield_data.min(), hfield_data.max(), height-1.3)
+        tree = Tree(self._p)
+        tree.set_position(pos=(3.97, 13.45, 1))
+        tree.set_position(pos=(4.37, 14.05, 1))
+
         return self.generate_step_placements(hfield, height_scale)
         # print(z_min, z_max, terrain_info[:, 2])
 
