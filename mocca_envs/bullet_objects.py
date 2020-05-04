@@ -232,6 +232,46 @@ class Tree:
         self.tree_root.set_position(pos=(pos[0]+self.root_base_pos[0], pos[1]+self.root_base_pos[1], pos[2]+self.root_base_pos[2]))
         self.tree_top.set_position(pos=(pos[0]+self.top_base_pos[0], pos[1]+self.top_base_pos[1], pos[2]+self.top_base_pos[2]))
 
+class Staircase:
+    def __init__(self, bc, num_steps=10, step_height=0.1, step_length=0.65):
+        self._p = bc
+        self.steps = []
+        self.base_pos = []
+        height = 0
+        length = 0
+        for i in range(num_steps):
+            step = Rectangle(self._p, step_length/2, 0.5, step_height/2+height, pos=(length, 0, 0))
+            self.base_pos.append((length, 0, 0))
+            height += step_height
+            length += step_length
+            self.steps.append(step)
+        self._pos = (0, 0, 0)
+        self._quat = (0, 0, 0, 1)
+        self.step_length = step_length
+        self.step_height = step_height
+    def set_position(self, pos=None, yaw=0):
+        pos = self._pos if pos is None else pos
+        if yaw == 0:
+            quat = (0, 0, 0, 1)
+        else:
+            quat = self._p.getQuaternionFromEuler([0, 0, yaw])
+            matrix = np.array([
+                [np.cos(yaw), -np.sin(yaw)],
+                [np.sin(yaw), np.cos(yaw)]
+                ])
+            self.base_pos = []
+            self.base_pos.append(pos)
+            for i in range(len(self.steps)-1):
+                prev_x, prev_y, prev_z = self.base_pos[i]
+                dx, dy= matrix.dot(np.array([self.step_length, 0]))
+                dz = self.step_height
+                self.base_pos.append((prev_x+dx, prev_y+dy, prev_z+dz))
+
+
+        for i in range(len(self.steps)):
+            step_pos = (self.base_pos[i][0], self.base_pos[i][1], self.base_pos[i][2])
+            self.steps[i].set_position(pos=step_pos, quat=quat)
+
 class HeightField:
     def __init__(self, bc, height_field_size):
         self._p = bc
@@ -393,6 +433,7 @@ class HeightField:
 
         terrain_info = np.stack((x, y, z, dphi, x_tilt, y_tilt), axis=1)
 
+
         for i in range(2, n_steps - 1):
             next_step_xyz = terrain_info[i]
             bound_checked_index = (i + 1) % n_steps
@@ -436,6 +477,7 @@ class HeightField:
                 y_tilt = 0
                 quaternion = np.array(self._p.getQuaternionFromEuler([0, 0, yaw+base_yaw]))
                 p = Plank(self._p, 0.25, pos=(x,y,z), quat=quaternion)
+                x_remember, y_remember, z_remember2, yaw_remember = x.copy(), y.copy(), z.copy(), yaw+base_yaw
             elif i > 32 and i <= 42:
                 #z = z_remember + 1 + (32-i)*0.2
                 x_tilt = 0
@@ -449,7 +491,7 @@ class HeightField:
                 z = z_remember + 1
                 quaternion = np.array(self._p.getQuaternionFromEuler([0, 0, yaw+base_yaw]))
                 quaternion_remember = np.copy(quaternion)
-                p = Plank(self._p, 0.25, pos=(x,y,z), quat=quaternion)
+                #p = Plank(self._p, 0.25, pos=(x,y,z), quat=quaternion)
             elif i > 42 and z_remember + 1 + (42-i)*0.2 > z:
                 z = z_remember + 1 + (42-i)*0.2
                 x_tilt = 0
@@ -461,6 +503,9 @@ class HeightField:
                 p = Plank(self._p, 0.25, pos=(x,y,z), quat=quaternion)
             if i == 42:
                 r = Rectangle(self._p, 3.2, 0.5, 0.1, pos=(1.25,14.7, 1.58), quat=quaternion_remember)
+            if i == 23:
+                stairs = Staircase(self._p)
+                stairs.set_position(pos=(x_remember, y_remember, z_remember2), yaw=yaw_remember)
 
             matrix = np.array([
                 [-np.cos(base_yaw + yaw), -np.sin(base_yaw + yaw)],
