@@ -196,7 +196,7 @@ class HeightField:
                     [5, 20],
                     [7, 20],
                     [9, 18],
-                ],
+                ]
             )[:, None, :]
             + deltas[None, :, :]
         )
@@ -227,11 +227,12 @@ class HeightField:
             for i in range(1, 6)
         ]
 
+        f = lambda x: self._p.loadTexture(os.path.join(current_dir, "data", "misc", x))
         rock_textures = [
-            self._p.loadTexture(
-                os.path.join(current_dir, "data", "misc", "stone_{}.jpg".format(i))
-            )
-            for i in range(1, 6)
+            f("stone_1.png"),
+            f("stone_2.jpg"),
+            f("stone_3.jpg"),
+            f("stone_5.png"),
         ]
 
         # Pybullet can't create too many visual shapes
