@@ -36,7 +36,12 @@ class BulletClient(object):
                 connection_mode = pybullet.DIRECT
         self._client = pybullet.connect(
             connection_mode,
-            options="--background_color_red=1.0 --background_color_green=1.0 --background_color_blue=1.0 --width=1920 --height=1080",
+            options=(
+                "--background_color_red=1.0 "
+                "--background_color_green=1.0 "
+                "--background_color_blue=1.0 "
+                "--width=1920 --height=1080"
+            ),
         )
 
     def __del__(self):
@@ -117,10 +122,15 @@ class BodyPart:
         if self.bodyPartIndex == -1:
             (vx, vy, vz), _ = self._p.getBaseVelocity(self.bodies[self.bodyIndex])
         else:
-            (x, y, z), (a, b, c, d), _, _, _, _, (vx, vy, vz), (
-                vr,
-                vp,
-                vy,
+            (
+                (x, y, z),
+                (a, b, c, d),
+                _,
+                _,
+                _,
+                _,
+                (vx, vy, vz),
+                (vr, vp, vy,),
             ) = self._p.getLinkState(
                 self.bodies[self.bodyIndex], self.bodyPartIndex, computeLinkVelocity=1
             )
@@ -392,6 +402,11 @@ class Camera:
         )
 
     def dump_rgb_array(self):
+        # print(self._cam_dist, self._cam_yaw)
+        # self._p.resetDebugVisualizerCamera(
+        #     self._cam_dist, self._cam_yaw, self._cam_pitch, self.camera_target
+        # )
+
         (_, _, rgb_array, _, _) = self._p.getCameraImage(
             width=1920,
             height=1080,
@@ -399,7 +414,8 @@ class Camera:
             flags=pybullet.ER_NO_SEGMENTATION_MASK,
         )
 
-        # rgb_array = rgb_array[:, :, :3]
+        # The alpha channel seems to be always 255
+        rgb_array = rgb_array[:, :, :3]
 
         return rgb_array
 

@@ -126,7 +126,7 @@ register(
 register(
     id="Walker3DStepperEnv-v0",
     entry_point="mocca_envs.walker3d_envs:Walker3DStepperEnv",
-    max_episode_steps=2400,
+    max_episode_steps=1500,
 )
 
 register(
