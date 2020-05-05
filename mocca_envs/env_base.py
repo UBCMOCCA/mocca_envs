@@ -46,6 +46,11 @@ class EnvBase(gym.Env):
 
         self.physics_client_id = self._p._client
         self._p.configureDebugVisualizer(pybullet.COV_ENABLE_GUI, 0)
+        self._p.configureDebugVisualizer(pybullet.COV_ENABLE_KEYBOARD_SHORTCUTS, 0)
+        self._p.configureDebugVisualizer(pybullet.COV_ENABLE_MOUSE_PICKING, 0)
+        self._p.configureDebugVisualizer(pybullet.COV_ENABLE_SEGMENTATION_MARK_PREVIEW, 0)
+        self._p.configureDebugVisualizer(pybullet.COV_ENABLE_DEPTH_BUFFER_PREVIEW, 0)
+        self._p.configureDebugVisualizer(pybullet.COV_ENABLE_RGB_BUFFER_PREVIEW, 0)
 
         self.scene = SinglePlayerStadiumScene(
             self._p,

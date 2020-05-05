@@ -503,7 +503,7 @@ class Walker3DStepperEnv(EnvBase):
 
     def __init__(self, render=False):
 
-        self.make_phantoms_yes = False
+        self.make_phantoms_yes = True
         self.phantoms = []
         self.current_phantom_idx = 0
         self.done_height = 0.7
@@ -922,7 +922,7 @@ class Walker3DStepperEnv(EnvBase):
     def step(self, action):
         self.timestep += 1
         # make phantom
-        if self.make_phantoms_yes and self.timestep % 57 == 0:
+        if self.make_phantoms_yes and self.timestep % 75 == 0:
             phantom = self.phantoms[self.current_phantom_idx]
             # set the phantom pose to current pose
             current_pose = self.robot.to_radians(self.robot.joint_angles)
