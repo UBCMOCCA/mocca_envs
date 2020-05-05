@@ -381,25 +381,25 @@ class Camera:
         self._counter = time.perf_counter()
 
     def track(self, pos, smooth_coef=None):
-        self.wait()
+        # self.wait()
 
         smooth_coef = self._coef if smooth_coef is None else smooth_coef
         assert (smooth_coef <= 1).all(), "Invalid camera smoothing parameters"
 
-        yaw, pitch, dist, lookat_ = self._p.getDebugVisualizerCamera()[-4:]
-        lookat = (1 - smooth_coef) * lookat_ + smooth_coef * pos
+        # yaw, pitch, dist, lookat_ = self._p.getDebugVisualizerCamera()[-4:]
+        lookat = (1 - smooth_coef) * self.camera_target + smooth_coef * pos
 
         self.camera_target = lookat
-        self._p.resetDebugVisualizerCamera(dist, yaw, pitch, lookat)
+        # self._p.resetDebugVisualizerCamera(dist, yaw, pitch, lookat)
 
         # Remember camera for reset
-        self._cam_yaw, self._cam_pitch, self._cam_dist = yaw, pitch, dist
+        # self._cam_yaw, self._cam_pitch, self._cam_dist = yaw, pitch, dist
 
     def lookat(self, pos):
         self.camera_target = pos
-        self._p.resetDebugVisualizerCamera(
-            self._cam_dist, self._cam_yaw, self._cam_pitch, pos
-        )
+        # self._p.resetDebugVisualizerCamera(
+        #     self._cam_dist, self._cam_yaw, self._cam_pitch, pos
+        # )
 
     def dump_rgb_array(self):
         # print(self._cam_dist, self._cam_yaw)
@@ -407,9 +407,27 @@ class Camera:
         #     self._cam_dist, self._cam_yaw, self._cam_pitch, self.camera_target
         # )
 
+        view_matrix = self._p.computeViewMatrixFromYawPitchRoll(
+            cameraTargetPosition=self.camera_target,
+            distance=self._cam_dist,
+            yaw=self._cam_yaw,
+            pitch=-20, # self._cam_pitch,
+            roll=0,
+            upAxisIndex=2
+        )
+
+        proj_matrix = self._p.computeProjectionMatrixFOV(
+            fov=60,
+            aspect=1920.0 / 1080,
+            nearVal=0.1,
+            farVal=100.0
+        )
+
         (_, _, rgb_array, _, _) = self._p.getCameraImage(
             width=1920,
             height=1080,
+            viewMatrix=view_matrix,
+            projectionMatrix=proj_matrix,
             renderer=pybullet.ER_BULLET_HARDWARE_OPENGL,
             flags=pybullet.ER_NO_SEGMENTATION_MASK,
         )
