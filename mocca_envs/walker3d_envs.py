@@ -893,7 +893,7 @@ class Walker3DStepperEnv(EnvBase):
             self.terrain_info_visual
         )
 
-        colours = [(0.345, 0.388, 0.431, 1), (0.216, 0.216, 0.216, 1)]
+        colours = [(1.0, 0.847, 0.694, 1), (0.882, 0.466, 0.001, 1)]
         for index in range(22, 37):
             pos = self.terrain_info_visual[index, 0:3]
             phi, x_tilt, y_tilt = self.terrain_info_visual[index, 3:6]

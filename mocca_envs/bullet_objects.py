@@ -59,7 +59,10 @@ class BaseStep:
 
         self._pos_offset = np.array(self._p.getBasePositionAndOrientation(self.id)[0])
 
-        for link_id in range(-1, self._p.getNumJoints(self.id)):
+        f = lambda x: self._p.loadTexture(os.path.join(current_dir, "data", "misc", x))
+        wood_textures = [f("wood_1.png"), f("wood_2.png")]
+
+        for i, link_id in enumerate(range(-1, self._p.getNumJoints(self.id))):
             self._p.changeDynamics(
                 self.id,
                 link_id,
@@ -67,6 +70,11 @@ class BaseStep:
                 restitution=0.1,
                 contactStiffness=30000,
                 contactDamping=1000,
+            )
+            self._p.changeVisualShape(
+                self.id,
+                link_id,
+                textureUniqueId=i % len(wood_textures)
             )
 
         self.base_id = -1
