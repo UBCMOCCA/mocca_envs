@@ -796,12 +796,37 @@ class Mike(WalkerBase):
             useMaximalCoordinates=True,
         )
 
+        hardhat_file = os.path.join(
+            current_dir, "data", "misc", "hardhat.obj"
+        )
+        hardhat_shape = self._p.createVisualShape(
+            shapeType=self._p.GEOM_MESH,
+            fileName=hardhat_file,
+            # rgbaColor=[186 / 255, 186 / 255, 186 / 255, 1],
+            # specularColor=[0, 0, 0],
+            meshScale=[0.02, 0.02, 0.02],
+        )
+        self.hardhat_id = self._p.createMultiBody(
+            baseMass=0,
+            baseVisualShapeIndex=hardhat_shape,
+            useMaximalCoordinates=True,
+        )
+
+        f = lambda x: self._p.loadTexture(os.path.join(current_dir, "data", "misc", x))
+        hardhat_texture = f("hardhat.jpg")
+        self._p.changeVisualShape(self.hardhat_id, -1, textureUniqueId=hardhat_texture)
+
     def calc_state(self, contact_object_ids=None):
         state = super().calc_state(contact_object_ids)
         quat = self.robot_body.pose().orientation()
         mat = np.array(self._p.getMatrixFromQuaternion(quat)).reshape(3, 3)
+        
         glasses_xyz = self.body_xyz + np.matmul(mat, [0.25, 0, 0])
         self._p.resetBasePositionAndOrientation(self.glasses_id, glasses_xyz, quat)
+        
+        hardhat_xyz = self.body_xyz + np.matmul(mat, [0, -0.4, 0.15])
+        self._p.resetBasePositionAndOrientation(self.hardhat_id, hardhat_xyz, quat)
+        
         return state
 
     def set_base_pose(self, pose=None):
