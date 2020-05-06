@@ -394,7 +394,8 @@ class Camera:
         width = 1920
         height = 1080
 
-        distance = 3
+        distance = 100
+        # distance = 3
         target = np.array(self.camera_target)
         target[-1] += 0.5
         yaw = self._cam_yaw
@@ -402,14 +403,15 @@ class Camera:
         # view_mat = self._p.computeViewMatrixFromYawPitchRoll(target, distance, self._cam_yaw, self._cam_pitch, 0, upAxisIndex=2)
         view_mat = self._p.computeViewMatrixFromYawPitchRoll(target, distance, yaw, pitch, 0, upAxisIndex=2)
 
-        fov = 3
+        fov = 3.0
         aspect = width / height
         nearVal = 0.01
         farVal = 1000
 
-        # proj_mat = self._p.computeProjectionMatrixFOV(fov, aspect, nearVal, farVal)
+        proj_mat = self._p.computeProjectionMatrixFOV(fov, aspect, nearVal, farVal)
         # make the light source follow the character
-        self._p.configureDebugVisualizer(lightPosition=target + np.array([1, 1, 10]))
+        # self._p.configureDebugVisualizer(lightPosition=np.array([5, 5, 100]))
+
         (_, _, rgb_array, _, _) = self._p.getCameraImage(
             width=int(width),
             height=int(height),
