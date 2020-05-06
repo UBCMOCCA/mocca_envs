@@ -394,10 +394,11 @@ class Camera:
         width = 1920
         height = 1080
 
-        distance = 100
+        distance = 200
         # distance = 3
         target = np.array(self.camera_target)
         target[-1] += 0.5
+        target[0] -= 4
         yaw = self._cam_yaw
         pitch = self._cam_pitch
         # view_mat = self._p.computeViewMatrixFromYawPitchRoll(target, distance, self._cam_yaw, self._cam_pitch, 0, upAxisIndex=2)

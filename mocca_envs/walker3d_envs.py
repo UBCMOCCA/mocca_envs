@@ -697,17 +697,17 @@ class Walker3DStepperEnv(EnvBase):
 
         terrain_info = np.stack((x, y, z, dphi, x_tilt, y_tilt), axis=1)
 
-        for i in range(3, self.n_steps):
-            if i % 2 == 0:
-                dr[i]= 0.65
-            else:
-                dr[i] = 1.4
+        # for i in range(3, self.n_steps):
+        #     if i % 2 == 0:
+        #         dr[i]= 0.65
+        #     else:
+        #         dr[i] = 1.4
 
-            random_num = np.random.rand()
-            if random_num < 0.1:
-                dr[i] = 0.65
-            elif random_num < 0.2:
-                dr[i] = 1.4
+        #     random_num = np.random.rand()
+        #     if random_num < 0.1:
+        #         dr[i] = 0.65
+        #     elif random_num < 0.2:
+        #         dr[i] = 1.4
 
 
         for i in range(2, self.n_steps - 1):
@@ -720,14 +720,14 @@ class Walker3DStepperEnv(EnvBase):
             pitch = dtheta[bound_checked_index]
             yaw = dphi_copy[bound_checked_index]
 
-            # if i % 2 == 0:
-            #     pitch = 120 * DEG2RAD
-            # else:
-            #     pitch = 60 * DEG2RAD
+            if i % 2 == 0:
+                pitch = 120 * DEG2RAD
+            else:
+                pitch = 60 * DEG2RAD
 
-            # random_num = np.random.rand()
-            # if random_num < 0.2:
-            #     pitch = 90 * DEG2RAD
+            random_num = np.random.rand()
+            if random_num < 0.2:
+                pitch = 90 * DEG2RAD
 
             dx = dr[bound_checked_index] * np.sin(pitch) * np.cos(yaw + base_phi)
             # clip to prevent overlapping
@@ -1004,7 +1004,7 @@ class Walker3DStepperEnv(EnvBase):
         if self.target_reached and self.target_reached_count == 1:
             self.step_bonus = 50 * np.exp(-self.foot_dist_to_target.min() / 0.25)
 
-            if self.make_phantoms_yes and self.next_step_index % 2 == 0:
+            if self.make_phantoms_yes and self.next_step_index % 3 == 0:
                 phantom = self.phantoms[self.current_phantom_idx]
                 # set the phantom pose to current pose
                 current_pose = self.robot.to_radians(self.robot.joint_angles)
