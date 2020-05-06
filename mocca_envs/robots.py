@@ -695,6 +695,7 @@ class Crab2D(WalkerBase):
         root_link_name = "pelvis"
         super(Crab2D, self).load_robot_model(model_path, flags, root_link_name)
 
+
 class Mike(WalkerBase):
 
     foot_names = ["right_foot", "left_foot"]
@@ -738,17 +739,6 @@ class Mike(WalkerBase):
         self.P = np.array([60,80,60,80,60,100,90,60,80,60,100,90,60,60,60,50,60,60,60,50,60])
         self.D = self.P / 10.0
 
-        # print("hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh")
-
-    # def apply_action(self, a):
-    #     assert np.isfinite(a).all()
-    #     x = np.clip(a, -1, 1)
-    #     for n, j in enumerate(self.ordered_joints):
-    #         #print(j.current_relative_position())
-    #         torque = self.P[n] * (float(x[n])-j.current_relative_position()[0]) - self.D[n] * j.current_relative_position()[1]
-    #         #print(torque)
-    #         j.set_motor_torque(torque)
-
     def load_robot_model(self):
         flags = (
             self._p.MJCF_COLORS_FROM_FILE
@@ -788,6 +778,31 @@ class Mike(WalkerBase):
         self._p.changeDynamics(waist_part.bodies[waist_body_index], waist_part_index, mass=8)
         # info = self._p.getDynamicsInfo(waist_part.bodies[waist_body_index], waist_part_index)
         # print('after mass', info[0])
+
+        glasses_file = os.path.join(
+            current_dir, "data", "misc", "glasses.obj"
+        )
+        glasses_shape = self._p.createVisualShape(
+            shapeType=self._p.GEOM_MESH,
+            fileName=glasses_file,
+            # rgbaColor=[186 / 255, 186 / 255, 186 / 255, 1],
+            # specularColor=[0, 0, 0],
+            meshScale=[0.02, 0.02, 0.02],
+            visualFrameOrientation=[0, 0, 1, 1],
+        )
+        self.glasses_id = self._p.createMultiBody(
+            baseMass=0,
+            baseVisualShapeIndex=glasses_shape,
+            useMaximalCoordinates=True,
+        )
+
+    def calc_state(self, contact_object_ids=None):
+        state = super().calc_state(contact_object_ids)
+        quat = self.robot_body.pose().orientation()
+        mat = np.array(self._p.getMatrixFromQuaternion(quat)).reshape(3, 3)
+        glasses_xyz = self.body_xyz + np.matmul(mat, [0.25, 0, 0])
+        self._p.resetBasePositionAndOrientation(self.glasses_id, glasses_xyz, quat)
+        return state
 
     def set_base_pose(self, pose=None):
         self.base_joint_angles[:] = 0  # reset

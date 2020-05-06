@@ -500,6 +500,7 @@ class Walker3DStepperEnv(EnvBase):
     control_step = 1 / 60
     llc_frame_skip = 1
     sim_frame_skip = 4
+    robot_class = Walker3D
 
     def __init__(self, render=False):
 
@@ -515,7 +516,7 @@ class Walker3DStepperEnv(EnvBase):
         self.rendered_step_count = 50
         self.stop_frames = 30
 
-        super().__init__(Walker3D, render)
+        super().__init__(self.robot_class, render)
         self.robot.set_base_pose(pose="running_start")
 
         self.electricity_cost = 4.5

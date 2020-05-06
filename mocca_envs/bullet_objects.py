@@ -165,7 +165,6 @@ class HeightField:
         self.digitize_bins = 32
         self.total_length = 25.6
 
-        # self.decorate_with_random_rocks()
 
     def decorate_with_random_rocks(self):
         if not hasattr(self, "data"):
