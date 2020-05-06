@@ -494,7 +494,7 @@ class Walker3DStepperEnv(EnvBase):
         # Need these before calling constructor
         # because they are used in self.create_terrain()
         self.step_radius = 0.25
-        self.rendered_step_count = 30
+        self.rendered_step_count = 100
         self.stop_frames = 30
 
         super().__init__(Walker3D, render)
@@ -504,7 +504,7 @@ class Walker3DStepperEnv(EnvBase):
         self.stall_torque_cost = 0.225
         self.joints_at_limit_cost = 0.1
 
-        self.n_steps = 40
+        self.n_steps = 100
         self.lookahead = 2
         self.next_step_index = 0
 
@@ -629,11 +629,11 @@ class Walker3DStepperEnv(EnvBase):
             tilt_limit=10,
     ):
 
-        y_range = np.array([-10, -10]) * DEG2RAD
+        y_range = np.array([0, 0]) * DEG2RAD
         p_range = np.array([90 - 0, 90 + 0]) * DEG2RAD
-        t_range = np.array([-20, -20]) * DEG2RAD
+        t_range = np.array([0, 0]) * DEG2RAD
 
-        dr = self.np_random.uniform(0.65, 0.65, size=n_steps)
+        dr = self.np_random.uniform(0.65, 0.8, size=n_steps)
         dphi = self.np_random.uniform(*y_range, size=n_steps)
         dtheta = self.np_random.uniform(*p_range, size=n_steps)
         # dtheta = np.array([75, 70] * 12) * DEG2RAD
@@ -697,6 +697,19 @@ class Walker3DStepperEnv(EnvBase):
 
         terrain_info = np.stack((x, y, z, dphi, x_tilt, y_tilt), axis=1)
 
+        for i in range(3, self.n_steps):
+            if i % 2 == 0:
+                dr[i]= 0.65
+            else:
+                dr[i] = 1.4
+
+            random_num = np.random.rand()
+            if random_num < 0.1:
+                dr[i] = 0.65
+            elif random_num < 0.2:
+                dr[i] = 1.4
+
+
         for i in range(2, self.n_steps - 1):
             next_step_xyz = terrain_info[i]
             bound_checked_index = (i + 1) % self.n_steps
@@ -706,6 +719,15 @@ class Walker3DStepperEnv(EnvBase):
 
             pitch = dtheta[bound_checked_index]
             yaw = dphi_copy[bound_checked_index]
+
+            # if i % 2 == 0:
+            #     pitch = 120 * DEG2RAD
+            # else:
+            #     pitch = 60 * DEG2RAD
+
+            # random_num = np.random.rand()
+            # if random_num < 0.2:
+            #     pitch = 90 * DEG2RAD
 
             dx = dr[bound_checked_index] * np.sin(pitch) * np.cos(yaw + base_phi)
             # clip to prevent overlapping
@@ -727,7 +749,7 @@ class Walker3DStepperEnv(EnvBase):
             terrain_info[bound_checked_index, 1] = y
             terrain_info[bound_checked_index, 2] = z
             terrain_info[bound_checked_index, 3] = yaw + base_yaw
-            terrain_info[bound_checked_index, 4] = -20 * DEG2RAD
+            #terrain_info[bound_checked_index, 4] = -20 * DEG2RAD
             # terrain_info[bound_checked_index, 5] = 0#y_tilt
 
         return terrain_info
@@ -808,7 +830,7 @@ class Walker3DStepperEnv(EnvBase):
         # Randomize platforms
         self.randomize_terrain()
         # self.terrain.generate_height_field_from_step_2d(self.terrain_info)
-        self.terrain_info = self.terrain.get_p_noise_height_field()
+        #self.terrain_info = self.terrain.get_p_noise_height_field()
         self.next_step_index = 1
 
         self.next_next_pitch = np.pi / 2
@@ -982,6 +1004,17 @@ class Walker3DStepperEnv(EnvBase):
         if self.target_reached and self.target_reached_count == 1:
             self.step_bonus = 50 * np.exp(-self.foot_dist_to_target.min() / 0.25)
 
+            if self.make_phantoms_yes and self.next_step_index % 2 == 0:
+                phantom = self.phantoms[self.current_phantom_idx]
+                # set the phantom pose to current pose
+                current_pose = self.robot.to_radians(self.robot.joint_angles)
+                current_pos = self.robot.body_xyz
+                current_orientation = self.robot.robot_body.pose().orientation()
+                phantom.reset(pos=current_pos, pose=current_pose, quat=current_orientation)
+
+                self.current_phantom_idx += 1
+                self.current_phantom_idx %= 20
+
         # For last step only
         self.target_bonus = 0
         if (
@@ -1060,16 +1093,16 @@ class Walker3DStepperEnv(EnvBase):
         self.targets = self.delta_to_k_targets(k=self.lookahead)
 
         # make phantom
-        if self.make_phantoms_yes and self.next_step_index % 2 == 0:
-            phantom = self.phantoms[self.current_phantom_idx]
-            # set the phantom pose to current pose
-            current_pose = self.robot.to_radians(self.robot.joint_angles)
-            current_pos = self.robot.body_xyz
-            current_orientation = self.robot.robot_body.pose().orientation()
-            phantom.reset(pos=current_pos, pose=current_pose, quat=current_orientation)
+        # if self.make_phantoms_yes and self.next_step_index % 2 == 0:
+        #     phantom = self.phantoms[self.current_phantom_idx]
+        #     # set the phantom pose to current pose
+        #     current_pose = self.robot.to_radians(self.robot.joint_angles)
+        #     current_pos = self.robot.body_xyz
+        #     current_orientation = self.robot.robot_body.pose().orientation()
+        #     phantom.reset(pos=current_pos, pose=current_pose, quat=current_orientation)
 
-            self.current_phantom_idx += 1
-            self.current_phantom_idx %= 20
+        #     self.current_phantom_idx += 1
+        #     self.current_phantom_idx %= 20
 
     def sample_next_next_step_1(self):
         pairs = np.indices(dimensions=(self.yaw_sample_size, self.pitch_sample_size))
