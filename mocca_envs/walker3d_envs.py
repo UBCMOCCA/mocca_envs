@@ -331,7 +331,7 @@ class Walker3DStepperEnv(EnvBase):
 
         # Env settings
         self.n_steps = 24
-        self.lookahead = 4
+        self.lookahead = 2
         self.next_step_index = 0
 
         # Terrain info
