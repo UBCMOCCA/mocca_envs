@@ -290,10 +290,6 @@ class WalkerBase:
         )
 
     def calc_state(self, contact_object_ids=None):
-        # j = np.array(
-        #     [j.current_relative_position() for j in self.ordered_joints],
-        #     dtype=np.float32,
-        # )
 
         # Use pybullet's array version, should be faster
         j = self._p.getJointStates(self.id, self.ordered_joint_ids)
@@ -305,16 +301,8 @@ class WalkerBase:
 
         body_pose = self.robot_body.pose()
 
-        # parts_xyz = np.array([p.pose().xyz() for p in self.parts.values()])
-        # self.body_xyz = parts_xyz.mean(axis=0)
-        # # pelvis z is more informative than mean z
-        # self.body_xyz[2] = body_pose.xyz()[2]
-
         # Faster if we don't use true CoM
         self.body_xyz = body_pose.xyz()
-
-        if self.initial_z is None:
-            self.initial_z = self.body_xyz[2]
 
         self.body_rpy = body_pose.rpy()
         roll, pitch, yaw = self.body_rpy
@@ -423,7 +411,6 @@ class WalkerBase:
     def reset(self):
         self.feet_contact.fill(0.0)
         self.feet_xyz.fill(0.0)
-        self.initial_z = None
 
         robot_state = self.calc_state()
         return robot_state
