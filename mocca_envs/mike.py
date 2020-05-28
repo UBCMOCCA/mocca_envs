@@ -29,7 +29,7 @@ class MikeStepperEnv(EnvBase):
 
     def __init__(self, render=False):
 
-        self.make_phantoms_yes = True
+        self.make_phantoms_yes = False
         self.phantoms = []
         self.current_phantom_idx = 0
         self.done_height = 0.7
@@ -69,8 +69,8 @@ class MikeStepperEnv(EnvBase):
         self.x_tilt_sample_size = 11
         self.y_tilt_sample_size = 11
 
-        self.yaw_samples = np.linspace(-10, -10, num=self.yaw_sample_size) * DEG2RAD
-        self.pitch_samples = np.linspace(0, 0, num=self.pitch_sample_size) * DEG2RAD
+        self.yaw_samples = np.linspace(-20, 20, num=self.yaw_sample_size) * DEG2RAD
+        self.pitch_samples = np.linspace(-50, 50, num=self.pitch_sample_size) * DEG2RAD
         self.r_samples = np.linspace(0.65, 0.65, num=self.r_sample_size)
         self.x_tilt_samples = np.linspace(0, 0, num=self.x_tilt_sample_size) * DEG2RAD
         self.y_tilt_samples = np.linspace(0, 0, num=self.y_tilt_sample_size) * DEG2RAD
@@ -351,7 +351,7 @@ class MikeStepperEnv(EnvBase):
         # Randomize platforms
         self.randomize_terrain()
         # self.terrain.generate_height_field_from_step_2d(self.terrain_info)
-        self.terrain_info = self.terrain.get_p_noise_height_field()
+        #self.terrain_info = self.terrain.get_p_noise_height_field()
         self.next_step_index = 1
 
         self.next_next_pitch = np.pi / 2
@@ -590,7 +590,7 @@ class MikeStepperEnv(EnvBase):
         # print(env.next_step_index)
         next_next_step = self.next_step_index + 1
         # env.terrain_info[next_next_step, 2] = 30    
-        # self.sample_next_next_step()
+        self.sample_next_next_step()
         # +1 because first body is worldBody
         body_index = next_next_step % self.rendered_step_count
 
