@@ -392,14 +392,10 @@ class Camera:
 
     def dump_rgb_array(self):
 
-        width, height, view_mat, proj_mat = self._p.getDebugVisualizerCamera()[0:4]
+        width, height, _, _ = self._p.getDebugVisualizerCamera()[0:4]
 
         (_, _, rgb_array, _, _) = self._p.getCameraImage(
-            width=width,
-            height=height,
-            viewMatrix=view_mat,
-            projectionMatrix=proj_mat,
-            renderer=pybullet.ER_BULLET_HARDWARE_OPENGL,
+            width=width, height=height, renderer=pybullet.ER_BULLET_HARDWARE_OPENGL
         )
 
         rgb_array = rgb_array[:, :, :3]
