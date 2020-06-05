@@ -395,7 +395,10 @@ class Camera:
         width, height, _, _ = self._p.getDebugVisualizerCamera()[0:4]
 
         (_, _, rgb_array, _, _) = self._p.getCameraImage(
-            width=width, height=height, renderer=pybullet.ER_BULLET_HARDWARE_OPENGL
+            width=width,
+            height=height,
+            renderer=self._p.ER_BULLET_HARDWARE_OPENGL,
+            flags=self._p.ER_NO_SEGMENTATION_MASK,
         )
 
         rgb_array = rgb_array[:, :, :3]
