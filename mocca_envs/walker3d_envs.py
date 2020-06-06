@@ -35,8 +35,8 @@ class Walker3DCustomEnv(EnvBase):
     robot_class = Walker3D
     termination_height = 0.7
 
-    def __init__(self, render=False):
-        super().__init__(self.robot_class, render)
+    def __init__(self, render=False, use_egl=False):
+        super().__init__(self.robot_class, render, use_egl=use_egl)
         self.robot.set_base_pose(pose="running_start")
         self.eval_mode = False
         self.random_pose = True
@@ -81,7 +81,7 @@ class Walker3DCustomEnv(EnvBase):
         self.robot_state = self.robot.reset(random_pose=self.random_pose)
 
         # Reset camera
-        if self.is_rendered:
+        if self.is_rendered or self.use_egl:
             self.camera.lookat(self.robot.body_xyz)
             self.target.set_position(pos=self.walk_target)
 
@@ -116,7 +116,7 @@ class Walker3DCustomEnv(EnvBase):
 
         state = np.concatenate((self.robot_state, [sin_], [cos_]))
 
-        if self.is_rendered:
+        if self.is_rendered or self.use_egl:
             self._handle_keyboard()
             self.camera.track(pos=self.robot.body_xyz)
             self.target.set_position(pos=self.walk_target)
@@ -250,8 +250,8 @@ class Child3DCustomEnv(Walker3DCustomEnv):
     robot_class = Child3D
     termination_height = 0.1
 
-    def __init__(self, render=False):
-        super().__init__(render)
+    def __init__(self, render=False, use_egl=False):
+        super().__init__(render, use_egl=use_egl)
         self.robot.set_base_pose(pose="crawl")
 
     def calc_base_reward(self, action):
@@ -259,8 +259,8 @@ class Child3DCustomEnv(Walker3DCustomEnv):
 
 
 class Walker3DChairEnv(Walker3DCustomEnv):
-    def __init__(self, render=False):
-        super().__init__(render)
+    def __init__(self, render=False, use_egl=False):
+        super().__init__(render, use_egl=use_egl)
         self.robot.set_base_pose(pose="sit")
 
     def create_terrain(self):
@@ -291,7 +291,7 @@ class Walker3DChairEnv(Walker3DCustomEnv):
         self.robot_state = self.robot.calc_state()
 
         # Reset camera
-        if self.is_rendered:
+        if self.is_rendered or self.use_egl:
             self.camera.lookat(self.robot.body_xyz)
             self.target.set_position(pos=self.walk_target)
 
@@ -313,15 +313,15 @@ class Walker3DStepperEnv(EnvBase):
     llc_frame_skip = 1
     sim_frame_skip = 4
 
-    def __init__(self, render=False):
+    def __init__(self, render=False, use_egl=False):
 
         # Need these before calling constructor
         # because they are used in self.create_terrain()
         self.step_radius = 0.25
-        self.rendered_step_count = 4
+        self.rendered_step_count = 24
         self.stop_frames = 30
 
-        super().__init__(Walker3D, render)
+        super().__init__(Walker3D, render, use_egl=use_egl)
         self.robot.set_base_pose(pose="running_start")
 
         # Robot settings
@@ -456,7 +456,7 @@ class Walker3DStepperEnv(EnvBase):
         self.next_step_index = 0
 
         # Reset camera
-        if self.is_rendered:
+        if self.is_rendered or self.use_egl:
             self.camera.lookat(self.robot.body_xyz)
 
         self.targets = self.delta_to_k_targets(k=self.lookahead)
@@ -482,7 +482,7 @@ class Walker3DStepperEnv(EnvBase):
 
         state = np.concatenate((self.robot_state, self.targets.flatten()))
 
-        if self.is_rendered:
+        if self.is_rendered or self.use_egl:
             self._handle_keyboard()
             self.camera.track(pos=self.robot.body_xyz)
             self.target.set_position(pos=self.walk_target)
@@ -714,11 +714,11 @@ class Walker3DTerrainEnv(EnvBase):
 
     termination_height = 0.7
 
-    def __init__(self, render=False):
+    def __init__(self, render=False, use_egl=False):
         self.terrain_size = (256, 256)
         self.vision_hsize = 2
 
-        super().__init__(Walker3D, render, remove_ground=True)
+        super().__init__(Walker3D, render, remove_ground=True, use_egl=use_egl)
         self.robot.set_base_pose(pose="running_start")
 
         # robot_state + (2 targets) + vision
@@ -752,9 +752,6 @@ class Walker3DTerrainEnv(EnvBase):
         )
 
     def reset(self):
-        if self.is_rendered:
-            self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 0)
-
         self.done = False
 
         self._p.restoreState(self.state_id)
@@ -766,15 +763,12 @@ class Walker3DTerrainEnv(EnvBase):
         self.vision_map = self.calc_local_height_map()
 
         # Reset camera
-        if self.is_rendered:
+        if self.is_rendered or self.use_egl:
             self.camera.lookat(self.robot.body_xyz)
 
         self.calc_potential()
 
         state = np.concatenate(self.get_observation_components())
-
-        if self.is_rendered:
-            self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 1)
 
         return state
 
@@ -793,7 +787,7 @@ class Walker3DTerrainEnv(EnvBase):
 
         state = np.concatenate(self.get_observation_components())
 
-        if self.is_rendered:
+        if self.is_rendered or self.use_egl:
             self._handle_keyboard()
             self.camera.track(pos=self.robot.body_xyz)
 

@@ -345,7 +345,6 @@ class StadiumScene(Scene):
 
             for i in self.ground_plane_mjcf:
                 self._p.changeDynamics(i, -1, lateralFriction=0.8, restitution=0.5)
-                # self._p.changeVisualShape(i, -1, rgbaColor=[1, 1, 1, 0.8])
 
     def set_friction(self, lateral_friction):
         for i in self.ground_plane_mjcf:
@@ -358,13 +357,15 @@ class SinglePlayerStadiumScene(StadiumScene):
 
 
 class Camera:
-    def __init__(self, bc, fps=60, dist=2.5, yaw=0, pitch=-5):
+    def __init__(self, bc, fps=60, dist=2.5, yaw=0, pitch=-5, use_egl=False):
 
         self._p = bc
         self._cam_dist = dist
         self._cam_yaw = yaw
         self._cam_pitch = pitch
         self._coef = np.array([1.0, 1.0, 0.1])
+
+        self.use_egl = use_egl
 
         self._fps = fps
         self._target_period = 1 / (fps * 1.02)
@@ -379,6 +380,7 @@ class Camera:
 
         yaw, pitch, dist, lookat_ = self._p.getDebugVisualizerCamera()[-4:]
         lookat = (1 - smooth_coef) * lookat_ + smooth_coef * pos
+        self._cam_target = lookat
 
         self._p.resetDebugVisualizerCamera(dist, yaw, pitch, lookat)
 
@@ -386,26 +388,42 @@ class Camera:
         self._cam_yaw, self._cam_pitch, self._cam_dist = yaw, pitch, dist
 
     def lookat(self, pos):
+        self._cam_target = pos
         self._p.resetDebugVisualizerCamera(
             self._cam_dist, self._cam_yaw, self._cam_pitch, pos
         )
 
     def dump_rgb_array(self):
 
-        width, height, _, _ = self._p.getDebugVisualizerCamera()[0:4]
+        if self.use_egl:
+            # use_egl
+            width, height = 1920, 1080
+            view = self._p.computeViewMatrixFromYawPitchRoll(
+                self._cam_target, distance=4, yaw=0, pitch=-20, roll=0, upAxisIndex=2
+            )
+            proj = self._p.computeProjectionMatrixFOV(
+                fov=60, aspect=width / height, nearVal=0.1, farVal=100.0
+            )
+        else:
+            # is_rendered
+            width, height, view, proj = self._p.getDebugVisualizerCamera()[0:4]
 
         (_, _, rgb_array, _, _) = self._p.getCameraImage(
             width=width,
             height=height,
+            viewMatrix=view,
+            projectionMatrix=proj,
             renderer=self._p.ER_BULLET_HARDWARE_OPENGL,
             flags=self._p.ER_NO_SEGMENTATION_MASK,
         )
 
         rgb_array = rgb_array[:, :, :3]
-
         return rgb_array
 
     def wait(self):
+        if self.use_egl:
+            return
+
         delta = time.perf_counter() - self._counter
         time.sleep(max(self._target_period - delta, 0))
         now = time.perf_counter()

@@ -13,10 +13,15 @@ class EnvBase(gym.Env):
     _render_width = 320 * 3
     _render_height = 240 * 3
 
-    def __init__(self, robot_class, render=False, remove_ground=False, **kwargs):
+    def __init__(
+        self, robot_class, render=False, remove_ground=False, use_egl=False, **kwargs
+    ):
         self.robot_kwargs = kwargs
         self.robot_class = robot_class
+
+        self.is_rendered = render
         self.remove_ground = remove_ground
+        self.use_egl = use_egl
 
         self.scene = None
         self.physics_client_id = -1
@@ -24,8 +29,6 @@ class EnvBase(gym.Env):
         self.state_id = -1
 
         self.metadata["video.frames_per_second"] = int(1 / self.control_step)
-
-        self.is_rendered = render
 
         self.seed()
         self.initialize_scene_and_robot()
@@ -42,14 +45,30 @@ class EnvBase(gym.Env):
         bc_mode = pybullet.GUI if self.is_rendered else pybullet.DIRECT
         self._p = BulletClient(connection_mode=bc_mode)
 
-        if self.is_rendered:
-            self.camera = Camera(self._p, 1 / self.control_step * self.llc_frame_skip)
+        if self.is_rendered or self.use_egl:
+            self.camera = Camera(
+                self._p,
+                1 / self.control_step * self.llc_frame_skip,
+                use_egl=self.use_egl,
+            )
             if hasattr(self, "create_target"):
                 self.create_target()
 
+        if self.use_egl:
+            import pkgutil
+
+            egl = pkgutil.get_loader("eglRenderer")
+            self.egl = self._p.loadPlugin(egl.get_filename(), "_eglRendererPlugin")
+
         self.physics_client_id = self._p._client
-        self._p.configureDebugVisualizer(pybullet.COV_ENABLE_GUI, 0)
-        self._p.configureDebugVisualizer(pybullet.COV_ENABLE_KEYBOARD_SHORTCUTS, 0)
+
+        pc = self._p
+        pc.configureDebugVisualizer(pc.COV_ENABLE_RENDERING, 0)
+        pc.configureDebugVisualizer(pc.COV_ENABLE_GUI, 0)
+        pc.configureDebugVisualizer(pc.COV_ENABLE_KEYBOARD_SHORTCUTS, 0)
+        pc.configureDebugVisualizer(pc.COV_ENABLE_SEGMENTATION_MARK_PREVIEW, 0)
+        pc.configureDebugVisualizer(pc.COV_ENABLE_DEPTH_BUFFER_PREVIEW, 0)
+        pc.configureDebugVisualizer(pc.COV_ENABLE_RGB_BUFFER_PREVIEW, 0)
 
         self.scene = SinglePlayerStadiumScene(
             self._p,
@@ -71,6 +90,8 @@ class EnvBase(gym.Env):
         # Create terrain
         if hasattr(self, "create_terrain"):
             self.create_terrain()
+
+        pc.configureDebugVisualizer(pc.COV_ENABLE_RENDERING, int(self.is_rendered))
 
         self.state_id = self._p.saveState()
 
@@ -120,7 +141,7 @@ class EnvBase(gym.Env):
             height=self._render_height,
             viewMatrix=view_matrix,
             projectionMatrix=proj_matrix,
-            renderer=pybullet.ER_BULLET_HARDWARE_OPENGL,
+            renderer=self._p.ER_BULLET_HARDWARE_OPENGL,
         )
         rgb_array = np.array(px)
         rgb_array = np.reshape(

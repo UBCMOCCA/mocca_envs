@@ -107,8 +107,6 @@ class Monkey3DCustomEnv(EnvBase):
         return np.stack((x, y, z, phi), axis=1)
 
     def create_terrain(self):
-        self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 0)
-
         self.steps = []
         step_ids = set()
         cover_ids = set()
@@ -121,8 +119,6 @@ class Monkey3DCustomEnv(EnvBase):
 
         # Need set for detecting contact
         self.all_contact_object_ids = set(step_ids) | set(cover_ids) | self.ground_ids
-
-        self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 1)
 
     def set_step_state(self, info_index, step_index):
         pos = self.terrain_info[info_index, 0:3]
@@ -166,8 +162,6 @@ class Monkey3DCustomEnv(EnvBase):
         )
 
     def reset(self):
-        self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 0)
-
         self.done = False
         self.free_fall_count = 0
         self.target_reached_count = 0
@@ -201,8 +195,6 @@ class Monkey3DCustomEnv(EnvBase):
         self.calc_potential()
 
         state = np.concatenate(self.get_observation_component())
-
-        self._p.configureDebugVisualizer(self._p.COV_ENABLE_RENDERING, 1)
 
         return state
 
