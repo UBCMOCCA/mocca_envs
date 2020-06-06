@@ -321,10 +321,7 @@ class WalkerBase:
             self.feet_xyz[i] = f.pose().xyz()
             if contact_object_ids is not None:
                 contact_ids = set((x[2], x[4]) for x in f.contact_list())
-                if contact_object_ids & contact_ids:
-                    self.feet_contact[i] = 1.0
-                else:
-                    self.feet_contact[i] = 0.0
+                self.feet_contact[i] = 1.0 if contact_object_ids & contact_ids else 0.0
 
         height = self.body_xyz[2] - np.min(self.feet_xyz[:, 2])
         more = np.array([height, vx, vy, vz, roll, pitch], dtype=np.float32)
@@ -543,33 +540,32 @@ class Walker3D(WalkerBase):
             )
 
     def reset(self, random_pose=True, pos=None, quat=None, vel=None, ang_vel=None):
-
-        # Mirror initial pose
+        base_joint_angles = np.copy(self.base_joint_angles)
+        base_orientation = np.copy(self.base_orientation)
         if self.np_random.rand() < 0.5:
-            self.base_joint_angles[self._rl] = self.base_joint_angles[self._lr]
-            self.base_joint_angles[self._negation_joint_indices] *= -1
-            self.base_orientation[0:3] *= -1
+            self.mirrored = True
+            base_joint_angles[self._rl] = base_joint_angles[self._lr]
+            base_joint_angles[self._negation_joint_indices] *= -1
+            base_orientation[0:3] *= -1
+        else:
+            self.mirrored = False
 
         if random_pose:
             # Add small deviations
             ds = self.np_random.uniform(low=-0.1, high=0.1, size=self.action_dim)
-            ps = self.to_normalized(self.base_joint_angles + ds)
-            ps = self.to_radians(np.clip(ps, -0.95, 0.95))
-        else:
-            ps = self.base_joint_angles
+            ps = self.to_normalized(base_joint_angles + ds)
+            base_joint_angles = self.to_radians(np.clip(ps, -0.95, 0.95))
 
-        self.reset_joint_states(ps, self.base_joint_speeds)
+        self.reset_joint_states(base_joint_angles, self.base_joint_speeds)
 
-        pos = self.base_position if pos is None else pos
-        quat = self.base_orientation if quat is None else quat
-
+        pos = pos or self.base_position
+        quat = quat or self.base_orientation
         self._p.resetBasePositionAndOrientation(
             self.object_id[0], posObj=pos, ornObj=quat
         )
 
-        vel = self.base_velocity if vel is None else vel
-        ang_vel = self.base_angular_velocity if ang_vel is None else ang_vel
-
+        vel = vel or self.base_velocity
+        ang_vel = ang_vel or self.base_angular_velocity
         self.robot_body.reset_velocity(vel, ang_vel)
 
         return super(Walker3D, self).reset()

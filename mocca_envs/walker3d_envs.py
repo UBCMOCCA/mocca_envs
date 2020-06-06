@@ -120,10 +120,11 @@ class Walker3DCustomEnv(EnvBase):
             self._handle_keyboard()
             self.camera.track(pos=self.robot.body_xyz)
             self.target.set_position(pos=self.walk_target)
-            if self.distance_to_target < 0.15:
-                self.target.set_color(Colors["dodgerblue"])
-            else:
-                self.target.set_color(Colors["crimson"])
+            self.target.set_color(
+                Colors["dodgerblue"]
+                if self.distance_to_target < 0.15
+                else Colors["crimson"]
+            )
 
         return state, reward, self.done, {}
 
@@ -313,21 +314,25 @@ class Walker3DStepperEnv(EnvBase):
     llc_frame_skip = 1
     sim_frame_skip = 4
 
+    # Pillar, Plank, LargePlank
+    plank_class = Plank
+
     def __init__(self, **kwargs):
 
         # Need these before calling constructor
         # because they are used in self.create_terrain()
         self.step_radius = 0.25
-        self.rendered_step_count = 24
+        self.rendered_step_count = 4
         self.stop_frames = 30
 
-        super().__init__(Walker3D, **kwargs)
+        super().__init__(Walker3D, remove_ground=True, **kwargs)
         self.robot.set_base_pose(pose="running_start")
 
         # Robot settings
         self.electricity_cost = 4.5
         self.stall_torque_cost = 0.225
         self.joints_at_limit_cost = 0.1
+        self.random_start = False
 
         # Env settings
         self.n_steps = 24
@@ -335,9 +340,10 @@ class Walker3DStepperEnv(EnvBase):
         self.next_step_index = 0
 
         # Terrain info
-        self.pitch_limit = 25
-        self.yaw_limit = 0
-        self.tilt_limit = 0
+        self.dist_range = np.array([0.65, 0.85])
+        self.pitch_range = np.array([90 - 25, 90 + 25]) * DEG2RAD
+        self.yaw_range = np.array([0, 0]) * DEG2RAD
+        self.tilt_range = np.array([-0, 0]) * DEG2RAD
         # x, y, z, phi, x_tilt, y_tilt
         self.terrain_info = np.zeros((self.n_steps, 6))
 
@@ -351,48 +357,39 @@ class Walker3DStepperEnv(EnvBase):
     def evaluation_mode(self):
         self.pitch_limit = 0
 
-    def generate_step_placements(
-        self,
-        n_steps=50,
-        min_gap=0.65,
-        max_gap=0.85,
-        yaw_limit=30,
-        pitch_limit=25,
-        tilt_limit=10,
-    ):
+    def generate_step_placements(self):
+        N = self.n_steps
+        dr = self.np_random.uniform(*self.dist_range, size=N)
+        dphi = self.np_random.uniform(*self.yaw_range, size=N)
+        dtheta = self.np_random.uniform(*self.pitch_range, size=N)
 
-        r_range = np.array([min_gap, max_gap])
-        y_range = np.array([-yaw_limit, yaw_limit]) * DEG2RAD
-        p_range = np.array([90 - pitch_limit, 90 + pitch_limit]) * DEG2RAD
-        t_range = np.array([-tilt_limit, tilt_limit]) * DEG2RAD
-
-        dr = self.np_random.uniform(*r_range, size=n_steps)
-        dphi = self.np_random.uniform(*y_range, size=n_steps)
-        dtheta = self.np_random.uniform(*p_range, size=n_steps)
-
-        # make first step slightly further to accommodate different starting poses
-        dr[0] = 0.8
+        # make first step below feet
+        dr[0] = 0.0
         dphi[0] = 0.0
         dtheta[0] = np.pi / 2
 
-        x_tilt = self.np_random.uniform(*t_range, size=n_steps)
-        y_tilt = self.np_random.uniform(*t_range, size=n_steps)
+        dr[1:3] = 0.75
+        dphi[1:3] = 0.0
+        dtheta[1:3] = np.pi / 2
+
+        x_tilt = self.np_random.uniform(*self.tilt_range, size=N)
+        y_tilt = self.np_random.uniform(*self.tilt_range, size=N)
+        x_tilt[0:3] = 0
+        y_tilt[0:3] = 0
 
         dphi = np.cumsum(dphi)
 
-        x_ = dr * np.sin(dtheta) * np.cos(dphi)
-        y_ = dr * np.sin(dtheta) * np.sin(dphi)
-        z_ = dr * np.cos(dtheta)
+        dx = dr * np.sin(dtheta) * np.cos(dphi)
+        dy = dr * np.sin(dtheta) * np.sin(dphi)
+        dz = dr * np.cos(dtheta)
 
-        # Prevent steps from overlapping
-        np.clip(x_, a_min=self.step_radius * 3, a_max=max_gap, out=x_)
+        # Fix overlapping steps
+        dx_max = np.maximum(np.abs(dx[2:]), self.step_radius * 2.5)
+        dx[2:] = np.sign(dx[2:]) * np.minimum(dx_max, self.dist_range[1])
 
-        x = np.cumsum(x_)
-        y = np.cumsum(y_)
-        z = np.cumsum(z_)
-
-        min_z = self.step_radius * np.sin(self.tilt_limit * DEG2RAD) + 0.01
-        np.clip(z, a_min=min_z, a_max=None, out=z)
+        x = np.cumsum(dx)
+        y = np.cumsum(dy)
+        z = np.cumsum(dz)
 
         return np.stack((x, y, z, dphi, x_tilt, y_tilt), axis=1)
 
@@ -403,25 +400,19 @@ class Walker3DStepperEnv(EnvBase):
         cover_ids = set()
 
         for index in range(self.rendered_step_count):
-            # p = Pillar(self._p, self.step_radius)
-            # p = Plank(self._p, self.step_radius)
-            p = LargePlank(self._p, self.step_radius)
+            p = self.plank_class(self._p, self.step_radius)
             self.steps.append(p)
             step_ids = step_ids | {(p.id, p.base_id)}
             cover_ids = cover_ids | {(p.id, p.cover_id)}
 
         # Need set for detecting contact
-        self.all_contact_object_ids = set(step_ids) | set(cover_ids) | self.ground_ids
+        self.all_contact_object_ids = set(step_ids) | set(cover_ids)
+
+        if not self.remove_ground:
+            self.all_contact_object_ids |= self.ground_ids
 
     def randomize_terrain(self):
-
-        self.terrain_info = self.generate_step_placements(
-            n_steps=self.n_steps,
-            pitch_limit=self.pitch_limit,
-            yaw_limit=self.yaw_limit,
-            tilt_limit=self.tilt_limit,
-        )
-
+        self.terrain_info = self.generate_step_placements()
         for index in range(self.rendered_step_count):
             pos = self.terrain_info[index, 0:3]
             phi, x_tilt, y_tilt = self.terrain_info[index, 3:6]
@@ -448,7 +439,9 @@ class Walker3DStepperEnv(EnvBase):
 
         self._p.restoreState(self.state_id)
 
-        self.robot_state = self.robot.reset(random_pose=True)
+        self.robot_state = self.robot.reset(
+            random_pose=self.random_start, pos=[0.3, 0, 1.32]
+        )
         self.calc_feet_state()
 
         # Randomize platforms
@@ -468,7 +461,6 @@ class Walker3DStepperEnv(EnvBase):
         return state
 
     def step(self, action):
-
         self.robot.apply_action(action)
         self.scene.global_step()
 
@@ -486,10 +478,11 @@ class Walker3DStepperEnv(EnvBase):
             self._handle_keyboard()
             self.camera.track(pos=self.robot.body_xyz)
             self.target.set_position(pos=self.walk_target)
-            if self.distance_to_target < 0.15:
-                self.target.set_color(Colors["dodgerblue"])
-            else:
-                self.target.set_color(Colors["crimson"])
+            self.target.set_color(
+                Colors["dodgerblue"]
+                if self.distance_to_target < 0.15
+                else Colors["crimson"]
+            )
 
         return state, reward, self.done, {}
 
@@ -559,7 +552,6 @@ class Walker3DStepperEnv(EnvBase):
         p_xyz = self.terrain_info[self.next_step_index, [0, 1, 2]]
         self.target_reached = False
         for i, f in enumerate(self.robot.feet):
-            self.robot.feet_xyz[i] = f.pose().xyz()
             contact_ids = set((x[2], x[4]) for x in f.contact_list())
 
             # if contact_ids is not empty, then foot is in contact
