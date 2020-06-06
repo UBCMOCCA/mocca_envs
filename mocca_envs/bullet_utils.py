@@ -15,7 +15,7 @@ import pybullet
 class BulletClient(object):
     """A wrapper for pybullet to manage different clients."""
 
-    def __init__(self, connection_mode=None):
+    def __init__(self, connection_mode=None, use_ffmpeg=False, fps=60):
         """Creates a Bullet client and connects to a simulation.
 
     Args:
@@ -34,7 +34,20 @@ class BulletClient(object):
                 return
             else:
                 connection_mode = pybullet.DIRECT
-        self._client = pybullet.connect(connection_mode)
+
+        options = (
+            "--background_color_red=1.0 "
+            "--background_color_green=1.0 "
+            "--background_color_blue=1.0 "
+            "--width=1280 --height=720 "
+        )
+        if use_ffmpeg:
+            from datetime import datetime
+
+            now_str = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+            options += f'--mp4="{now_str}.mp4" --mp4fps={fps} '
+
+        self._client = pybullet.connect(connection_mode, options=options)
 
     def __del__(self):
         """Clean up connection if not already done."""

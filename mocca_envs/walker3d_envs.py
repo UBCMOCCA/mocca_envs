@@ -35,8 +35,8 @@ class Walker3DCustomEnv(EnvBase):
     robot_class = Walker3D
     termination_height = 0.7
 
-    def __init__(self, render=False, use_egl=False):
-        super().__init__(self.robot_class, render, use_egl=use_egl)
+    def __init__(self, **kwargs):
+        super().__init__(self.robot_class, **kwargs)
         self.robot.set_base_pose(pose="running_start")
         self.eval_mode = False
         self.random_pose = True
@@ -250,8 +250,8 @@ class Child3DCustomEnv(Walker3DCustomEnv):
     robot_class = Child3D
     termination_height = 0.1
 
-    def __init__(self, render=False, use_egl=False):
-        super().__init__(render, use_egl=use_egl)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.robot.set_base_pose(pose="crawl")
 
     def calc_base_reward(self, action):
@@ -259,8 +259,8 @@ class Child3DCustomEnv(Walker3DCustomEnv):
 
 
 class Walker3DChairEnv(Walker3DCustomEnv):
-    def __init__(self, render=False, use_egl=False):
-        super().__init__(render, use_egl=use_egl)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.robot.set_base_pose(pose="sit")
 
     def create_terrain(self):
@@ -313,7 +313,7 @@ class Walker3DStepperEnv(EnvBase):
     llc_frame_skip = 1
     sim_frame_skip = 4
 
-    def __init__(self, render=False, use_egl=False):
+    def __init__(self, **kwargs):
 
         # Need these before calling constructor
         # because they are used in self.create_terrain()
@@ -321,7 +321,7 @@ class Walker3DStepperEnv(EnvBase):
         self.rendered_step_count = 24
         self.stop_frames = 30
 
-        super().__init__(Walker3D, render, use_egl=use_egl)
+        super().__init__(Walker3D, **kwargs)
         self.robot.set_base_pose(pose="running_start")
 
         # Robot settings
@@ -700,172 +700,3 @@ class Walker3DStepperEnv(EnvBase):
             right_action_indices,
             left_action_indices,
         )
-
-
-class Walker3DTerrainEnv(EnvBase):
-
-    control_step = 1 / 60
-    llc_frame_skip = 1
-    sim_frame_skip = 4
-
-    electricity_cost = 4.5
-    stall_torque_cost = 0.225
-    joints_at_limit_cost = 0.1
-
-    termination_height = 0.7
-
-    def __init__(self, render=False, use_egl=False):
-        self.terrain_size = (256, 256)
-        self.vision_hsize = 2
-
-        super().__init__(Walker3D, render, remove_ground=True, use_egl=use_egl)
-        self.robot.set_base_pose(pose="running_start")
-
-        # robot_state + (2 targets) + vision
-        map_size = (self.vision_hsize * 2 + 1) ** 2
-        high = np.inf * np.ones(
-            self.robot.observation_space.shape[0] + 2 + 1 + map_size
-        )
-        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
-        self.action_space = self.robot.action_space
-
-    def create_terrain(self):
-        self.terrain = HeightField(self._p, self.terrain_size)
-        self.ground_ids = {(self.terrain, -1)}
-        self.terrain.reload(rendered=self.is_rendered)
-
-    def get_observation_components(self):
-        sin_ = self.distance_to_target * np.sin(self.angle_to_target)
-        sin_ = sin_ / (1 + abs(sin_))
-        cos_ = self.distance_to_target * np.cos(self.angle_to_target)
-        cos_ = cos_ / (1 + abs(cos_))
-
-        height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
-        self.robot_state[0] = height
-
-        return (
-            self.robot_state,
-            [sin_],
-            [cos_],
-            [self.robot.body_rpy[2]],
-            self.vision_map.flatten(),
-        )
-
-    def reset(self):
-        self.done = False
-
-        self._p.restoreState(self.state_id)
-        if self.np_random.rand() < 0.05:
-            self.terrain.reload(rendered=self.is_rendered)
-        self.robot_state = self.robot.reset(pos=(0, 0, 1.28))
-
-        self.walk_target = np.array((*self.terrain_size, 0)) / 2
-        self.vision_map = self.calc_local_height_map()
-
-        # Reset camera
-        if self.is_rendered or self.use_egl:
-            self.camera.lookat(self.robot.body_xyz)
-
-        self.calc_potential()
-
-        state = np.concatenate(self.get_observation_components())
-
-        return state
-
-    def step(self, action):
-
-        self.robot.apply_action(action)
-        self.scene.global_step()
-
-        self.robot_state = self.robot.calc_state(self.ground_ids)
-        self.vision_map = self.calc_local_height_map()
-
-        self.calc_env_state(action)
-
-        reward = self.progress - self.energy_penalty
-        reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
-
-        state = np.concatenate(self.get_observation_components())
-
-        if self.is_rendered or self.use_egl:
-            self._handle_keyboard()
-            self.camera.track(pos=self.robot.body_xyz)
-
-        return state, reward, self.done, {}
-
-    def calc_potential(self):
-
-        walk_target_theta = np.arctan2(
-            self.walk_target[1] - self.robot.body_xyz[1],
-            self.walk_target[0] - self.robot.body_xyz[0],
-        )
-        walk_target_delta = self.walk_target - self.robot.body_xyz
-
-        self.angle_to_target = walk_target_theta - self.robot.body_rpy[2]
-
-        self.distance_to_target = (
-            walk_target_delta[0] ** 2 + walk_target_delta[1] ** 2
-        ) ** (1 / 2)
-
-        self.linear_potential = -self.distance_to_target / self.scene.dt
-        self.angular_potential = np.cos(self.angle_to_target)
-
-    def calc_env_state(self, action):
-        if not np.isfinite(self.robot_state).all():
-            print("~INF~", self.robot_state)
-            self.done = True
-
-        self.calc_base_reward(action)
-
-    def calc_base_reward(self, action):
-
-        # Bookkeeping stuff
-        old_linear_potential = self.linear_potential
-        old_angular_potential = self.angular_potential
-
-        self.calc_potential()
-
-        if self.distance_to_target < 1:
-            self.add_angular_progress = False
-
-        linear_progress = self.linear_potential - old_linear_potential
-        angular_progress = self.angular_potential - old_angular_potential
-
-        self.progress = linear_progress
-        # if self.add_angular_progress:
-        #     self.progress += 100 * angular_progress
-
-        self.posture_penalty = 0
-        if not -0.2 < self.robot.body_rpy[1] < 0.4:
-            self.posture_penalty = abs(self.robot.body_rpy[1])
-
-        if not -0.4 < self.robot.body_rpy[0] < 0.4:
-            self.posture_penalty += abs(self.robot.body_rpy[0])
-
-        self.energy_penalty = self.electricity_cost * float(
-            np.abs(action * self.robot.joint_speeds).mean()
-        )
-        self.energy_penalty += self.stall_torque_cost * float(np.square(action).mean())
-
-        self.joints_penalty = float(
-            self.joints_at_limit_cost * self.robot.joints_at_limit
-        )
-
-        # Calculate done
-        height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
-        self.tall_bonus = 2.0 if height > self.termination_height else -1.0
-        self.done = self.done or self.tall_bonus < 0
-
-    def calc_local_height_map(self):
-        x, y, z = self.robot.body_xyz
-        tx, ty = self.terrain_size
-        vs = self.vision_hsize
-
-        x = int(x + tx / 2)
-        y = int(y + ty / 2)
-
-        vision_map = self.terrain.data.reshape(tx, ty)[
-            x - vs : x + vs + 1, y - vs : y + vs + 1
-        ]
-
-        return vision_map

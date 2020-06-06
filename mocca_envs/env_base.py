@@ -14,7 +14,13 @@ class EnvBase(gym.Env):
     _render_height = 240 * 3
 
     def __init__(
-        self, robot_class, render=False, remove_ground=False, use_egl=False, **kwargs
+        self,
+        robot_class,
+        render=False,
+        remove_ground=False,
+        use_egl=False,
+        use_ffmpeg=False,
+        **kwargs
     ):
         self.robot_kwargs = kwargs
         self.robot_class = robot_class
@@ -22,6 +28,7 @@ class EnvBase(gym.Env):
         self.is_rendered = render
         self.remove_ground = remove_ground
         self.use_egl = use_egl
+        self.use_ffmpeg = use_ffmpeg
 
         self.scene = None
         self.physics_client_id = -1
@@ -43,14 +50,11 @@ class EnvBase(gym.Env):
         self.owns_physics_client = True
 
         bc_mode = pybullet.GUI if self.is_rendered else pybullet.DIRECT
-        self._p = BulletClient(connection_mode=bc_mode)
+        render_fps = 1 / self.control_step * self.llc_frame_skip
+        self._p = BulletClient(bc_mode, use_ffmpeg=self.use_ffmpeg, fps=render_fps)
 
         if self.is_rendered or self.use_egl:
-            self.camera = Camera(
-                self._p,
-                1 / self.control_step * self.llc_frame_skip,
-                use_egl=self.use_egl,
-            )
+            self.camera = Camera(self._p, render_fps, use_egl=self.use_egl)
             if hasattr(self, "create_target"):
                 self.create_target()
 
