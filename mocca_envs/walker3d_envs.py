@@ -1,8 +1,7 @@
-import os
+import math
 
 import gym
 import numpy as np
-import torch
 
 from mocca_envs.env_base import EnvBase
 from mocca_envs.bullet_objects import (
@@ -72,7 +71,7 @@ class Walker3DCustomEnv(EnvBase):
         self.randomize_target()
 
         self.walk_target = np.array(
-            [self.dist * np.cos(self.angle), self.dist * np.sin(self.angle), 1.0]
+            [self.dist * math.cos(self.angle), self.dist * math.sin(self.angle), 1.0]
         )
         self.close_count = 0
 
@@ -87,9 +86,9 @@ class Walker3DCustomEnv(EnvBase):
 
         self.calc_potential()
 
-        sin_ = self.distance_to_target * np.sin(self.angle_to_target)
+        sin_ = self.distance_to_target * math.sin(self.angle_to_target)
         sin_ = sin_ / (1 + abs(sin_))
-        cos_ = self.distance_to_target * np.cos(self.angle_to_target)
+        cos_ = self.distance_to_target * math.cos(self.angle_to_target)
         cos_ = cos_ / (1 + abs(cos_))
 
         state = np.concatenate((self.robot_state, [sin_], [cos_]))
@@ -109,9 +108,9 @@ class Walker3DCustomEnv(EnvBase):
         reward = self.progress + self.target_bonus - self.energy_penalty
         reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
 
-        sin_ = self.distance_to_target * np.sin(self.angle_to_target)
+        sin_ = self.distance_to_target * math.sin(self.angle_to_target)
         sin_ = sin_ / (1 + abs(sin_))
-        cos_ = self.distance_to_target * np.cos(self.angle_to_target)
+        cos_ = self.distance_to_target * math.cos(self.angle_to_target)
         cos_ = cos_ / (1 + abs(cos_))
 
         state = np.concatenate((self.robot_state, [sin_], [cos_]))
@@ -143,7 +142,7 @@ class Walker3DCustomEnv(EnvBase):
         ) ** (1 / 2)
 
         self.linear_potential = -self.distance_to_target / self.scene.dt
-        self.angular_potential = np.cos(self.angle_to_target)
+        self.angular_potential = math.cos(self.angle_to_target)
 
     def calc_base_reward(self, action):
 
@@ -204,7 +203,9 @@ class Walker3DCustomEnv(EnvBase):
             self.close_count = 0
             self.add_angular_progress = True
             self.randomize_target()
-            delta = self.dist * np.array([np.cos(self.angle), np.sin(self.angle), 0.0])
+            delta = self.dist * np.array(
+                [math.cos(self.angle), math.sin(self.angle), 0.0]
+            )
             self.walk_target += delta
             self.calc_potential()
 
@@ -280,7 +281,7 @@ class Walker3DChairEnv(Walker3DCustomEnv):
         self.randomize_target()
 
         self.walk_target = np.array(
-            [self.dist * np.cos(self.angle), self.dist * np.sin(self.angle), 1.0]
+            [self.dist * math.cos(self.angle), self.dist * math.sin(self.angle), 1.0]
         )
         self.close_count = 0
 
@@ -298,9 +299,9 @@ class Walker3DChairEnv(Walker3DCustomEnv):
 
         self.calc_potential()
 
-        sin_ = self.distance_to_target * np.sin(self.angle_to_target)
+        sin_ = self.distance_to_target * math.sin(self.angle_to_target)
         sin_ = sin_ / (1 + abs(sin_))
-        cos_ = self.distance_to_target * np.cos(self.angle_to_target)
+        cos_ = self.distance_to_target * math.cos(self.angle_to_target)
         cos_ = cos_ / (1 + abs(cos_))
 
         state = np.concatenate((self.robot_state, [sin_], [cos_]))
@@ -315,7 +316,7 @@ class Walker3DStepperEnv(EnvBase):
     sim_frame_skip = 4
 
     # Pillar, Plank, LargePlank
-    plank_class = Plank
+    plank_class = LargePlank
 
     def __init__(self, **kwargs):
 
@@ -329,10 +330,11 @@ class Walker3DStepperEnv(EnvBase):
         self.robot.set_base_pose(pose="running_start")
 
         # Robot settings
+        self.terminal_height = 0.7
         self.electricity_cost = 4.5
         self.stall_torque_cost = 0.225
         self.joints_at_limit_cost = 0.1
-        self.random_start = False
+        self.random_start = True
 
         # Env settings
         self.n_steps = 24
@@ -538,7 +540,7 @@ class Walker3DStepperEnv(EnvBase):
         )
 
         height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
-        self.tall_bonus = 2.0 if height > 0.7 else -1.0
+        self.tall_bonus = 2.0 if height > self.terminal_height else -1.0
         self.done = self.done or self.tall_bonus < 0
 
     def calc_feet_state(self):
@@ -581,8 +583,12 @@ class Walker3DStepperEnv(EnvBase):
     def calc_step_reward(self):
 
         self.step_bonus = 0
-        if self.target_reached and self.target_reached_count == 1:
-            self.step_bonus = 50 * np.exp(-self.foot_dist_to_target.min() / 0.25)
+        if (
+            self.target_reached
+            and self.target_reached_count == 1
+            and self.next_step_index != len(self.terrain_info) - 1  # exclude last step
+        ):
+            self.step_bonus = 50 * 2.718 ** (-self.foot_dist_to_target.min() / 0.25)
 
         # For last step only
         self.target_bonus = 0
