@@ -341,11 +341,15 @@ class Walker3DStepperEnv(EnvBase):
         self.lookahead = 2
         self.next_step_index = 0
 
+        # Fix-ordered Curriculum
+        self.curriculum = 0
+        self.max_curriculum = 9
+
         # Terrain info
-        self.dist_range = np.array([0.65, 0.85])
-        self.pitch_range = np.array([90 - 25, 90 + 25]) * DEG2RAD
-        self.yaw_range = np.array([0, 0]) * DEG2RAD
-        self.tilt_range = np.array([-0, 0]) * DEG2RAD
+        self.dist_range = np.array([0.75, 1.2])
+        self.pitch_range = np.array([-25, +25])  # degrees
+        self.yaw_range = np.array([-0, 0])
+        self.tilt_range = np.array([-0, 0])
         # x, y, z, phi, x_tilt, y_tilt
         self.terrain_info = np.zeros((self.n_steps, 6))
 
@@ -356,14 +360,25 @@ class Walker3DStepperEnv(EnvBase):
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.action_space = self.robot.action_space
 
-    def evaluation_mode(self):
-        self.pitch_limit = 0
-
     def generate_step_placements(self):
+
+        # Check just in case
+        self.curriculum = min(self.curriculum, self.max_curriculum)
+        ratio = self.curriculum / self.max_curriculum
+
+        # {self.max_curriculum + 1} levels in total
+        dist_upper = np.linspace(*self.dist_range, self.max_curriculum + 1)
+        dist_range = np.array([self.dist_range[0], dist_upper[self.curriculum]])
+        yaw_range = self.yaw_range * ratio * DEG2RAD
+        pitch_range = self.pitch_range * ratio * DEG2RAD + np.pi / 2
+        tilt_range = self.tilt_range * ratio * DEG2RAD
+
         N = self.n_steps
-        dr = self.np_random.uniform(*self.dist_range, size=N)
-        dphi = self.np_random.uniform(*self.yaw_range, size=N)
-        dtheta = self.np_random.uniform(*self.pitch_range, size=N)
+        dr = self.np_random.uniform(*dist_range, size=N)
+        dphi = self.np_random.uniform(*yaw_range, size=N)
+        dtheta = self.np_random.uniform(*pitch_range, size=N)
+        x_tilt = self.np_random.uniform(*tilt_range, size=N)
+        y_tilt = self.np_random.uniform(*tilt_range, size=N)
 
         # make first step below feet
         dr[0] = 0.0
@@ -374,8 +389,6 @@ class Walker3DStepperEnv(EnvBase):
         dphi[1:3] = 0.0
         dtheta[1:3] = np.pi / 2
 
-        x_tilt = self.np_random.uniform(*self.tilt_range, size=N)
-        y_tilt = self.np_random.uniform(*self.tilt_range, size=N)
         x_tilt[0:3] = 0
         y_tilt[0:3] = 0
 
