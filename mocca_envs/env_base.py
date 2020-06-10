@@ -113,6 +113,9 @@ class EnvBase(gym.Env):
         # Make sure to recalculate torque limit
         self.robot.calc_torque_limits()
 
+    def get_env_param(self, param_name, default):
+        return getattr(self, param_name, default)
+
     def render(self, mode="human"):
         # Taken care of by pybullet
         if not self.is_rendered:

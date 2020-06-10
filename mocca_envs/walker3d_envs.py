@@ -323,21 +323,21 @@ class Walker3DStepperEnv(EnvBase):
         # Need these before calling constructor
         # because they are used in self.create_terrain()
         self.step_radius = 0.25
-        self.rendered_step_count = 4
+        self.rendered_step_count = 20
         self.stop_frames = 30
 
         super().__init__(Walker3D, remove_ground=True, **kwargs)
         self.robot.set_base_pose(pose="running_start")
 
         # Robot settings
-        self.terminal_height = 0.7
+        self.terminal_height = 0.8
         self.electricity_cost = 4.5
         self.stall_torque_cost = 0.225
         self.joints_at_limit_cost = 0.1
         self.random_start = True
 
         # Env settings
-        self.n_steps = 24
+        self.n_steps = 20
         self.lookahead = 2
         self.next_step_index = 0
 
@@ -346,7 +346,7 @@ class Walker3DStepperEnv(EnvBase):
         self.max_curriculum = 9
 
         # Terrain info
-        self.dist_range = np.array([0.75, 1.2])
+        self.dist_range = np.array([0.65, 1.0])
         self.pitch_range = np.array([-25, +25])  # degrees
         self.yaw_range = np.array([-0, 0])
         self.tilt_range = np.array([-0, 0])
@@ -435,6 +435,9 @@ class Walker3DStepperEnv(EnvBase):
             self.steps[index].set_position(pos=pos, quat=quaternion)
 
     def update_steps(self):
+        if self.rendered_step_count == self.n_steps:
+            return
+
         threshold = int(self.rendered_step_count // 2)
         if self.next_step_index >= threshold:
             oldest = (self.next_step_index - threshold - 1) % self.rendered_step_count
@@ -499,7 +502,8 @@ class Walker3DStepperEnv(EnvBase):
                 else Colors["crimson"]
             )
 
-        return state, reward, self.done, {}
+        info = {"steps_reached": self.next_step_index} if self.done else {}
+        return state, reward, self.done, info
 
     def create_target(self):
         # Need this to create target in render mode, called by EnvBase
@@ -552,8 +556,8 @@ class Walker3DStepperEnv(EnvBase):
             self.joints_at_limit_cost * self.robot.joints_at_limit
         )
 
-        height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
-        self.tall_bonus = 2.0 if height > self.terminal_height else -1.0
+        # height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
+        self.tall_bonus = 2.0 if self.robot_state[0] > self.terminal_height else -1.0
         self.done = self.done or self.tall_bonus < 0
 
     def calc_feet_state(self):
@@ -587,6 +591,7 @@ class Walker3DStepperEnv(EnvBase):
             if self.target_reached_count >= self.stop_frames:
                 self.next_step_index += 1
                 self.target_reached_count = 0
+                self.stop_frames = self.np_random.choice([15.0, 30.0])
                 self.update_steps()
 
             # Prevent out of bound
@@ -609,7 +614,7 @@ class Walker3DStepperEnv(EnvBase):
             self.next_step_index == len(self.terrain_info) - 1
             and self.distance_to_target < 0.15
         ):
-            self.target_bonus = 2.0
+            self.target_bonus = 4.0
 
     def calc_env_state(self, action):
         if not np.isfinite(self.robot_state).all():
