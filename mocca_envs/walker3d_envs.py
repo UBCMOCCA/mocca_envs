@@ -346,10 +346,10 @@ class Walker3DStepperEnv(EnvBase):
         self.max_curriculum = 9
 
         # Terrain info
-        self.dist_range = np.array([0.65, 1.0])
-        self.pitch_range = np.array([-25, +25])  # degrees
-        self.yaw_range = np.array([-0, 0])
-        self.tilt_range = np.array([-0, 0])
+        self.dist_range = np.array([0.65, 1.05])
+        self.pitch_range = np.array([-30, +30])  # degrees
+        self.yaw_range = np.array([-20, 20])
+        self.tilt_range = np.array([-10, 10])
         # x, y, z, phi, x_tilt, y_tilt
         self.terrain_info = np.zeros((self.n_steps, 6))
 
@@ -556,7 +556,6 @@ class Walker3DStepperEnv(EnvBase):
             self.joints_at_limit_cost * self.robot.joints_at_limit
         )
 
-        # height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
         self.tall_bonus = 2.0 if self.robot_state[0] > self.terminal_height else -1.0
         self.done = self.done or self.tall_bonus < 0
 
