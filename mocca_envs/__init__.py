@@ -17,58 +17,58 @@ os.sys.path.append(parent_dir)
 
 register(
     id="CassieEnv-v0",
-    entry_point="mocca_envs.cassie_envs:CassieEnv",
+    entry_point="mocca_envs.env_cassie:CassieEnv",
     max_episode_steps=1000,
 )
 
 register(
     id="Cassie2DEnv-v0",
-    entry_point="mocca_envs.cassie_envs:CassieEnv",
+    entry_point="mocca_envs.env_cassie:CassieEnv",
     max_episode_steps=1000,
     kwargs={"planar": True},
 )
 
 register(
     id="CassiePhaseMocca2DEnv-v0",
-    entry_point="mocca_envs.cassie_envs:CassiePhaseMoccaEnv",
+    entry_point="mocca_envs.env_cassie:CassiePhaseMoccaEnv",
     max_episode_steps=1000,
     kwargs={"planar": True},
 )
 
 register(
     id="CassiePhaseMirror2DEnv-v0",
-    entry_point="mocca_envs.cassie_envs:CassiePhaseMirrorEnv",
+    entry_point="mocca_envs.env_cassie:CassiePhaseMirrorEnv",
     max_episode_steps=1000,
     kwargs={"planar": True},
 )
 
 register(
     id="Child3DCustomEnv-v0",
-    entry_point="mocca_envs.walker3d_envs:Child3DCustomEnv",
+    entry_point="mocca_envs.env_locomotion:Child3DCustomEnv",
     max_episode_steps=1000,
 )
 
 
 register(
     id="Walker3DCustomEnv-v0",
-    entry_point="mocca_envs.walker3d_envs:Walker3DCustomEnv",
+    entry_point="mocca_envs.env_locomotion:Walker3DCustomEnv",
     max_episode_steps=1000,
 )
 
 register(
     id="Walker3DStepperEnv-v0",
-    entry_point="mocca_envs.walker3d_envs:Walker3DStepperEnv",
-    max_episode_steps=1000,
-)
-
-register(
-    id="Walker3DChairEnv-v0",
-    entry_point="mocca_envs.walker3d_envs:Walker3DChairEnv",
+    entry_point="mocca_envs.env_locomotion:Walker3DStepperEnv",
     max_episode_steps=1000,
 )
 
 register(
     id="Monkey3DCustomEnv-v0",
-    entry_point="mocca_envs.brachiation_envs:Monkey3DCustomEnv",
+    entry_point="mocca_envs.env_locomotion:Monkey3DCustomEnv",
+    max_episode_steps=1000,
+)
+
+register(
+    id="Walker3DChairEnv-v0",
+    entry_point="mocca_envs.env_interaction:Walker3DChairEnv",
     max_episode_steps=1000,
 )

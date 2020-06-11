@@ -1,13 +1,10 @@
 import gym
 import numpy as np
 
-import mocca_envs
-
-
 DEG2RAD = np.pi / 180
 
 
-env_name = "Monkey3DCustomEnv-v0"
+env_name = "mocca_envs:Monkey3DCustomEnv-v0"
 env = gym.make(env_name, render=True)
 action_dim = env.action_space.shape[0]
 offset = 6
