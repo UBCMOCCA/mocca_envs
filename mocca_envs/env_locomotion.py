@@ -12,7 +12,7 @@ from mocca_envs.bullet_objects import (
     HeightField,
     MonkeyBar,
 )
-from mocca_envs.robots import Child3D, Walker3D, Monkey3D
+from mocca_envs.robots import Child3D, Mike, Monkey3D, Walker3D
 
 
 Colors = {
@@ -268,6 +268,7 @@ class Walker3DStepperEnv(EnvBase):
     llc_frame_skip = 1
     sim_frame_skip = 4
 
+    robot_class = Walker3D
     # Pillar, Plank, LargePlank
     plank_class = LargePlank
     robot_random_start = True
@@ -280,7 +281,7 @@ class Walker3DStepperEnv(EnvBase):
         self.step_radius = 0.25
         self.rendered_step_count = 4
 
-        super().__init__(Walker3D, remove_ground=True, **kwargs)
+        super().__init__(self.robot_class, remove_ground=True, **kwargs)
         self.robot.set_base_pose(pose="running_start")
 
         # Robot settings
@@ -670,6 +671,17 @@ class Walker3DStepperEnv(EnvBase):
             right_action_indices,
             left_action_indices,
         )
+
+
+class MikeStepperEnv(Walker3DStepperEnv):
+    robot_class = Mike
+    robot_init_position = (0.3, 0, 1.0)
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        if self.is_rendered:
+            self.robot.decorate()
 
 
 class Monkey3DCustomEnv(EnvBase):

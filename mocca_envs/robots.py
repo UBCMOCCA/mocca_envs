@@ -766,3 +766,83 @@ class Monkey3D(Walker3D):
 
         # call the WalkerBase reset, not Walker3D
         return super(Walker3D, self).reset()
+
+
+class Mike(Walker3D):
+    foot_names = ["right_foot", "left_foot"]
+
+    power_coef = {
+        "abdomen_z": 0,
+        "abdomen_y": 0,
+        "abdomen_x": 0,
+        "right_hip_x": 80,
+        "right_hip_z": 60,
+        "right_hip_y": 100,
+        "right_knee": 90,
+        "right_ankle": 60,
+        "left_hip_x": 80,
+        "left_hip_z": 60,
+        "left_hip_y": 100,
+        "left_knee": 90,
+        "left_ankle": 60,
+        "right_shoulder_x": 30,
+        "right_shoulder_z": 30,
+        "right_shoulder_y": 25,
+        "right_elbow": 30,
+        "left_shoulder_x": 30,
+        "left_shoulder_z": 30,
+        "left_shoulder_y": 25,
+        "left_elbow": 30,
+    }
+
+    def load_robot_model(self, model_path=None, flags=None, root_link_name=None):
+        model_path = model_path or os.path.join(
+            current_dir, "data", "custom", "mike.xml"
+        )
+        super().load_robot_model(model_path)
+
+        waist_part = self.parts["waist"]
+        body_id = waist_part.bodies[waist_part.bodyIndex]
+        part_id = waist_part.bodyPartIndex
+        self._p.changeDynamics(body_id, part_id, mass=8)
+
+    def decorate(self):
+        f = lambda x: os.path.join(current_dir, "data", "misc", x)
+
+        glasses_shape = self._p.createVisualShape(
+            shapeType=self._p.GEOM_MESH,
+            fileName=f("glasses.obj"),
+            meshScale=[0.02, 0.02, 0.02],
+            visualFrameOrientation=[0, 0, 1, 1],
+        )
+        self.glasses_id = self._p.createMultiBody(
+            baseMass=0, baseVisualShapeIndex=glasses_shape, useMaximalCoordinates=True
+        )
+
+        hardhat_shape = self._p.createVisualShape(
+            shapeType=self._p.GEOM_MESH,
+            fileName=f("hardhat.obj"),
+            meshScale=[0.02, 0.02, 0.02],
+        )
+        self.hardhat_id = self._p.createMultiBody(
+            baseMass=0, baseVisualShapeIndex=hardhat_shape, useMaximalCoordinates=True
+        )
+        self._p.changeVisualShape(
+            self.hardhat_id, -1, textureUniqueId=self._p.loadTexture(f("hardhat.jpg"))
+        )
+
+    def calc_state(self, contact_object_ids=None):
+        state = super().calc_state(contact_object_ids)
+
+        if hasattr(self, "glasses_id") and hasattr(self, "glasses_id"):
+
+            quat = self.robot_body.pose().orientation()
+            mat = np.array(self._p.getMatrixFromQuaternion(quat)).reshape(3, 3)
+
+            glasses_xyz = self.body_xyz + np.matmul(mat, [0.25, 0, 0])
+            self._p.resetBasePositionAndOrientation(self.glasses_id, glasses_xyz, quat)
+
+            hardhat_xyz = self.body_xyz + np.matmul(mat, [0, -0.4, 0.15])
+            self._p.resetBasePositionAndOrientation(self.hardhat_id, hardhat_xyz, quat)
+
+        return state
