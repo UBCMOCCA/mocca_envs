@@ -167,7 +167,7 @@ class EnvBase(gym.Env):
     def step(self, a):
         raise NotImplementedError
 
-    def _handle_keyboard(self, keys=None):
+    def _handle_keyboard(self, keys=None, callback=None):
         if keys is None:
             keys = self._p.getKeyboardEvents()
 
@@ -195,3 +195,6 @@ class EnvBase(gym.Env):
                 keys = self._p.getKeyboardEvents()
                 if keys.get(ord(" ")) == RELEASED:
                     break
+        else:
+            if callback is not None:
+                callback(keys)

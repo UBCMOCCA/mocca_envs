@@ -285,7 +285,7 @@ class Walker3DStepperEnv(EnvBase):
         self.robot.set_base_pose(pose="running_start")
 
         # Robot settings
-        self.terminal_height = 0.8
+        self.terminal_height = 0.75
         self.electricity_cost = 4.5
         self.stall_torque_cost = 0.225
         self.joints_at_limit_cost = 0.1
@@ -409,7 +409,11 @@ class Walker3DStepperEnv(EnvBase):
 
     def reset(self):
         self.done = False
+        self.timestep = 0
         self.target_reached_count = 0
+
+        self.set_stop_on_next_step = False
+        self.stop_on_next_step = False
 
         # self._p.restoreState(self.state_id)
 
@@ -435,6 +439,11 @@ class Walker3DStepperEnv(EnvBase):
         return state
 
     def step(self, action):
+        self.timestep += 1
+
+        if self.next_step_index > 4:
+            self.set_stop_on_next_step = 180 < self.timestep < 420
+
         self.robot.apply_action(action)
         self.scene.global_step()
 
@@ -449,7 +458,7 @@ class Walker3DStepperEnv(EnvBase):
         state = np.concatenate((self.robot_state, self.targets.flatten()))
 
         if self.is_rendered or self.use_egl:
-            self._handle_keyboard()
+            self._handle_keyboard(callback=self.handle_keyboard)
             self.camera.track(pos=self.robot.body_xyz)
             self.target.set_position(pos=self.walk_target)
             self.target.set_color(
@@ -460,6 +469,13 @@ class Walker3DStepperEnv(EnvBase):
 
         info = {"steps_reached": self.next_step_index} if self.done else {}
         return state, reward, self.done, info
+
+    def handle_keyboard(self, keys):
+        RELEASED = self._p.KEY_WAS_RELEASED
+
+        # stop at current
+        if keys.get(ord("s")) == RELEASED:
+            self.set_stop_on_next_step = not self.set_stop_on_next_step
 
     def create_target(self):
         # Need this to create target in render mode, called by EnvBase
@@ -544,10 +560,12 @@ class Walker3DStepperEnv(EnvBase):
 
             # Make target stationary for a bit
             if self.target_reached_count >= self.stop_frames:
-                self.next_step_index += 1
-                self.target_reached_count = 0
-                self.stop_frames = self.np_random.choice(self.stop_frames_choices)
-                self.update_steps()
+                if not self.stop_on_next_step:
+                    self.next_step_index += 1
+                    self.target_reached_count = 0
+                    self.stop_frames = self.np_random.choice(self.stop_frames_choices)
+                    self.update_steps()
+                self.stop_on_next_step = self.set_stop_on_next_step
 
             # Prevent out of bound
             if self.next_step_index >= len(self.terrain_info):
@@ -590,11 +608,16 @@ class Walker3DStepperEnv(EnvBase):
 
     def delta_to_k_targets(self, k=1):
         """ Return positions (relative to root) of target, and k-1 step after """
-        targets = self.terrain_info[self.next_step_index : self.next_step_index + k]
-        if len(targets) < k:
-            # If running out of targets, repeat last target
-            targets = np.concatenate(
-                (targets, np.repeat(targets[[-1]], k - len(targets), axis=0))
+        if not self.stop_on_next_step:
+            targets = self.terrain_info[self.next_step_index : self.next_step_index + k]
+            if len(targets) < k:
+                # If running out of targets, repeat last target
+                targets = np.concatenate(
+                    (targets, np.repeat(targets[[-1]], k - len(targets), axis=0))
+                )
+        else:
+            targets = np.repeat(
+                self.terrain_info[[self.next_step_index]], self.lookahead, axis=0
             )
 
         self.walk_target = targets[[1], 0:3].mean(axis=0)
