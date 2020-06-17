@@ -274,8 +274,6 @@ class Walker3DStepperEnv(EnvBase):
     robot_random_start = True
     robot_init_position = [0.3, 0, 1.32]
 
-    random_reward = True
-
     def __init__(self, **kwargs):
 
         # Need these before calling constructor
@@ -283,6 +281,9 @@ class Walker3DStepperEnv(EnvBase):
         self.step_radius = 0.25
         self.n_steps = 20
         self.rendered_step_count = 4
+
+        # Handle non-robot kwargs
+        self.random_reward = kwargs.pop("random_reward", False)
 
         super().__init__(self.robot_class, remove_ground=True, **kwargs)
         self.robot.set_base_pose(pose="running_start")
@@ -454,9 +455,26 @@ class Walker3DStepperEnv(EnvBase):
         self.robot_state = self.robot.calc_state()
         self.calc_env_state(action)
 
-        reward = self.progress - self.energy_penalty
-        reward += self.step_bonus + self.target_bonus - self.speed_penalty
-        reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
+        if not self.random_reward:
+            reward = self.progress - self.energy_penalty
+            reward += self.step_bonus + self.target_bonus - self.speed_penalty
+            reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
+        else:
+            reward = np.dot(
+                self.np_random.uniform(0.8, 1.2, 8),
+                np.array(
+                    [
+                        self.progress,
+                        -self.energy_penalty,
+                        self.step_bonus,
+                        self.target_bonus,
+                        -self.speed_penalty,
+                        self.tall_bonus,
+                        -self.posture_penalty,
+                        -self.joints_penalty,
+                    ]
+                ),
+            )
 
         # targets is calculated by calc_env_state()
         state = np.concatenate((self.robot_state, self.targets.flatten()))
