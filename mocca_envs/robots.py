@@ -61,7 +61,7 @@ class Cassie:
 
     def __init__(self, bc, power=1.0):
         self._p = bc
-        self.power = power
+        self.base_power = power
         self.rod_joints = {}
 
         self.parts = None
@@ -190,7 +190,9 @@ class Cassie:
                     self.rod_joints[joint_name] = joint
 
                 if joint_name[:5] != "fixed":
-                    joint.set_torque_limit(self.power * self.power_coef[joint_name])
+                    joint.set_torque_limit(
+                        self.base_power * self.power_coef[joint_name]
+                    )
                     self.jdict[joint_name] = joint
                     self._p.changeDynamics(
                         bodies[i],
@@ -277,16 +279,17 @@ class Cassie:
 class WalkerBase:
 
     mirrored = False
+    applied_gain = 1.0
 
     def apply_action(self, a):
         assert np.isfinite(a).all()
-        normalized = np.clip(a, -1, 1)
+        normalized = self.applied_gain * np.clip(a, -1, 1)
 
         self._p.setJointMotorControlArray(
             bodyIndex=self.id,
             jointIndices=self.ordered_joint_ids,
             controlMode=self._p.TORQUE_CONTROL,
-            forces=self.ordered_joint_gains * normalized,
+            forces=self.ordered_joint_base_gains * normalized,
         )
 
     def calc_state(self, contact_object_ids=None):
@@ -365,43 +368,43 @@ class WalkerBase:
         self.jdict = {}
         self.ordered_joints = []
         self.ordered_joint_ids = []
-        self.ordered_joint_gains = []
+        self.ordered_joint_base_gains = []
         bodies = [bodies] if np.isscalar(bodies) else bodies
 
+        bc = self._p
+
         for i in range(len(bodies)):
-            for j in range(self._p.getNumJoints(bodies[i])):
-                self._p.setJointMotorControl2(
+            for j in range(bc.getNumJoints(bodies[i])):
+                bc.setJointMotorControl2(
                     bodies[i],
                     j,
-                    self._p.POSITION_CONTROL,
+                    bc.POSITION_CONTROL,
                     positionGain=0.1,
                     velocityGain=0.1,
                     force=0,
                 )
-                jointInfo = self._p.getJointInfo(bodies[i], j)
+                jointInfo = bc.getJointInfo(bodies[i], j)
                 joint_name = jointInfo[1]
                 part_name = jointInfo[12]
 
                 joint_name = joint_name.decode("utf8")
                 part_name = part_name.decode("utf8")
 
-                self.parts[part_name] = BodyPart(self._p, part_name, bodies, i, j)
+                self.parts[part_name] = BodyPart(bc, part_name, bodies, i, j)
 
                 if joint_name[:6] == "ignore":
-                    Joint(self._p, joint_name, bodies, i, j).disable_motor()
+                    Joint(bc, joint_name, bodies, i, j).disable_motor()
                     continue
 
                 if joint_name[:8] != "jointfix":
-                    gain = self.power * self.power_coef[joint_name]
-                    self.jdict[joint_name] = Joint(
-                        self._p, joint_name, bodies, i, j, gain
-                    )
+                    gain = self.base_power * self.power_coef[joint_name]
+                    self.jdict[joint_name] = Joint(bc, joint_name, bodies, i, j, gain)
                     self.ordered_joints.append(self.jdict[joint_name])
                     self.ordered_joint_ids.append(j)
-                    self.ordered_joint_gains.append(gain)
+                    self.ordered_joint_base_gains.append(gain)
 
         # need to use it to calculate torques later
-        self.ordered_joint_gains = np.array(self.ordered_joint_gains)
+        self.ordered_joint_base_gains = np.array(self.ordered_joint_base_gains)
         self._zeros = [0 for _ in self.ordered_joint_ids]
         self._gains = [0.1 for _ in self.ordered_joint_ids]
 
@@ -413,16 +416,17 @@ class WalkerBase:
         return robot_state
 
     def reset_joint_states(self, positions, velocities):
+        bc = self._p
 
         for j, pos, vel in zip(self.ordered_joints, positions, velocities):
-            self._p.resetJointState(
+            bc.resetJointState(
                 j.bodies[j.bodyIndex], j.jointIndex, targetValue=pos, targetVelocity=vel
             )
 
-        self._p.setJointMotorControlArray(
+        bc.setJointMotorControlArray(
             bodyIndex=self.id,
             jointIndices=self.ordered_joint_ids,
-            controlMode=self._p.POSITION_CONTROL,
+            controlMode=bc.POSITION_CONTROL,
             targetPositions=self._zeros,
             targetVelocities=self._zeros,
             positionGains=self._gains,
@@ -461,7 +465,7 @@ class Walker3D(WalkerBase):
 
     def __init__(self, bc, power=1.0):
         self._p = bc
-        self.power = power
+        self.base_power = power
 
         self.action_dim = 21
         high = np.ones(self.action_dim)
@@ -573,8 +577,7 @@ class Walker3D(WalkerBase):
 
 class Child3D(Walker3D):
     def __init__(self, bc):
-        super().__init__(bc)
-        self.power = 0.4
+        super().__init__(bc, power=0.4)
 
     def load_robot_model(self, model_path=None, flags=None, root_link_name=None):
         if model_path is None:
@@ -600,7 +603,7 @@ class Walker2D(WalkerBase):
 
     def __init__(self, bc, power=1.0):
         self._p = bc
-        self.power = power
+        self.base_power = power
 
         self.action_dim = 7
         high = np.ones(self.action_dim)
@@ -633,7 +636,7 @@ class Crab2D(WalkerBase):
 
     def __init__(self, bc):
         self._p = bc
-        self.power = 1.0
+        self.base_power = 1.0
 
         self.action_dim = 6
         high = np.ones(self.action_dim)
@@ -692,8 +695,7 @@ class Monkey3D(Walker3D):
     }
 
     def __init__(self, bc):
-        super().__init__(bc)
-        self.power = 0.7
+        super().__init__(bc, power=0.7)
 
         self.action_dim = 23
         high = np.ones(self.action_dim)

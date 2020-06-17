@@ -267,47 +267,52 @@ class Walker3DStepperEnv(EnvBase):
     control_step = 1 / 60
     llc_frame_skip = 1
     sim_frame_skip = 4
+    max_timestep = 1000
 
     robot_class = Walker3D
-    # Pillar, Plank, LargePlank
-    plank_class = LargePlank
+    plank_class = LargePlank  # Pillar, Plank, LargePlank
     robot_random_start = True
     robot_init_position = [0.3, 0, 1.32]
+
+    random_reward = True
 
     def __init__(self, **kwargs):
 
         # Need these before calling constructor
         # because they are used in self.create_terrain()
         self.step_radius = 0.25
+        self.n_steps = 20
         self.rendered_step_count = 4
 
         super().__init__(self.robot_class, remove_ground=True, **kwargs)
         self.robot.set_base_pose(pose="running_start")
 
+        # Fix-ordered Curriculum
+        self.curriculum = 0
+        self.max_curriculum = 9
+
         # Robot settings
-        self.terminal_height = 0.75
+        N = self.max_curriculum + 1
+        self.terminal_height_curriculum = np.linspace(0.75, 0.45, N)
+        self.applied_gain_curriculum = np.linspace(1.0, 1.2, N)
         self.electricity_cost = 4.5
         self.stall_torque_cost = 0.225
         self.joints_at_limit_cost = 0.1
 
         # Env settings
-        self.n_steps = 20
         self.lookahead = 2
         self.next_step_index = 0
-        self.stop_frames_choices = [2.0]  # [15.0, 30.0]
-        self.stop_frames = self.np_random.choice(self.stop_frames_choices)
-
-        # Fix-ordered Curriculum
-        self.curriculum = 0
-        self.max_curriculum = 9
 
         # Terrain info
-        self.dist_range = np.array([0.65, 1.05])
+        self.dist_range = np.array([0.75, 1.05])
         self.pitch_range = np.array([-30, +30])  # degrees
         self.yaw_range = np.array([-20, 20])
         self.tilt_range = np.array([-10, 10])
-        # x, y, z, phi, x_tilt, y_tilt
-        self.terrain_info = np.zeros((self.n_steps, 6))
+        self.terrain_info = np.zeros((self.n_steps, 6))  # x, y, z, phi, x_tilt, y_tilt
+
+        # only generate placements when final step is reached
+        self._steps_reached = 0
+        self.terrain_info = self.generate_step_placements()
 
         # robot_state + (2 targets) * (x, y, z, x_tilt, y_tilt)
         high = np.inf * np.ones(
@@ -383,12 +388,15 @@ class Walker3DStepperEnv(EnvBase):
             self.all_contact_object_ids |= self.ground_ids
 
     def randomize_terrain(self):
-        self.terrain_info = self.generate_step_placements()
-        for index in range(self.rendered_step_count):
-            pos = self.terrain_info[index, 0:3]
-            phi, x_tilt, y_tilt = self.terrain_info[index, 3:6]
+        if self._steps_reached == self.n_steps:
+            self.terrain_info = self.generate_step_placements()
+
+        N = self.rendered_step_count
+        for terrain_info, step in zip(self.terrain_info[:N], self.steps[:N]):
+            pos = terrain_info[0:3]
+            phi, x_tilt, y_tilt = terrain_info[3:6]
             quaternion = np.array(self._p.getQuaternionFromEuler([x_tilt, y_tilt, phi]))
-            self.steps[index].set_position(pos=pos, quat=quaternion)
+            step.set_position(pos=pos, quat=quaternion)
 
     def update_steps(self):
         if self.rendered_step_count == self.n_steps:
@@ -408,8 +416,8 @@ class Walker3DStepperEnv(EnvBase):
             self.steps[oldest].set_position(pos=pos, quat=quaternion)
 
     def reset(self):
-        self.done = False
         self.timestep = 0
+        self.done = False
         self.target_reached_count = 0
 
         self.set_stop_on_next_step = False
@@ -417,6 +425,7 @@ class Walker3DStepperEnv(EnvBase):
 
         # self._p.restoreState(self.state_id)
 
+        self.robot.applied_gain = self.applied_gain_curriculum[self.curriculum]
         self.robot_state = self.robot.reset(
             random_pose=self.robot_random_start, pos=self.robot_init_position
         )
@@ -441,11 +450,11 @@ class Walker3DStepperEnv(EnvBase):
     def step(self, action):
         self.timestep += 1
 
-        if self.next_step_index > 4:
-            self.set_stop_on_next_step = 180 < self.timestep < 420
-
         self.robot.apply_action(action)
         self.scene.global_step()
+
+        # Stop on the 2nd and 7th step, but need to specify N-1 as well
+        self.set_stop_on_next_step = self.next_step_index in [1, 2, 6, 7]
 
         # Don't calculate the contacts for now
         self.robot_state = self.robot.calc_state()
@@ -455,6 +464,7 @@ class Walker3DStepperEnv(EnvBase):
         reward += self.step_bonus + self.target_bonus - self.speed_penalty
         reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
 
+        # targets is calculated by calc_env_state()
         state = np.concatenate((self.robot_state, self.targets.flatten()))
 
         if self.is_rendered or self.use_egl:
@@ -467,7 +477,12 @@ class Walker3DStepperEnv(EnvBase):
                 else Colors["crimson"]
             )
 
-        info = {"steps_reached": self.next_step_index} if self.done else {}
+        if self.done or self.timestep == self.max_timestep - 1:
+            self._steps_reached = self.next_step_index
+            info = {"steps_reached": self.next_step_index}
+        else:
+            info = {}
+
         return state, reward, self.done, info
 
     def handle_keyboard(self, keys):
@@ -528,7 +543,8 @@ class Walker3DStepperEnv(EnvBase):
             self.joints_at_limit_cost * self.robot.joints_at_limit
         )
 
-        self.tall_bonus = 2.0 if self.robot_state[0] > self.terminal_height else -1.0
+        terminal_height = self.terminal_height_curriculum[self.curriculum]
+        self.tall_bonus = 2.0 if self.robot_state[0] > terminal_height else -1.0
         self.done = self.done or self.tall_bonus < 0
 
     def calc_feet_state(self):
@@ -558,12 +574,17 @@ class Walker3DStepperEnv(EnvBase):
         if self.target_reached:
             self.target_reached_count += 1
 
-            # Make target stationary for a bit
-            if self.target_reached_count >= self.stop_frames:
+            # Advance after has stopped for awhile
+            if self.target_reached_count > 120:
+                self.stop_on_next_step = False
+                self.set_stop_on_next_step = False
+
+            # Slight delay for target advancement
+            # Needed for not over counting step bonus
+            if self.target_reached_count >= 2:
                 if not self.stop_on_next_step:
                     self.next_step_index += 1
                     self.target_reached_count = 0
-                    self.stop_frames = self.np_random.choice(self.stop_frames_choices)
                     self.update_steps()
                 self.stop_on_next_step = self.set_stop_on_next_step
 
@@ -581,13 +602,11 @@ class Walker3DStepperEnv(EnvBase):
         ):
             self.step_bonus = 50 * 2.718 ** (-self.foot_dist_to_target.min() / 0.25)
 
-        # For last step only
+        # For remaining stationary
         self.target_bonus = 0
-        if (
-            self.next_step_index == len(self.terrain_info) - 1
-            and self.distance_to_target < 0.15
-        ):
-            self.target_bonus = 4.0
+        last_step = self.next_step_index == len(self.terrain_info) - 1
+        if (last_step or self.stop_on_next_step) and self.distance_to_target < 0.15:
+            self.target_bonus = 2.0
 
     def calc_env_state(self, action):
         if not np.isfinite(self.robot_state).all():
