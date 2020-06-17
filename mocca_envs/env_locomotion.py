@@ -304,15 +304,11 @@ class Walker3DStepperEnv(EnvBase):
         self.next_step_index = 0
 
         # Terrain info
-        self.dist_range = np.array([0.75, 1.05])
+        self.dist_range = np.array([0.65, 1.05])
         self.pitch_range = np.array([-30, +30])  # degrees
         self.yaw_range = np.array([-20, 20])
         self.tilt_range = np.array([-10, 10])
         self.terrain_info = np.zeros((self.n_steps, 6))  # x, y, z, phi, x_tilt, y_tilt
-
-        # only generate placements when final step is reached
-        self._steps_reached = 0
-        self.terrain_info = self.generate_step_placements()
 
         # robot_state + (2 targets) * (x, y, z, x_tilt, y_tilt)
         high = np.inf * np.ones(
@@ -388,9 +384,7 @@ class Walker3DStepperEnv(EnvBase):
             self.all_contact_object_ids |= self.ground_ids
 
     def randomize_terrain(self):
-        if self._steps_reached == self.n_steps:
-            self.terrain_info = self.generate_step_placements()
-
+        self.terrain_info = self.generate_step_placements()
         N = self.rendered_step_count
         for terrain_info, step in zip(self.terrain_info[:N], self.steps[:N]):
             pos = terrain_info[0:3]
@@ -453,8 +447,8 @@ class Walker3DStepperEnv(EnvBase):
         self.robot.apply_action(action)
         self.scene.global_step()
 
-        # Stop on the 2nd and 7th step, but need to specify N-1 as well
-        self.set_stop_on_next_step = self.next_step_index in [1, 2, 6, 7]
+        # Stop on the 7th and 14th step, but need to specify N-1 as well
+        self.set_stop_on_next_step = self.next_step_index in [6, 7, 13, 14]
 
         # Don't calculate the contacts for now
         self.robot_state = self.robot.calc_state()
@@ -477,11 +471,11 @@ class Walker3DStepperEnv(EnvBase):
                 else Colors["crimson"]
             )
 
-        if self.done or self.timestep == self.max_timestep - 1:
-            self._steps_reached = self.next_step_index
-            info = {"steps_reached": self.next_step_index}
-        else:
-            info = {}
+        info = (
+            {"steps_reached": self.next_step_index}
+            if self.done or self.timestep == self.max_timestep - 1
+            else {}
+        )
 
         return state, reward, self.done, info
 
