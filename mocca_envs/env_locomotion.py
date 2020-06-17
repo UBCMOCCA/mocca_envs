@@ -284,6 +284,8 @@ class Walker3DStepperEnv(EnvBase):
 
         # Handle non-robot kwargs
         self.random_reward = kwargs.pop("random_reward", False)
+        plank_name = kwargs.pop("plank_class", None)
+        self.plank_class = globals().get(plank_name, self.plank_class)
 
         super().__init__(self.robot_class, remove_ground=True, **kwargs)
         self.robot.set_base_pose(pose="running_start")
