@@ -303,8 +303,8 @@ class Walker3DStepperEnv(EnvBase):
         self.joints_at_limit_cost = 0.1
 
         # Env settings
-        self.lookahead = 2
-        self.next_step_index = 0
+        self.lookahead = 3
+        self.next_step_index = 1
 
         # Terrain info
         self.dist_range = np.array([0.65, 1.05])
@@ -430,7 +430,7 @@ class Walker3DStepperEnv(EnvBase):
 
         # Randomize platforms
         self.randomize_terrain()
-        self.next_step_index = 0
+        self.next_step_index = 1
 
         # Reset camera
         if self.is_rendered or self.use_egl:
@@ -641,19 +641,25 @@ class Walker3DStepperEnv(EnvBase):
 
     def delta_to_k_targets(self, k=1):
         """ Return positions (relative to root) of target, and k-1 step after """
+        N = self.next_step_index
         if not self.stop_on_next_step:
-            targets = self.terrain_info[self.next_step_index : self.next_step_index + k]
+            targets = self.terrain_info[N - 1 : N + k - 1]
             if len(targets) < k:
                 # If running out of targets, repeat last target
                 targets = np.concatenate(
                     (targets, np.repeat(targets[[-1]], k - len(targets), axis=0))
                 )
         else:
-            targets = np.repeat(
-                self.terrain_info[[self.next_step_index]], self.lookahead, axis=0
+            print(N)
+            # targets = np.repeat(self.terrain_info[[N]], self.lookahead, axis=0)
+            targets = np.concatenate(
+                (
+                    self.terrain_info[[N - 1]],
+                    np.repeat(self.terrain_info[[N]], k - 1, axis=0),
+                )
             )
 
-        self.walk_target = targets[[1], 0:3].mean(axis=0)
+        self.walk_target = targets[-1, 0:3]
 
         delta_pos = targets[:, 0:3] - self.robot.body_xyz
         target_thetas = np.arctan2(delta_pos[:, 1], delta_pos[:, 0])
