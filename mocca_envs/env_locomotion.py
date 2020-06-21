@@ -650,7 +650,6 @@ class Walker3DStepperEnv(EnvBase):
                     (targets, np.repeat(targets[[-1]], k - len(targets), axis=0))
                 )
         else:
-            print(N)
             # targets = np.repeat(self.terrain_info[[N]], self.lookahead, axis=0)
             targets = np.concatenate(
                 (
