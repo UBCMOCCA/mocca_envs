@@ -270,18 +270,15 @@ class Walker3DStepperEnv(EnvBase):
     max_timestep = 1000
 
     robot_class = Walker3D
-    plank_class = LargePlank  # Pillar, Plank, LargePlank
     robot_random_start = True
     robot_init_position = [0.3, 0, 1.32]
 
+    plank_class = LargePlank  # Pillar, Plank, LargePlank
+    n_steps = 20
+    step_radius = 0.25
+    rendered_step_count = 4
+
     def __init__(self, **kwargs):
-
-        # Need these before calling constructor
-        # because they are used in self.create_terrain()
-        self.step_radius = 0.25
-        self.n_steps = 20
-        self.rendered_step_count = 4
-
         # Handle non-robot kwargs
         self.random_reward = kwargs.pop("random_reward", False)
         plank_name = kwargs.pop("plank_class", None)
@@ -311,11 +308,14 @@ class Walker3DStepperEnv(EnvBase):
         self.pitch_range = np.array([-30, +30])  # degrees
         self.yaw_range = np.array([-20, 20])
         self.tilt_range = np.array([-10, 10])
-        self.terrain_info = np.zeros((self.n_steps, 6))  # x, y, z, phi, x_tilt, y_tilt
+        self.step_param_dim = 5
+        # x, y, z, phi, x_tilt, y_tilt
+        self.terrain_info = np.zeros((self.n_steps, self.step_param_dim + 1))
 
         # robot_state + (2 targets) * (x, y, z, x_tilt, y_tilt)
+        self.robot_obs_dim = self.robot.observation_space.shape[0]
         high = np.inf * np.ones(
-            self.robot.observation_space.shape[0] + self.lookahead * 5
+            self.robot_obs_dim + self.lookahead * self.step_param_dim
         )
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.action_space = self.robot.action_space
@@ -437,6 +437,8 @@ class Walker3DStepperEnv(EnvBase):
             self.camera.lookat(self.robot.body_xyz)
 
         self.targets = self.delta_to_k_targets(k=self.lookahead)
+        assert self.targets.shape[-1] == self.step_param_dim
+
         # Order is important because walk_target is set up above
         self.calc_potential()
 
@@ -703,7 +705,7 @@ class Walker3DStepperEnv(EnvBase):
             )
         )
 
-        negation_obs_indices = np.array(
+        robot_neg_obs_indices = np.array(
             [
                 2,  # vy
                 4,  # roll
@@ -711,18 +713,36 @@ class Walker3DStepperEnv(EnvBase):
                 8,  # abdomen_x pos
                 27,  # abdomen_z vel
                 29,  # abdomen_x vel
-                50,  # sin(-a) = -sin(a) of next step
-                53,  # x_tilt of next step
-                55,  # sin(-a) = -sin(a) of next + 1 step
-                58,  # x_tilt of next + 1 step
             ],
             dtype=np.int64,
+        )
+
+        steps_neg_obs_indices = np.array(
+            [
+                (
+                    i * self.step_param_dim + 0,  # sin(-x) = -sin(x)
+                    i * self.step_param_dim + 3,  # x_tilt
+                )
+                for i in range(self.lookahead)
+            ],
+            dtype=np.int64,
+        ).flatten()
+
+        negation_obs_indices = np.concatenate(
+            (robot_neg_obs_indices, steps_neg_obs_indices + self.robot_obs_dim)
         )
 
         # Used for creating mirrored actions
         negation_action_indices = self.robot._negation_joint_indices
         right_action_indices = self.robot._right_joint_indices
         left_action_indices = self.robot._left_joint_indices
+
+        assert negation_obs_indices.max() < self.observation_space.shape[0]
+        assert right_obs_indices.max() < self.observation_space.shape[0]
+        assert left_obs_indices.max() < self.observation_space.shape[0]
+        assert negation_action_indices.max() < action_dim
+        assert right_action_indices.max() < action_dim
+        assert left_action_indices.max() < action_dim
 
         return (
             negation_obs_indices,
@@ -743,6 +763,17 @@ class MikeStepperEnv(Walker3DStepperEnv):
 
         if self.is_rendered:
             self.robot.decorate()
+
+
+class Walker3DPlannerEnv(Walker3DStepperEnv):
+
+    plank_class = Pillar
+    n_steps = 100
+    step_radius = 0.25
+    rendered_step_count = n_steps
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
 
 class Monkey3DCustomEnv(EnvBase):
