@@ -353,7 +353,9 @@ class StadiumScene(Scene):
         current_dir = os.path.dirname(__file__)
 
         if not remove_ground:
-            filename = os.path.join(current_dir, "data", "misc", "plane_stadium.sdf")
+            filename = os.path.join(
+                current_dir, "data", "objects", "misc", "plane_stadium.sdf"
+            )
             self.ground_plane_mjcf = self._p.loadSDF(filename)
 
             for i in self.ground_plane_mjcf:

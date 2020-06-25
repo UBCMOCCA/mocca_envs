@@ -10,272 +10,6 @@ from mocca_envs.bullet_utils import BodyPart, Joint
 DEG2RAD = np.pi / 180
 
 
-class Cassie:
-    model_path = os.path.join(
-        current_dir, "data", "cassie", "urdf", "cassie_collide.urdf"
-    )
-    base_position = (0.0, 0.0, 1.085)
-    base_orientation = (0.0, 0.0, 0.0, 1.0)
-
-    base_joint_angles = [
-        # left:
-        0.035615837,
-        -0.01348790,
-        0.391940848,
-        -0.95086160,
-        -0.08376049,
-        1.305643634,
-        -1.61174064,
-        # right:
-        0.035615837,
-        -0.01348790,
-        0.391940848,
-        -0.95086160,
-        -0.08376049,
-        1.305643634,
-        -1.61174064,
-    ]
-
-    rod_joint_angles = [-0.8967891835, 0.063947468, -0.8967891835, -0.063947468]
-
-    power_coef = {
-        "hip_abduction_left": 112.5,
-        "hip_rotation_left": 112.5,
-        "hip_flexion_left": 195.2,
-        "knee_joint_left": 195.2,
-        "knee_to_shin_right": 200,  # not sure how to set, using PD instead of a constraint
-        "ankle_joint_right": 200,  # not sure how to set, using PD instead of a constraint
-        "toe_joint_left": 45.0,
-        "hip_abduction_right": 112.5,
-        "hip_rotation_right": 112.5,
-        "hip_flexion_right": 195.2,
-        "knee_joint_right": 195.2,
-        "knee_to_shin_left": 200,  # not sure how to set, using PD instead of a constraint
-        "ankle_joint_left": 200,  # not sure how to set, using PD instead of a constraint
-        "toe_joint_right": 45.0,
-    }
-    joint_damping = [1, 1, 1, 1, 0.1, 0, 1, 1, 1, 1, 1, 0.1, 0, 1]
-
-    powered_joint_inds = [0, 1, 2, 3, 6, 7, 8, 9, 10, 13]
-    spring_joint_inds = [4, 11]
-
-    def __init__(self, bc, power=1.0):
-        self._p = bc
-        self.base_power = power
-        self.rod_joints = {}
-
-        self.parts = None
-        self.jdict = None
-        self.object_id = None
-        self.ordered_joints = None
-        self.robot_body = None
-        self.foot_names = ["right_toe", "left_toe"]
-
-        action_dim = 10
-        high = np.ones(action_dim)
-        self.action_space = gym.spaces.Box(-high, high, dtype=np.float32)
-        state_dim = (action_dim + 4) * 2 + 6
-        high = np.inf * np.ones(state_dim)
-        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
-
-    def load_robot_model(self):
-        flags = (
-            self._p.URDF_USE_SELF_COLLISION
-            | self._p.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
-            | self._p.URDF_USE_INERTIA_FROM_FILE
-        )
-        self.object_id = (
-            self._p.loadURDF(
-                self.model_path,
-                basePosition=self.base_position,
-                baseOrientation=self.base_orientation,
-                useFixedBase=False,
-                flags=flags,
-            ),
-        )
-
-        self.parse_joints_and_links(self.object_id)
-        self.powered_joints = np.array(self.ordered_joints)[
-            self.powered_joint_inds
-        ].tolist()
-        self.spring_joints = np.array(self.ordered_joints)[
-            self.spring_joint_inds
-        ].tolist()
-
-        # Set Initial pose
-        self._p.resetBasePositionAndOrientation(
-            self.object_id[0], posObj=self.base_position, ornObj=self.base_orientation
-        )
-
-        self.reset_joint_positions(
-            self.base_joint_angles, [0 for _ in self.base_joint_angles]
-        )
-
-        self._p.createConstraint(
-            self.object_id[self.parts["left_tarsus"].bodyIndex],
-            self.parts["left_tarsus"].bodyPartIndex,
-            self.object_id[self.parts["left_achilles_rod"].bodyIndex],
-            self.parts["left_achilles_rod"].bodyPartIndex,
-            jointType=self._p.JOINT_POINT2POINT,
-            jointAxis=[0, 0, 0],
-            parentFramePosition=[-0.22735404, 0.05761813, 0.00711836],
-            childFramePosition=[0.254001, 0, 0],
-            parentFrameOrientation=[0.000000, 0.000000, 0.000000, 1.000000],
-            childFrameOrientation=[0.000000, 0.000000, 0.000000, 1.000000],
-        )
-        self._p.createConstraint(
-            self.object_id[self.parts["right_tarsus"].bodyIndex],
-            self.parts["right_tarsus"].bodyPartIndex,
-            self.object_id[self.parts["right_achilles_rod"].bodyIndex],
-            self.parts["right_achilles_rod"].bodyPartIndex,
-            jointType=self._p.JOINT_POINT2POINT,
-            jointAxis=[0, 0, 0],
-            parentFramePosition=[-0.22735404, 0.05761813, -0.00711836],
-            childFramePosition=[0.254001, 0, 0],
-            parentFrameOrientation=[0.000000, 0.000000, 0.000000, 1.000000],
-            childFrameOrientation=[0.000000, 0.000000, 0.000000, 1.000000],
-        )
-        for part_name in [
-            "left_achilles_rod",
-            "left_achilles_rod_y",
-            "right_achilles_rod",
-            "right_achilles_rod_y",
-        ]:
-            self._p.setCollisionFilterGroupMask(
-                self.object_id[self.parts[part_name].bodyIndex],
-                self.parts[part_name].bodyPartIndex,
-                0,
-                0,
-            )
-
-    def reset_joint_positions(self, positions, velocities):
-        for j, q, v in zip(self.ordered_joints, positions, velocities):
-            j.reset_current_position(q, v)
-
-    def parse_joints_and_links(self, bodies):
-        self.parts = {}
-        self.jdict = {}
-        self.ordered_joints = []
-        bodies = [bodies] if np.isscalar(bodies) else bodies
-
-        # We will overwrite this if a "pelvis" is found
-        self.robot_body = BodyPart(self._p, "root", bodies, 0, -1)
-
-        for i in range(len(bodies)):
-            for j in range(self._p.getNumJoints(bodies[i])):
-                self._p.setJointMotorControl2(
-                    bodies[i],
-                    j,
-                    self._p.POSITION_CONTROL,
-                    positionGain=0.1,
-                    velocityGain=0.1,
-                    force=0,
-                )
-                jointInfo = self._p.getJointInfo(bodies[i], j)
-                joint_name = jointInfo[1]
-                part_name = jointInfo[12]
-
-                joint_name = joint_name.decode("utf8")
-                part_name = part_name.decode("utf8")
-
-                self.parts[part_name] = BodyPart(self._p, part_name, bodies, i, j)
-
-                if part_name == "pelvis":
-                    self.robot_body = self.parts[part_name]
-
-                joint = Joint(self._p, joint_name, bodies, i, j, torque_limit=0)
-
-                if "achilles" in joint_name:
-                    joint.reset_position(self.rod_joint_angles[len(self.rod_joints)], 0)
-                    self.rod_joints[joint_name] = joint
-
-                if joint_name[:5] != "fixed":
-                    joint.set_torque_limit(
-                        self.base_power * self.power_coef[joint_name]
-                    )
-                    self.jdict[joint_name] = joint
-                    self._p.changeDynamics(
-                        bodies[i],
-                        j,
-                        jointDamping=self.joint_damping[len(self.ordered_joints)],
-                    )
-                    self.ordered_joints.append(self.jdict[joint_name])
-
-    def make_robot_utils(self):
-        # Make utility functions for converting from normalized to radians and vice versa
-        # Inputs are thetas (normalized angles) directly from observation
-        # weight is the range of motion, thigh can move 90 degrees, etc
-        weight = np.array([j.upperLimit - j.lowerLimit for j in self.ordered_joints])
-        # bias is the angle corresponding to -1
-        bias = np.array([j.lowerLimit for j in self.ordered_joints])
-        self.to_radians = lambda thetas: weight * (thetas + 1) / 2 + bias
-        self.to_normalized = lambda angles: 2 * (angles - bias) / weight - 1
-
-    def initialize(self):
-        self.load_robot_model()
-        self.make_robot_utils()
-
-    def reset(self):
-        self.feet = [self.parts[f] for f in self.foot_names]
-        self.feet_xyz = np.zeros((len(self.foot_names), 3))
-        self.initial_z = None
-        state = self.calc_state()
-        return state
-
-    def apply_action(self, a):
-        assert np.isfinite(a).all()
-        # for n, j in enumerate(self.ordered_joints):
-        for n, j in enumerate(self.powered_joints + self.spring_joints):
-            # j.set_position(self.base_joint_angles[n])
-            j.set_motor_torque(float(np.clip(a[n], -j.torque_limit, j.torque_limit)))
-
-        # self.ordered_joints[4].set_position(0)
-        # self.ordered_joints[11].set_position(0)
-        # angles = self.to_radians(self.joint_angles)
-        # self.ordered_joints[5].set_position(-angles[3] + 0.227)  # -q_3 + 13 deg
-        # self.ordered_joints[12].set_position(-angles[10] + 0.227)  # -q_10 + 13 deg
-
-    def calc_state(self):
-        j = np.array(
-            [j.current_relative_position() for j in self.ordered_joints],
-            dtype=np.float32,
-        )
-
-        self.joint_angles = j[:, 0]
-        self.rad_joint_angles = self.to_radians(self.joint_angles)
-        self.joint_speeds = j[:, 1]
-        self.joints_at_limit = np.count_nonzero(np.abs(self.joint_angles) > 0.99)
-
-        body_pose = self.robot_body.pose()
-        self.body_xyz = body_pose.xyz()
-        self.body_angular_speed = self.robot_body.angular_speed()
-
-        z = self.body_xyz[2]
-        if self.initial_z is None:
-            self.initial_z = z
-
-        self.body_rpy = body_pose.rpy()
-        roll, pitch, yaw = self.body_rpy
-
-        rot = np.array(
-            [
-                [np.cos(-yaw), -np.sin(-yaw), 0],
-                [np.sin(-yaw), np.cos(-yaw), 0],
-                [0, 0, 1],
-            ]
-        )
-        self.body_velocity = np.dot(rot, self.robot_body.speed())
-
-        vx, vy, vz = self.body_velocity
-        more = np.array([z - self.initial_z, vx, vy, vz, roll, pitch], dtype=np.float32)
-
-        for i, p in enumerate(self.feet):
-            # Need this to calculate done, might as well calculate it
-            self.feet_xyz[i] = p.pose().xyz()
-
-        return np.concatenate((more, self.joint_angles, self.joint_speeds))
-
-
 class WalkerBase:
 
     mirrored = False
@@ -485,7 +219,7 @@ class Walker3D(WalkerBase):
             )
 
         if model_path is None:
-            model_path = os.path.join(current_dir, "data", "custom", "walker3d.xml")
+            model_path = os.path.join(current_dir, "data", "robots", "walker3d.xml")
 
         # Need to call this first to parse body
         super(Walker3D, self).load_robot_model(model_path, flags, root_link_name)
@@ -581,7 +315,7 @@ class Child3D(Walker3D):
 
     def load_robot_model(self, model_path=None, flags=None, root_link_name=None):
         if model_path is None:
-            model_path = os.path.join(current_dir, "data", "custom", "child3d.xml")
+            model_path = os.path.join(current_dir, "data", "robots", "child3d.xml")
 
         super().load_robot_model(model_path)
         self.base_position = (0, 0, 0.38)
@@ -616,7 +350,7 @@ class Walker2D(WalkerBase):
 
     def load_robot_model(self):
         flags = self._p.MJCF_COLORS_FROM_FILE
-        model_path = os.path.join(current_dir, "data", "custom", "walker2d.xml")
+        model_path = os.path.join(current_dir, "data", "robots", "walker2d.xml")
         root_link_name = "pelvis"
         super(Walker2D, self).load_robot_model(model_path, flags, root_link_name)
 
@@ -654,15 +388,9 @@ class Crab2D(WalkerBase):
             | self._p.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
         )
 
-        model_path = os.path.join(current_dir, "data", "custom", "crab2d.xml")
+        model_path = os.path.join(current_dir, "data", "robots", "crab2d.xml")
         root_link_name = "pelvis"
         super(Crab2D, self).load_robot_model(model_path, flags, root_link_name)
-
-
-class Cassie2D(Cassie):
-    model_path = os.path.join(
-        current_dir, "data", "cassie", "urdf", "cassie_collide_2d.urdf"
-    )
 
 
 class Monkey3D(Walker3D):
@@ -708,7 +436,7 @@ class Monkey3D(Walker3D):
 
     def load_robot_model(self, model_path=None, flags=None, root_link_name=None):
         if model_path is None:
-            model_path = os.path.join(current_dir, "data", "custom", "monkey3d.xml")
+            model_path = os.path.join(current_dir, "data", "robots", "monkey3d.xml")
 
         super().load_robot_model(model_path)
         self.base_position = (0, 0, 0.7)
@@ -799,7 +527,7 @@ class Mike(Walker3D):
 
     def load_robot_model(self, model_path=None, flags=None, root_link_name=None):
         model_path = model_path or os.path.join(
-            current_dir, "data", "custom", "mike.xml"
+            current_dir, "data", "robots", "mike.xml"
         )
         super().load_robot_model(model_path)
 
@@ -809,7 +537,7 @@ class Mike(Walker3D):
         self._p.changeDynamics(body_id, part_id, mass=8)
 
     def decorate(self):
-        f = lambda x: os.path.join(current_dir, "data", "misc", x)
+        f = lambda x: os.path.join(current_dir, "data", "objects", "misc", x)
 
         glasses_shape = self._p.createVisualShape(
             shapeType=self._p.GEOM_MESH,
