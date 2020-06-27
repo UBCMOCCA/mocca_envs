@@ -280,6 +280,10 @@ class Walker3DStepperEnv(EnvBase):
     n_steps = 20
     step_radius = 0.25
     rendered_step_count = 4
+    init_step_separation = 0.75
+
+    lookahead = 2
+    lookbehind = 1
 
     def __init__(self, **kwargs):
         # Handle non-robot kwargs
@@ -303,8 +307,7 @@ class Walker3DStepperEnv(EnvBase):
         self.joints_at_limit_cost = 0.1
 
         # Env settings
-        self.lookahead = 3
-        self.next_step_index = 1
+        self.next_step_index = self.lookahead
 
         # Terrain info
         self.dist_range = np.array([0.65, 1.25])
@@ -318,7 +321,8 @@ class Walker3DStepperEnv(EnvBase):
         # robot_state + (2 targets) * (x, y, z, x_tilt, y_tilt)
         self.robot_obs_dim = self.robot.observation_space.shape[0]
         high = np.inf * np.ones(
-            self.robot_obs_dim + self.lookahead * self.step_param_dim
+            self.robot_obs_dim
+            + (self.lookahead + self.lookbehind) * self.step_param_dim
         )
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.action_space = self.robot.action_space
@@ -348,7 +352,7 @@ class Walker3DStepperEnv(EnvBase):
         dphi[0] = 0.0
         dtheta[0] = np.pi / 2
 
-        dr[1:3] = 0.75
+        dr[1:3] = self.init_step_separation
         dphi[1:3] = 0.0
         dtheta[1:3] = np.pi / 2
 
@@ -416,7 +420,6 @@ class Walker3DStepperEnv(EnvBase):
             self.steps[oldest].set_position(pos=pos, quat=quaternion)
 
     def reset(self):
-        self.get_mirror_indices()
         self.timestep = 0
         self.done = False
         self.target_reached_count = 0
@@ -432,13 +435,13 @@ class Walker3DStepperEnv(EnvBase):
 
         # Randomize platforms
         self.randomize_terrain()
-        self.next_step_index = 1
+        self.next_step_index = self.lookahead
 
         # Reset camera
         if self.is_rendered or self.use_egl:
             self.camera.lookat(self.robot.body_xyz)
 
-        self.targets = self.delta_to_k_targets(k=self.lookahead)
+        self.targets = self.delta_to_k_targets()
         assert self.targets.shape[-1] == self.step_param_dim
 
         # Order is important because walk_target is set up above
@@ -638,27 +641,28 @@ class Walker3DStepperEnv(EnvBase):
         self.calc_base_reward(action)
         self.calc_step_reward()
         # use next step to calculate next k steps
-        self.targets = self.delta_to_k_targets(k=self.lookahead)
+        self.targets = self.delta_to_k_targets()
 
         if cur_step_index != self.next_step_index:
             self.calc_potential()
 
-    def delta_to_k_targets(self, k=1):
+    def delta_to_k_targets(self):
         """ Return positions (relative to root) of target, and k-1 step after """
+        k = self.lookahead
+        j = self.lookbehind
         N = self.next_step_index
         if not self.stop_on_next_step:
-            targets = self.terrain_info[N - 1 : N + k - 1]
+            targets = self.terrain_info[N - j : N + k]
             if len(targets) < k:
                 # If running out of targets, repeat last target
                 targets = np.concatenate(
                     (targets, np.repeat(targets[[-1]], k - len(targets), axis=0))
                 )
         else:
-            # targets = np.repeat(self.terrain_info[[N]], self.lookahead, axis=0)
             targets = np.concatenate(
                 (
-                    self.terrain_info[[N - 1]],
-                    np.repeat(self.terrain_info[[N]], k - 1, axis=0),
+                    self.terrain_info[[N - j]],
+                    np.repeat(self.terrain_info[[N]], k, axis=0),
                 )
             )
 
@@ -724,7 +728,7 @@ class Walker3DStepperEnv(EnvBase):
                     i * self.step_param_dim + 0,  # sin(-x) = -sin(x)
                     i * self.step_param_dim + 3,  # x_tilt
                 )
-                for i in range(self.lookahead)
+                for i in range(self.lookahead + self.lookbehind)
             ],
             dtype=np.int64,
         ).flatten()
@@ -738,10 +742,14 @@ class Walker3DStepperEnv(EnvBase):
         right_action_indices = self.robot._right_joint_indices
         left_action_indices = self.robot._left_joint_indices
 
-        assert negation_obs_indices.max() < self.observation_space.shape[0]
-        assert right_obs_indices.max() < self.observation_space.shape[0]
-        assert left_obs_indices.max() < self.observation_space.shape[0]
-        assert negation_action_indices.max() < action_dim
+        obs_dim = self.observation_space.shape[0]
+        assert len(negation_obs_indices) == 0 or negation_obs_indices.max() < obs_dim
+        assert right_obs_indices.max() < obs_dim
+        assert left_obs_indices.max() < obs_dim
+        assert (
+            len(negation_action_indices) == 0
+            or negation_action_indices.max() < action_dim
+        )
         assert right_action_indices.max() < action_dim
         assert left_action_indices.max() < action_dim
 
@@ -812,12 +820,55 @@ class LaikagoCustomEnv(Walker3DCustomEnv):
 
 
 class LaikagoStepperEnv(Walker3DStepperEnv):
+    control_step = 1 / 60
+    llc_frame_skip = 1
+    sim_frame_skip = 8
+
     robot_class = Laikago
+    robot_random_start = False
+    robot_init_position = [0.35, 0, 0.52]
+
+    step_radius = 0.1
+    rendered_step_count = 4
+    init_step_separation = 0.4
+
+    lookahead = 2
+    lookbehind = 2
 
     def __init__(self, **kwargs):
+        # Handle non-robot kwargs
         super().__init__(**kwargs)
+
         N = self.max_curriculum + 1
-        self.terminal_height_curriculum = np.linspace(0.25, 0.15, N)
+        self.terminal_height_curriculum = np.linspace(0.15, 0.15, N)
+        self.applied_gain_curriculum = np.linspace(1.0, 1.0, N)
+
+        self.dist_range = np.array([0.4, 0.75])
+        self.pitch_range = np.array([-20, +20])  # degrees
+        self.yaw_range = np.array([-20, 20])
+        self.tilt_range = np.array([-10, 10])
+
+        # Need for checking early termination
+        lower_legs_and_toes = self.robot.foot_names + [
+            "FR_lower_leg",
+            "FL_lower_leg",
+            "RR_lower_leg",
+            "RL_lower_leg",
+        ]
+        links = self.robot.parts
+        self.foot_ids = [links[k].bodyPartIndex for k in lower_legs_and_toes]
+
+    def calc_base_reward(self, action):
+        super().calc_base_reward(action)
+
+        self.tall_bonus = 2.0
+        contacts = self._p.getContactPoints(bodyA=self.robot.id)
+        ids = self.all_contact_object_ids
+        for c in contacts:
+            if {(c[2], c[4])} & ids and c[3] not in self.foot_ids:
+                self.tall_bonus = -1
+                self.done = True
+                break
 
 
 class Walker3DPlannerEnv(Walker3DStepperEnv):
