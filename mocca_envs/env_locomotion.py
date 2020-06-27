@@ -180,8 +180,7 @@ class Walker3DCustomEnv(EnvBase):
         )
 
         # Calculate done
-        height = self.robot.body_xyz[2] - np.min(self.robot.feet_xyz[:, 2])
-        self.tall_bonus = 2.0 if height > self.termination_height else -1.0
+        self.tall_bonus = 2.0 if self.robot_state[0] > self.termination_height else -1.0
         self.done = self.done or self.tall_bonus < 0
 
     def calc_target_reward(self):
@@ -799,30 +798,7 @@ class LaikagoCustomEnv(Walker3DCustomEnv):
         self.foot_ids = [links[k].bodyPartIndex for k in lower_legs_and_toes]
 
     def calc_base_reward(self, action):
-        # Bookkeeping stuff
-        old_linear_potential = self.linear_potential
-        old_angular_potential = self.angular_potential
-
-        self.calc_potential()
-
-        if self.distance_to_target < 1:
-            self.add_angular_progress = False
-
-        linear_progress = self.linear_potential - old_linear_potential
-        angular_progress = self.angular_potential - old_angular_potential
-
-        self.progress = linear_progress
-
-        self.posture_penalty = 0
-
-        self.energy_penalty = self.electricity_cost * float(
-            np.abs(action * self.robot.joint_speeds).mean()
-        )
-        self.energy_penalty += self.stall_torque_cost * float(np.square(action).mean())
-
-        self.joints_penalty = float(
-            self.joints_at_limit_cost * self.robot.joints_at_limit
-        )
+        super().calc_base_reward(action)
 
         self.tall_bonus = 2.0
         contacts = self._p.getContactPoints(bodyA=self.robot.id)
