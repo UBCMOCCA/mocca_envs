@@ -45,9 +45,12 @@ class WalkerBase:
         j = self._p.getJointStates(self.id, self.ordered_joint_ids)
         j = np.array(j)[:, 0:2].astype(np.float32)
 
-        self.joint_angles = self.to_normalized(j[:, 0])
+        self.joint_angles = j[:, 0]
+        self.normalized_joint_angles = self.to_normalized(self.joint_angles)
         self.joint_speeds = 0.1 * j[:, 1]  # Normalize
-        self.joints_at_limit = np.count_nonzero(np.abs(self.joint_angles) > 0.99)
+        self.joints_at_limit = np.count_nonzero(
+            np.abs(self.normalized_joint_angles) > 0.99
+        )
 
         body_pose = self.robot_body.pose()
 
@@ -77,7 +80,7 @@ class WalkerBase:
         more = np.array([height, vx, vy, vz, roll, pitch], dtype=np.float32)
 
         state = np.concatenate(
-            (more, self.joint_angles, self.joint_speeds, self.feet_contact)
+            (more, self.normalized_joint_angles, self.joint_speeds, self.feet_contact)
         )
 
         return np.clip(state, -5, +5)
@@ -515,18 +518,18 @@ class Laikago(WalkerBase):
     foot_names = ["toeFR", "toeFL", "toeRR", "toeRL"]
 
     power_coef = {
-        "FR_hip_motor_2_chassis_joint": 25,
-        "FR_upper_leg_2_hip_motor_joint": 25,
-        "FR_lower_leg_2_upper_leg_joint": 25,
-        "FL_hip_motor_2_chassis_joint": 25,
-        "FL_upper_leg_2_hip_motor_joint": 25,
-        "FL_lower_leg_2_upper_leg_joint": 25,
-        "RR_hip_motor_2_chassis_joint": 25,
-        "RR_upper_leg_2_hip_motor_joint": 25,
-        "RR_lower_leg_2_upper_leg_joint": 25,
-        "RL_hip_motor_2_chassis_joint": 25,
-        "RL_upper_leg_2_hip_motor_joint": 25,
-        "RL_lower_leg_2_upper_leg_joint": 25,
+        "FR_hip_motor_2_chassis_joint": 40,
+        "FR_upper_leg_2_hip_motor_joint": 40,
+        "FR_lower_leg_2_upper_leg_joint": 40,
+        "FL_hip_motor_2_chassis_joint": 40,
+        "FL_upper_leg_2_hip_motor_joint": 40,
+        "FL_lower_leg_2_upper_leg_joint": 40,
+        "RR_hip_motor_2_chassis_joint": 40,
+        "RR_upper_leg_2_hip_motor_joint": 40,
+        "RR_lower_leg_2_upper_leg_joint": 40,
+        "RL_hip_motor_2_chassis_joint": 40,
+        "RL_upper_leg_2_hip_motor_joint": 40,
+        "RL_lower_leg_2_upper_leg_joint": 40,
     }
 
     # Need this to set pose and mirroring

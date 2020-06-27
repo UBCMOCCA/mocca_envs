@@ -302,6 +302,8 @@ class Walker3DStepperEnv(EnvBase):
 
     lookahead = 2
     lookbehind = 1
+    walk_target_index = -1
+    step_bonus_smoothness = 1
 
     def __init__(self, **kwargs):
         # Handle non-robot kwargs
@@ -633,7 +635,8 @@ class Walker3DStepperEnv(EnvBase):
             and self.target_reached_count == 1
             and self.next_step_index != len(self.terrain_info) - 1  # exclude last step
         ):
-            self.step_bonus = 50 * 2.718 ** (-self.foot_dist_to_target.min() / 0.25)
+            dist = self.foot_dist_to_target.min()
+            self.step_bonus = 50 * 2.718 ** (-dist ** self.step_bonus_smoothness / 0.25)
 
         # For remaining stationary
         self.target_bonus = 0
@@ -678,7 +681,7 @@ class Walker3DStepperEnv(EnvBase):
                 )
             )
 
-        self.walk_target = targets[-1, 0:3]
+        self.walk_target = targets[self.walk_target_index, 0:3]
 
         delta_pos = targets[:, 0:3] - self.robot.body_xyz
         target_thetas = np.arctan2(delta_pos[:, 1], delta_pos[:, 0])
@@ -846,13 +849,15 @@ class LaikagoStepperEnv(Walker3DStepperEnv):
 
     lookahead = 2
     lookbehind = 2
+    walk_target_index = -2
+    step_bonus_smoothness = 6
 
     def __init__(self, **kwargs):
         # Handle non-robot kwargs
         super().__init__(**kwargs)
 
         N = self.max_curriculum + 1
-        self.terminal_height_curriculum = np.linspace(0.0, 0.0, N)
+        self.terminal_height_curriculum = np.linspace(0.30, 0.2, N)
         self.applied_gain_curriculum = np.linspace(1.0, 1.0, N)
 
         self.dist_range = np.array([0.4, 0.75])
@@ -867,7 +872,14 @@ class LaikagoStepperEnv(Walker3DStepperEnv):
     def calc_base_reward(self, action):
         super().calc_base_reward(action)
 
-        self.tall_bonus = 0
+        # Time-based early termination
+        self.done = self.done or (self.timestep > 240 and self.next_step_index <= 4)
+
+        # posture is different from walker3d
+        abductor_angles = self.robot.joint_angles[[0, 3, 6, 9]] * RAD2DEG
+        mask = (-20 < abductor_angles) * (abductor_angles < 20)
+        self.posture_penalty = (1 * ~mask * np.abs(abductor_angles * DEG2RAD)).sum()
+
         contacts = self._p.getContactPoints(bodyA=self.robot.id)
         ids = self.all_contact_object_ids
 

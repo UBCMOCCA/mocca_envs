@@ -472,14 +472,14 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <sphere radius="0.035"/>
+        <sphere radius="0.045"/>
       </geometry>
       <material name="white"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <sphere radius="0.035"/>
+        <sphere radius="0.045"/>
       </geometry>
     </collision>
     <inertial>
@@ -490,7 +490,7 @@
   <joint name="jtoeRL" type="fixed">
     <parent link="RL_lower_leg"/>
     <child link="toeRL"/>
-    <origin xyz="0 -0.265 -0.022"/>
+    <origin xyz="0 -0.27 -0.022"/>
     <dynamics damping="0.0" friction="0.0"/>
   </joint>
 
@@ -505,14 +505,14 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <sphere radius="0.035"/>
+        <sphere radius="0.045"/>
       </geometry>
       <material name="white"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <sphere radius="0.035"/>
+        <sphere radius="0.045"/>
       </geometry>
     </collision>
     <inertial>
@@ -523,7 +523,7 @@
   <joint name="jtoeRR" type="fixed">
     <parent link="RR_lower_leg"/>
     <child link="toeRR"/>
-    <origin xyz="0 -0.265 -0.022"/>
+    <origin xyz="0 -0.27 -0.022"/>
     <dynamics damping="0.0" friction="0.0"/>
   </joint>
 
@@ -538,14 +538,14 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <sphere radius="0.035"/>
+        <sphere radius="0.045"/>
       </geometry>
       <material name="white"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <sphere radius="0.035"/>
+        <sphere radius="0.045"/>
       </geometry>
     </collision>
     <inertial>
@@ -556,7 +556,7 @@
   <joint name="jtoeFL" type="fixed">
     <parent link="FL_lower_leg"/>
     <child link="toeFL"/>
-    <origin xyz="0 -0.265 -0.022"/>
+    <origin xyz="0 -0.27 -0.022"/>
     <dynamics damping="0.0" friction="0.0"/>
   </joint>
 
@@ -571,14 +571,14 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <sphere radius="0.035"/>
+        <sphere radius="0.045"/>
       </geometry>
       <material name="white"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <sphere radius="0.035"/>
+        <sphere radius="0.045"/>
       </geometry>
     </collision>
     <inertial>
@@ -589,7 +589,7 @@
   <joint name="jtoeFR" type="fixed">
     <parent link="FR_lower_leg"/>
     <child link="toeFR"/>
-    <origin xyz="0 -0.265 -0.022"/>
+    <origin xyz="0 -0.27 -0.022"/>
     <dynamics damping="0.0" friction="0.0"/>
   </joint>
 </robot>
