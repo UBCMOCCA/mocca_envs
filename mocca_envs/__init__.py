@@ -68,6 +68,18 @@ register(
 )
 
 register(
+    id="LaikagoCustomEnv-v0",
+    entry_point="mocca_envs.env_locomotion:LaikagoCustomEnv",
+    max_episode_steps=1000,
+)
+
+register(
+    id="LaikagoStepperEnv-v0",
+    entry_point="mocca_envs.env_locomotion:LaikagoStepperEnv",
+    max_episode_steps=1000,
+)
+
+register(
     id="Walker3DPlannerEnv-v0",
     entry_point="mocca_envs.env_locomotion:Walker3DPlannerEnv",
     max_episode_steps=1000,

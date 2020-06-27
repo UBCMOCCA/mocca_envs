@@ -15,6 +15,19 @@ class WalkerBase:
     mirrored = False
     applied_gain = 1.0
 
+    def __init__(self, bc, power=1.0):
+        self._p = bc
+        self.base_power = power
+
+        self.action_dim = len(self.power_coef)
+        high = np.ones(self.action_dim)
+        self.action_space = gym.spaces.Box(-high, high, dtype=np.float32)
+
+        # globals + angles + speeds + contacts
+        self.state_dim = 6 + self.action_dim * 2 + len(self.foot_names)
+        high = np.inf * np.ones(self.state_dim)
+        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
+
     def apply_action(self, a):
         assert np.isfinite(a).all()
         normalized = self.applied_gain * np.clip(a, -1, 1)
@@ -142,7 +155,33 @@ class WalkerBase:
         self._zeros = [0 for _ in self.ordered_joint_ids]
         self._gains = [0.1 for _ in self.ordered_joint_ids]
 
-    def reset(self):
+    def reset(self, random_pose=True, pos=None, quat=None, vel=None, ang_vel=None):
+        base_joint_angles = np.copy(self.base_joint_angles)
+        base_orientation = np.copy(self.base_orientation)
+        if self.np_random.rand() < 0.5:
+            self.mirrored = True
+            base_joint_angles[self._rl] = base_joint_angles[self._lr]
+            base_joint_angles[self._negation_joint_indices] *= -1
+            base_orientation[0:3] *= -1
+        else:
+            self.mirrored = False
+
+        if random_pose:
+            # Add small deviations
+            ds = self.np_random.uniform(low=-0.1, high=0.1, size=self.action_dim)
+            ps = self.to_normalized(base_joint_angles + ds)
+            base_joint_angles = self.to_radians(np.clip(ps, -0.95, 0.95))
+
+        self.reset_joint_states(base_joint_angles, self.base_joint_speeds)
+
+        pos = pos or self.base_position
+        quat = quat or self.base_orientation
+        self._p.resetBasePositionAndOrientation(self.id, posObj=pos, ornObj=quat)
+
+        vel = vel or self.base_velocity
+        ang_vel = ang_vel or self.base_angular_velocity
+        self.robot_body.reset_velocity(vel, ang_vel)
+
         self.feet_contact.fill(0.0)
         self.feet_xyz.fill(0.0)
 
@@ -152,10 +191,8 @@ class WalkerBase:
     def reset_joint_states(self, positions, velocities):
         bc = self._p
 
-        for j, pos, vel in zip(self.ordered_joints, positions, velocities):
-            bc.resetJointState(
-                j.bodies[j.bodyIndex], j.jointIndex, targetValue=pos, targetVelocity=vel
-            )
+        for j, pos, vel in zip(self.ordered_joint_ids, positions, velocities):
+            bc.resetJointState(self.id, j, targetValue=pos, targetVelocity=vel)
 
         bc.setJointMotorControlArray(
             bodyIndex=self.id,
@@ -196,19 +233,6 @@ class Walker3D(WalkerBase):
         "left_shoulder_y": 50,
         "left_elbow": 60,
     }
-
-    def __init__(self, bc, power=1.0):
-        self._p = bc
-        self.base_power = power
-
-        self.action_dim = 21
-        high = np.ones(self.action_dim)
-        self.action_space = gym.spaces.Box(-high, high, dtype=np.float32)
-
-        # globals + angles + speeds + contacts
-        self.state_dim = 6 + self.action_dim * 2 + 2
-        high = np.inf * np.ones(self.state_dim)
-        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
     def load_robot_model(self, model_path=None, flags=None, root_link_name=None):
         if flags is None:
@@ -277,37 +301,6 @@ class Walker3D(WalkerBase):
                 self._p.getQuaternionFromEuler([0, 90 * DEG2RAD, 0])
             )
 
-    def reset(self, random_pose=True, pos=None, quat=None, vel=None, ang_vel=None):
-        base_joint_angles = np.copy(self.base_joint_angles)
-        base_orientation = np.copy(self.base_orientation)
-        if self.np_random.rand() < 0.5:
-            self.mirrored = True
-            base_joint_angles[self._rl] = base_joint_angles[self._lr]
-            base_joint_angles[self._negation_joint_indices] *= -1
-            base_orientation[0:3] *= -1
-        else:
-            self.mirrored = False
-
-        if random_pose:
-            # Add small deviations
-            ds = self.np_random.uniform(low=-0.1, high=0.1, size=self.action_dim)
-            ps = self.to_normalized(base_joint_angles + ds)
-            base_joint_angles = self.to_radians(np.clip(ps, -0.95, 0.95))
-
-        self.reset_joint_states(base_joint_angles, self.base_joint_speeds)
-
-        pos = pos or self.base_position
-        quat = quat or self.base_orientation
-        self._p.resetBasePositionAndOrientation(
-            self.object_id[0], posObj=pos, ornObj=quat
-        )
-
-        vel = vel or self.base_velocity
-        ang_vel = ang_vel or self.base_angular_velocity
-        self.robot_body.reset_velocity(vel, ang_vel)
-
-        return super(Walker3D, self).reset()
-
 
 class Child3D(Walker3D):
     def __init__(self, bc):
@@ -335,19 +328,6 @@ class Walker2D(WalkerBase):
         "foot_left_joint": 50,
     }
 
-    def __init__(self, bc, power=1.0):
-        self._p = bc
-        self.base_power = power
-
-        self.action_dim = 7
-        high = np.ones(self.action_dim)
-        self.action_space = gym.spaces.Box(-high, high, dtype=np.float32)
-
-        # globals + angles + speeds + contacts
-        self.state_dim = 6 + self.action_dim * 2 + 2
-        high = np.inf * np.ones(self.state_dim)
-        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
-
     def load_robot_model(self):
         flags = self._p.MJCF_COLORS_FROM_FILE
         model_path = os.path.join(current_dir, "data", "robots", "walker2d.xml")
@@ -367,19 +347,6 @@ class Crab2D(WalkerBase):
         "leg_joint": 100,
         "foot_joint": 50,
     }
-
-    def __init__(self, bc):
-        self._p = bc
-        self.base_power = 1.0
-
-        self.action_dim = 6
-        high = np.ones(self.action_dim)
-        self.action_space = gym.spaces.Box(-high, high, dtype=np.float32)
-
-        # globals + angles + speeds + contacts
-        self.state_dim = 6 + self.action_dim * 2 + 2
-        high = np.inf * np.ones(self.state_dim)
-        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
     def load_robot_model(self):
         flags = (
@@ -422,17 +389,8 @@ class Monkey3D(Walker3D):
         "left_hand": 80,
     }
 
-    def __init__(self, bc):
-        super().__init__(bc, power=0.7)
-
-        self.action_dim = 23
-        high = np.ones(self.action_dim)
-        self.action_space = gym.spaces.Box(-high, high, dtype=np.float32)
-
-        # globals + angles + speeds + contacts
-        self.state_dim = 6 + self.action_dim * 2 + 2
-        high = np.inf * np.ones(self.state_dim)
-        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
+    def __init__(self, bc, power=0.7):
+        super().__init__(bc, power=power)
 
     def load_robot_model(self, model_path=None, flags=None, root_link_name=None):
         if model_path is None:
@@ -467,35 +425,6 @@ class Monkey3D(Walker3D):
             self.base_joint_angles[[6, 11]] = -90 * DEG2RAD  # ankles
             self.base_joint_angles[[7, 12]] = -90 * DEG2RAD  # knees
             self.base_orientation = np.array(self._p.getQuaternionFromEuler([0, 0, 0]))
-
-    def reset(self, random_pose=True, pos=None, quat=None, vel=None, ang_vel=None):
-
-        base_joint_angles = self.base_joint_angles.copy()
-        base_joint_speeds = self.base_joint_speeds.copy()
-        base_orientation = self.base_orientation.copy()
-
-        if self.np_random.rand() < 0.5:
-            self.mirrored = True
-            base_joint_angles[self._rl] = base_joint_angles[self._lr]
-            base_joint_angles[self._negation_joint_indices] *= -1
-            base_joint_speeds[self._rl] = base_joint_speeds[self._lr]
-            base_joint_speeds[self._negation_joint_indices] *= -1
-            base_orientation[0:3] *= -1
-        else:
-            self.mirrored = False
-
-        self.reset_joint_states(base_joint_angles, base_joint_speeds)
-
-        pos = self.base_position if pos is None else pos
-        quat = base_orientation if quat is None else quat
-        self._p.resetBasePositionAndOrientation(self.id, posObj=pos, ornObj=quat)
-
-        vel = self.base_velocity if vel is None else vel
-        ang_vel = self.base_angular_velocity if ang_vel is None else ang_vel
-        self.robot_body.reset_velocity(vel, ang_vel)
-
-        # call the WalkerBase reset, not Walker3D
-        return super(Walker3D, self).reset()
 
 
 class Mike(Walker3D):
@@ -576,3 +505,117 @@ class Mike(Walker3D):
             self._p.resetBasePositionAndOrientation(self.hardhat_id, hardhat_xyz, quat)
 
         return state
+
+
+class Laikago(WalkerBase):
+
+    mirrored = False
+    applied_gain = 1.0
+
+    foot_names = ["toeFR", "toeFL", "toeRR", "toeRL"]
+
+    power_coef = {
+        "FR_hip_motor_2_chassis_joint": 25,
+        "FR_upper_leg_2_hip_motor_joint": 25,
+        "FR_lower_leg_2_upper_leg_joint": 25,
+        "FL_hip_motor_2_chassis_joint": 25,
+        "FL_upper_leg_2_hip_motor_joint": 25,
+        "FL_lower_leg_2_upper_leg_joint": 25,
+        "RR_hip_motor_2_chassis_joint": 25,
+        "RR_upper_leg_2_hip_motor_joint": 25,
+        "RR_lower_leg_2_upper_leg_joint": 25,
+        "RL_hip_motor_2_chassis_joint": 25,
+        "RL_upper_leg_2_hip_motor_joint": 25,
+        "RL_lower_leg_2_upper_leg_joint": 25,
+    }
+
+    # Need this to set pose and mirroring
+    # hip_[x,z,y], knee, ankle, shoulder_[x,z,y], elbow
+    _right_joint_indices = np.array([0, 1, 2, 6, 7, 8], dtype=np.int64)
+    _left_joint_indices = np.array([3, 4, 5, 9, 10, 11], dtype=np.int64)
+    _negation_joint_indices = np.array([], dtype=np.int64)
+    _rl = np.concatenate((_right_joint_indices, _left_joint_indices))
+    _lr = np.concatenate((_left_joint_indices, _right_joint_indices))
+
+    def initialize(self):
+        bc = self._p
+
+        base_path = os.path.join(current_dir, "data", "robots", "laikago")
+        model_path = os.path.join(base_path, "laikago_toes_limits.urdf")
+
+        self.base_position = np.array([0, 0, 0.6])
+        self.base_orientation = np.array([0.5, 0.5, 0.5, 0.5])
+        self.base_velocity = np.array([0, 0, 0])
+        self.base_angular_velocity = np.array([0, 0, 0])
+
+        flags = (
+            bc.URDF_USE_SELF_COLLISION | bc.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
+        )
+
+        self.id = bc.loadURDF(
+            model_path,
+            baseOrientation=self.base_orientation,
+            flags=flags,
+            useFixedBase=False,
+        )
+
+        self.parts = {}
+        self.ordered_joint_ids = []
+        self.ordered_joint_base_gains = []
+
+        weight = []
+        bias = []
+
+        for j in range(bc.getNumJoints(self.id)):
+            bc.changeDynamics(
+                self.id,
+                j,
+                lateralFriction=1.2,
+                spinningFriction=0.1,
+                rollingFriction=0.1,
+                linearDamping=0,
+                angularDamping=0,
+            )
+            info = bc.getJointInfo(self.id, j)
+
+            joint_name = info[1].decode("utf8")
+            part_name = info[12].decode("utf8")
+
+            self.parts[part_name] = BodyPart(bc, part_name, (self.id,), 0, j)
+
+            joint_type = info[2]
+            lower_limit = info[8]
+            upper_limit = info[9]
+
+            # Laikago only has revolute and fixed joints
+            if joint_type == bc.JOINT_PRISMATIC or joint_type == bc.JOINT_REVOLUTE:
+                gain = self.base_power * self.power_coef[joint_name]
+                self.ordered_joint_ids.append(j)
+                self.ordered_joint_base_gains.append(gain)
+                weight.append(upper_limit - lower_limit)
+                bias.append(lower_limit)
+
+        # weight is the range of motion, thigh can move 90 degrees, etc
+        # bias is the angle corresponding to -1
+        weight = np.array(weight)
+        bias = np.array(bias)
+        # utility functions for converting from normalized to radians and vice versa
+        # Inputs are thetas (normalized angles) directly from observation
+        self.to_radians = lambda thetas: weight * (thetas + 1) / 2 + bias
+        self.to_normalized = lambda angles: 2 * (angles - bias) / weight - 1
+
+        # need to use it to calculate torques later
+        self.ordered_joint_base_gains = np.array(self.ordered_joint_base_gains)
+        self._zeros = [0 for _ in self.ordered_joint_ids]
+        self._gains = [0.1 for _ in self.ordered_joint_ids]
+
+        self.base_joint_angles = np.zeros(self.action_dim)
+        self.base_joint_speeds = np.zeros(self.action_dim)
+
+        self.robot_body = BodyPart(self._p, "root", (self.id,), 0, -1)
+        self.feet = [self.parts[f] for f in self.foot_names]
+        self.feet_contact = np.zeros(len(self.foot_names), dtype=np.float32)
+        self.feet_xyz = np.zeros((len(self.foot_names), 3))
+
+    def set_base_pose(self, pose=None):
+        pass

@@ -13,7 +13,7 @@ from mocca_envs.bullet_objects import (
     MonkeyBar,
 )
 from mocca_envs.misc_utils import generate_fractal_noise_2d
-from mocca_envs.robots import Child3D, Mike, Monkey3D, Walker3D
+from mocca_envs.robots import Child3D, Laikago, Mike, Monkey3D, Walker3D
 
 
 Colors = {
@@ -215,21 +215,26 @@ class Walker3DCustomEnv(EnvBase):
         action_dim = self.robot.action_space.shape[0]
         # _ + 6 accounting for global
         right = self.robot._right_joint_indices + 6
-        # _ + action_dim to get velocities, 48 is right foot contact
-        right = np.concatenate((right, right + action_dim, [48]))
-        # Do the same for left, except using 49 for left foot contact
+        # _ + action_dim to get velocities, last one is right foot contact
+        right = np.concatenate((right, right + action_dim, [6 + 2 * action_dim]))
+        # Do the same for left
         left = self.robot._left_joint_indices + 6
-        left = np.concatenate((left, left + action_dim, [49]))
+        left = np.concatenate((left, left + action_dim, [6 + 2 * action_dim + 1]))
 
         # Used for creating mirrored observations
-        # 2:  vy
-        # 4:  roll
-        # 6:  abdomen_z pos
-        # 8:  abdomen_x pos
-        # 27: abdomen_z vel
-        # 29: abdomen_x vel
-        # 50: sin(-a) = -sin(a)
-        negation_obs_indices = np.array([2, 4, 6, 8, 27, 29, 50], dtype=np.int64)
+
+        negation_obs_indices = np.concatenate(
+            (
+                # vy, roll
+                [2, 4],
+                # negate part of robot (position)
+                6 + self.robot._negation_joint_indices,
+                # negate part of robot (velocity)
+                6 + self.robot._negation_joint_indices + action_dim,
+                # sin(x) component of target location
+                [6 + 2 * action_dim + len(self.robot.foot_names)],
+            )
+        )
         right_obs_indices = right
         left_obs_indices = left
 
@@ -412,6 +417,7 @@ class Walker3DStepperEnv(EnvBase):
             self.steps[oldest].set_position(pos=pos, quat=quaternion)
 
     def reset(self):
+        self.get_mirror_indices()
         self.timestep = 0
         self.done = False
         self.target_reached_count = 0
@@ -566,7 +572,7 @@ class Walker3DStepperEnv(EnvBase):
         next_step = self.steps[target_cover_index]
         target_cover_id = {(next_step.id, next_step.cover_id)}
 
-        self.foot_dist_to_target = np.array([0.0, 0.0])
+        self.foot_dist_to_target = np.zeros(len(self.robot.feet))
 
         p_xyz = self.terrain_info[self.next_step_index, [0, 1, 2]]
         self.target_reached = False
@@ -702,16 +708,15 @@ class Walker3DStepperEnv(EnvBase):
             )
         )
 
-        robot_neg_obs_indices = np.array(
-            [
-                2,  # vy
-                4,  # roll
-                6,  # abdomen_z pos
-                8,  # abdomen_x pos
-                27,  # abdomen_z vel
-                29,  # abdomen_x vel
-            ],
-            dtype=np.int64,
+        robot_neg_obs_indices = np.concatenate(
+            (
+                # vy, roll
+                [2, 4],
+                # negate part of robot (position)
+                6 + self.robot._negation_joint_indices,
+                # negate part of robot (velocity)
+                6 + self.robot._negation_joint_indices + action_dim,
+            )
         )
 
         steps_neg_obs_indices = np.array(
@@ -760,6 +765,83 @@ class MikeStepperEnv(Walker3DStepperEnv):
 
         if self.is_rendered:
             self.robot.decorate()
+
+
+class LaikagoCustomEnv(Walker3DCustomEnv):
+
+    control_step = 1 / 60
+    llc_frame_skip = 1
+    sim_frame_skip = 8
+
+    robot_class = Laikago
+
+    termination_height = 0.25  # Not used
+    robot_random_start = False
+    robot_init_position = [0, 0, 0.53]
+
+    def __init__(self, **kwargs):
+        kwargs.pop("random_reward", False)
+        kwargs.pop("plank_class", None)
+        super().__init__(**kwargs)
+
+        # Fix-ordered Curriculum
+        self.curriculum = 0
+        self.max_curriculum = 9
+
+        # Need for checking early termination
+        lower_legs_and_toes = self.robot.foot_names + [
+            "FR_lower_leg",
+            "FL_lower_leg",
+            "RR_lower_leg",
+            "RL_lower_leg",
+        ]
+        links = self.robot.parts
+        self.foot_ids = [links[k].bodyPartIndex for k in lower_legs_and_toes]
+
+    def calc_base_reward(self, action):
+        # Bookkeeping stuff
+        old_linear_potential = self.linear_potential
+        old_angular_potential = self.angular_potential
+
+        self.calc_potential()
+
+        if self.distance_to_target < 1:
+            self.add_angular_progress = False
+
+        linear_progress = self.linear_potential - old_linear_potential
+        angular_progress = self.angular_potential - old_angular_potential
+
+        self.progress = linear_progress
+
+        self.posture_penalty = 0
+
+        self.energy_penalty = self.electricity_cost * float(
+            np.abs(action * self.robot.joint_speeds).mean()
+        )
+        self.energy_penalty += self.stall_torque_cost * float(np.square(action).mean())
+
+        self.joints_penalty = float(
+            self.joints_at_limit_cost * self.robot.joints_at_limit
+        )
+
+        self.tall_bonus = 2.0
+        contacts = self._p.getContactPoints(bodyA=self.robot.id)
+        ground_body_id = self.scene.ground_plane_mjcf[0]
+
+        for c in contacts:
+            if c[2] == ground_body_id and c[3] not in self.foot_ids:
+                self.tall_bonus = -1
+                self.done = True
+                break
+
+
+class LaikagoStepperEnv(Walker3DStepperEnv):
+    robot_class = Laikago
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        N = self.max_curriculum + 1
+        self.terminal_height_curriculum = np.linspace(0.25, 0.15, N)
 
 
 class Walker3DPlannerEnv(Walker3DStepperEnv):

@@ -22,7 +22,7 @@ obs = env.reset()
 
 
 bc = env.unwrapped._p
-robot_id = env.unwrapped.robot.object_id[0]
+robot_id = env.unwrapped.robot.id
 num_joints = bc.getNumJoints(robot_id)
 
 
