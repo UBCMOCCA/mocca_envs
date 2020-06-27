@@ -548,9 +548,7 @@ class Laikago(WalkerBase):
         self.base_velocity = np.array([0, 0, 0])
         self.base_angular_velocity = np.array([0, 0, 0])
 
-        flags = (
-            bc.URDF_USE_SELF_COLLISION | bc.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
-        )
+        flags = bc.URDF_USE_SELF_COLLISION
 
         self.id = bc.loadURDF(
             model_path,
@@ -567,15 +565,15 @@ class Laikago(WalkerBase):
         bias = []
 
         for j in range(bc.getNumJoints(self.id)):
-            bc.changeDynamics(
-                self.id,
-                j,
-                lateralFriction=1.2,
-                spinningFriction=0.1,
-                rollingFriction=0.1,
-                linearDamping=0,
-                angularDamping=0,
-            )
+            # bc.changeDynamics(
+            #     self.id,
+            #     j,
+            #     lateralFriction=1.2,
+            #     spinningFriction=0.1,
+            #     rollingFriction=0.1,
+            #     # linearDamping=0,
+            #     # angularDamping=0,
+            # )
             info = bc.getJointInfo(self.id, j)
 
             joint_name = info[1].decode("utf8")

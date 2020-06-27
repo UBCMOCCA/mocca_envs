@@ -215,10 +215,28 @@ class Walker3DCustomEnv(EnvBase):
         # _ + 6 accounting for global
         right = self.robot._right_joint_indices + 6
         # _ + action_dim to get velocities, last one is right foot contact
-        right = np.concatenate((right, right + action_dim, [6 + 2 * action_dim]))
+        right = np.concatenate(
+            (
+                right,
+                right + action_dim,
+                [
+                    6 + 2 * action_dim + 2 * i
+                    for i in range(len(self.robot.foot_names) // 2)
+                ],
+            )
+        )
         # Do the same for left
         left = self.robot._left_joint_indices + 6
-        left = np.concatenate((left, left + action_dim, [6 + 2 * action_dim + 1]))
+        left = np.concatenate(
+            (
+                left,
+                left + action_dim,
+                [
+                    6 + 2 * action_dim + 2 * i + 1
+                    for i in range(len(self.robot.foot_names) // 2)
+                ],
+            )
+        )
 
         # Used for creating mirrored observations
 
@@ -279,7 +297,7 @@ class Walker3DStepperEnv(EnvBase):
     plank_class = LargePlank  # Pillar, Plank, LargePlank
     n_steps = 20
     step_radius = 0.25
-    rendered_step_count = 4
+    rendered_step_count = 3
     init_step_separation = 0.75
 
     lookahead = 2
@@ -307,7 +325,7 @@ class Walker3DStepperEnv(EnvBase):
         self.joints_at_limit_cost = 0.1
 
         # Env settings
-        self.next_step_index = self.lookahead
+        self.next_step_index = self.lookbehind
 
         # Terrain info
         self.dist_range = np.array([0.65, 1.25])
@@ -393,31 +411,25 @@ class Walker3DStepperEnv(EnvBase):
         if not self.remove_ground:
             self.all_contact_object_ids |= self.ground_ids
 
+    def set_step_state(self, info_index, step_index):
+        pos = self.terrain_info[info_index, 0:3]
+        phi, x_tilt, y_tilt = self.terrain_info[info_index, 3:6]
+        quaternion = np.array(self._p.getQuaternionFromEuler([x_tilt, y_tilt, phi]))
+        self.steps[step_index].set_position(pos=pos, quat=quaternion)
+
     def randomize_terrain(self):
         self.terrain_info = self.generate_step_placements()
-        N = self.rendered_step_count
-        for terrain_info, step in zip(self.terrain_info[:N], self.steps[:N]):
-            pos = terrain_info[0:3]
-            phi, x_tilt, y_tilt = terrain_info[3:6]
-            quaternion = np.array(self._p.getQuaternionFromEuler([x_tilt, y_tilt, phi]))
-            step.set_position(pos=pos, quat=quaternion)
+        for index in range(self.rendered_step_count):
+            self.set_step_state(index, index)
 
     def update_steps(self):
         if self.rendered_step_count == self.n_steps:
             return
 
-        threshold = int(self.rendered_step_count // 2)
-        if self.next_step_index >= threshold:
-            oldest = (self.next_step_index - threshold - 1) % self.rendered_step_count
-
-            next = min(
-                (self.next_step_index - threshold - 1) + self.rendered_step_count,
-                len(self.terrain_info) - 1,
-            )
-            pos = self.terrain_info[next, 0:3]
-            phi, x_tilt, y_tilt = self.terrain_info[next, 3:6]
-            quaternion = np.array(self._p.getQuaternionFromEuler([x_tilt, y_tilt, phi]))
-            self.steps[oldest].set_position(pos=pos, quat=quaternion)
+        if self.next_step_index >= self.rendered_step_count:
+            oldest = self.next_step_index % self.rendered_step_count
+            next = min(self.next_step_index, len(self.terrain_info) - 1)
+            self.set_step_state(next, oldest)
 
     def reset(self):
         self.timestep = 0
@@ -435,7 +447,7 @@ class Walker3DStepperEnv(EnvBase):
 
         # Randomize platforms
         self.randomize_terrain()
-        self.next_step_index = self.lookahead
+        self.next_step_index = self.lookbehind
 
         # Reset camera
         if self.is_rendered or self.use_egl:
@@ -653,10 +665,10 @@ class Walker3DStepperEnv(EnvBase):
         N = self.next_step_index
         if not self.stop_on_next_step:
             targets = self.terrain_info[N - j : N + k]
-            if len(targets) < k:
+            if len(targets) < (k + j):
                 # If running out of targets, repeat last target
                 targets = np.concatenate(
-                    (targets, np.repeat(targets[[-1]], k - len(targets), axis=0))
+                    (targets, np.repeat(targets[[-1]], (k + j) - len(targets), axis=0))
                 )
         else:
             targets = np.concatenate(
@@ -698,7 +710,10 @@ class Walker3DStepperEnv(EnvBase):
                 # joint velocity indices
                 6 + self.robot._right_joint_indices + action_dim,
                 # right foot contact
-                [6 + 2 * action_dim],
+                [
+                    6 + 2 * action_dim + 2 * i
+                    for i in range(len(self.robot.foot_names) // 2)
+                ],
             )
         )
 
@@ -707,7 +722,10 @@ class Walker3DStepperEnv(EnvBase):
             (
                 6 + self.robot._left_joint_indices,
                 6 + self.robot._left_joint_indices + action_dim,
-                [6 + 2 * action_dim + 1],
+                [
+                    6 + 2 * action_dim + 2 * i + 1
+                    for i in range(len(self.robot.foot_names) // 2)
+                ],
             )
         )
 
@@ -782,9 +800,9 @@ class LaikagoCustomEnv(Walker3DCustomEnv):
 
     robot_class = Laikago
 
-    termination_height = 0.25  # Not used
+    termination_height = 0
     robot_random_start = False
-    robot_init_position = [0, 0, 0.53]
+    robot_init_position = [0, 0, 0.56]
 
     def __init__(self, **kwargs):
         kwargs.pop("random_reward", False)
@@ -796,19 +814,13 @@ class LaikagoCustomEnv(Walker3DCustomEnv):
         self.max_curriculum = 9
 
         # Need for checking early termination
-        lower_legs_and_toes = self.robot.foot_names + [
-            "FR_lower_leg",
-            "FL_lower_leg",
-            "RR_lower_leg",
-            "RL_lower_leg",
-        ]
-        links = self.robot.parts
-        self.foot_ids = [links[k].bodyPartIndex for k in lower_legs_and_toes]
+        links, names = self.robot.parts, self.robot.foot_names
+        self.foot_ids = [links[k].bodyPartIndex for k in names]
 
     def calc_base_reward(self, action):
         super().calc_base_reward(action)
 
-        self.tall_bonus = 2.0
+        self.tall_bonus = 0
         contacts = self._p.getContactPoints(bodyA=self.robot.id)
         ground_body_id = self.scene.ground_plane_mjcf[0]
 
@@ -826,9 +838,9 @@ class LaikagoStepperEnv(Walker3DStepperEnv):
 
     robot_class = Laikago
     robot_random_start = False
-    robot_init_position = [0.35, 0, 0.52]
+    robot_init_position = [0.35, 0, 0.56]
 
-    step_radius = 0.1
+    step_radius = 0.14
     rendered_step_count = 4
     init_step_separation = 0.4
 
@@ -840,7 +852,7 @@ class LaikagoStepperEnv(Walker3DStepperEnv):
         super().__init__(**kwargs)
 
         N = self.max_curriculum + 1
-        self.terminal_height_curriculum = np.linspace(0.15, 0.15, N)
+        self.terminal_height_curriculum = np.linspace(0.0, 0.0, N)
         self.applied_gain_curriculum = np.linspace(1.0, 1.0, N)
 
         self.dist_range = np.array([0.4, 0.75])
@@ -849,21 +861,16 @@ class LaikagoStepperEnv(Walker3DStepperEnv):
         self.tilt_range = np.array([-10, 10])
 
         # Need for checking early termination
-        lower_legs_and_toes = self.robot.foot_names + [
-            "FR_lower_leg",
-            "FL_lower_leg",
-            "RR_lower_leg",
-            "RL_lower_leg",
-        ]
-        links = self.robot.parts
-        self.foot_ids = [links[k].bodyPartIndex for k in lower_legs_and_toes]
+        links, names = self.robot.parts, self.robot.foot_names
+        self.foot_ids = [links[k].bodyPartIndex for k in names]
 
     def calc_base_reward(self, action):
         super().calc_base_reward(action)
 
-        self.tall_bonus = 2.0
+        self.tall_bonus = 0
         contacts = self._p.getContactPoints(bodyA=self.robot.id)
         ids = self.all_contact_object_ids
+
         for c in contacts:
             if {(c[2], c[4])} & ids and c[3] not in self.foot_ids:
                 self.tall_bonus = -1
@@ -1169,14 +1176,12 @@ class Monkey3DCustomEnv(EnvBase):
             self.set_step_state(index, index)
 
     def update_steps(self):
-        threshold = int(self.rendered_step_count // 2)
-        if self.next_step_index >= threshold:
-            oldest = (self.next_step_index - threshold - 1) % self.rendered_step_count
+        if self.rendered_step_count == self.n_steps:
+            return
 
-            next = min(
-                (self.next_step_index - threshold - 1) + self.rendered_step_count,
-                len(self.terrain_info) - 1,
-            )
+        if self.next_step_index >= self.rendered_step_count:
+            oldest = self.next_step_index % self.rendered_step_count
+            next = min(self.next_step_index, len(self.terrain_info) - 1)
             self.set_step_state(next, oldest)
 
     def get_observation_component(self):
@@ -1428,62 +1433,3 @@ class Monkey3DCustomEnv(EnvBase):
         )
 
         return deltas
-
-    def get_mirror_indices(self):
-
-        global_dim = 6
-        robot_act_dim = self.robot.action_space.shape[0]
-        robot_obs_dim = self.robot.observation_space.shape[0]
-        env_obs_dim = self.observation_space.shape[0]
-
-        # _ + 6 accounting for global
-        right = self.robot._right_joint_indices + global_dim
-        # _ + robot_act_dim to get velocities, right foot contact
-        right = np.concatenate(
-            (right, right + robot_act_dim, [robot_obs_dim - 2, env_obs_dim - 2])
-        )
-        # Do the same for left
-        left = self.robot._left_joint_indices + global_dim
-        left = np.concatenate(
-            (left, left + robot_act_dim, [robot_obs_dim - 1, env_obs_dim - 1])
-        )
-
-        # Used for creating mirrored observations
-        # 2:  vy
-        # 4:  roll
-        # 6:  abdomen_z pos
-        # 8:  abdomen_x pos
-        # 27: abdomen_z vel
-        # 29: abdomen_x vel
-        # 54: sin(-a) = -sin(a) of next step
-        # 57: sin(-a) = -sin(a) of next + 1 step
-        negation_obs_indices = np.array(
-            [
-                2,
-                4,
-                6,
-                8,
-                6 + robot_act_dim,
-                8 + robot_act_dim,
-                robot_obs_dim,
-                robot_obs_dim + 3,
-            ],
-            dtype=np.int64,
-        )
-        right_obs_indices = right
-        left_obs_indices = left
-
-        # Used for creating mirrored actions
-        negation_action_indices = self.robot._negation_joint_indices
-        # 23, 24 are for holding
-        right_action_indices = self.robot._right_joint_indices
-        left_action_indices = self.robot._left_joint_indices
-
-        return (
-            negation_obs_indices,
-            right_obs_indices,
-            left_obs_indices,
-            negation_action_indices,
-            right_action_indices,
-            left_action_indices,
-        )
