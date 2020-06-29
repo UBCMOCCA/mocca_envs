@@ -5,7 +5,7 @@
       <lateral_friction value="1"/>
   </contact>
     <inertial>
-      <origin rpy="0 0 0" xyz="0 0.03 0.043794"/>
+      <origin rpy="-1.57 -1.57 0" xyz="0 0.03 0.043794"/>
        <mass value="13.715"/>
        <inertia ixx="0" ixy="0" ixz="0" iyy="0" iyz="0" izz="0"/>
     </inertial>
@@ -115,7 +115,7 @@
     <collision>
       <origin rpy="0 1.57079 0" xyz="0 0.0 0"/>
       <geometry>
-        <mesh filename="lower_leg_3.stl" scale="1 1 1"/>
+        <mesh filename="lower_leg_3.stl" scale="0.8 0.8 0.8"/>
       </geometry>
     </collision>
     </link>
@@ -226,7 +226,7 @@
      <collision>
       <origin rpy="0 1.57079 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="lower_leg_3.stl" scale="1 1 1"/>
+        <mesh filename="lower_leg_3.stl" scale="0.8 0.8 0.8"/>
       </geometry>
     </collision>
 
@@ -337,7 +337,7 @@
      <collision>
       <origin rpy="0 1.57079 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="lower_leg_3.stl" scale="1 1 1"/>
+        <mesh filename="lower_leg_3.stl" scale="0.8 0.8 0.8"/>
       </geometry>
     </collision>
 
@@ -446,7 +446,7 @@
     <collision>
       <origin rpy="0 1.57079 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="lower_leg_3.stl" scale="1 1 1"/>
+        <mesh filename="lower_leg_3.stl" scale="0.8 0.8 0.8"/>
       </geometry>
     </collision>
 
@@ -464,8 +464,6 @@
    <link name="toeRL">
     <contact>
       <friction_anchor/>
-      <stiffness value="30000.0"/>
-      <damping value="1000.0"/>
       <spinning_friction value="0.1"/>
       <lateral_friction value="1.0"/>
     </contact>
@@ -497,8 +495,6 @@
   <link name="toeRR">
     <contact>
       <friction_anchor/>
-      <stiffness value="30000.0"/>
-      <damping value="1000.0"/>
       <spinning_friction value="0.1"/>
       <lateral_friction value="1.0"/>
     </contact>
@@ -530,8 +526,6 @@
   <link name="toeFL">
     <contact>
       <friction_anchor/>
-      <stiffness value="30000.0"/>
-      <damping value="1000.0"/>
       <spinning_friction value="0.1"/>
       <lateral_friction value="1.0"/>
     </contact>
@@ -563,8 +557,6 @@
   <link name="toeFR">
     <contact>
       <friction_anchor/>
-      <stiffness value="30000.0"/>
-      <damping value="1000.0"/>
       <spinning_friction value="0.1"/>
       <lateral_friction value="1.0"/>
     </contact>

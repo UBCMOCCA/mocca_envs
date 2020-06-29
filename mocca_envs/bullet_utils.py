@@ -328,7 +328,7 @@ class World:
         self.gravity = gravity
         self.timestep = timestep
         self.frame_skip = frame_skip
-        self.numSolverIterations = 20
+        self.numSolverIterations = 5
         self.set_physics_parameters()
 
     def set_physics_parameters(self):

@@ -35,6 +35,7 @@ class Walker3DCustomEnv(EnvBase):
     termination_height = 0.7
     robot_random_start = True
     robot_init_position = None
+    robot_init_velocity = None
 
     def __init__(self, **kwargs):
         super().__init__(self.robot_class, **kwargs)
@@ -77,7 +78,9 @@ class Walker3DCustomEnv(EnvBase):
         self.close_count = 0
 
         self.robot_state = self.robot.reset(
-            random_pose=self.robot_random_start, pos=self.robot_init_position
+            random_pose=self.robot_random_start,
+            pos=self.robot_init_position,
+            vel=self.robot_init_velocity,
         )
 
         # Reset camera
@@ -293,6 +296,7 @@ class Walker3DStepperEnv(EnvBase):
     robot_class = Walker3D
     robot_random_start = True
     robot_init_position = [0.3, 0, 1.32]
+    robot_init_velocity = None
 
     plank_class = LargePlank  # Pillar, Plank, LargePlank
     n_steps = 20
@@ -443,7 +447,9 @@ class Walker3DStepperEnv(EnvBase):
 
         self.robot.applied_gain = self.applied_gain_curriculum[self.curriculum]
         self.robot_state = self.robot.reset(
-            random_pose=self.robot_random_start, pos=self.robot_init_position
+            random_pose=self.robot_random_start,
+            pos=self.robot_init_position,
+            vel=self.robot_init_velocity,
         )
         self.calc_feet_state()
 
@@ -588,22 +594,21 @@ class Walker3DStepperEnv(EnvBase):
         next_step = self.steps[target_cover_index]
         target_cover_id = {(next_step.id, next_step.cover_id)}
 
-        self.foot_dist_to_target = np.zeros(len(self.robot.feet))
+        self.foot_dist_to_target = np.linalg.norm(
+            self.robot.feet_xyz[:, 0:2]
+            - self.terrain_info[self.next_step_index, [0, 1]],
+            axis=1,
+        )
 
-        p_xyz = self.terrain_info[self.next_step_index, [0, 1, 2]]
-        self.target_reached = False
-        for i, f in enumerate(self.robot.feet):
+        def extract_foot_info(f):
             contact_ids = set((x[2], x[4]) for x in f.contact_list())
+            contact = 1.0 if contact_ids else 0.0
+            target = len(target_cover_id & contact_ids)
+            return contact, target
 
-            # if contact_ids is not empty, then foot is in contact
-            self.robot.feet_contact[i] = 1.0 if contact_ids else 0.0
-
-            delta = self.robot.feet_xyz[i] - p_xyz
-            distance = (delta[0] ** 2 + delta[1] ** 2) ** (1 / 2)
-            self.foot_dist_to_target[i] = distance
-
-            if target_cover_id & contact_ids:
-                self.target_reached = True
+        info = np.array(list(map(extract_foot_info, self.robot.feet)))
+        self.robot.feet_contact[:] = info[:, 0]
+        self.target_reached = max(info[:, 1]) > 0
 
         # At least one foot is on the plank
         if self.target_reached:
@@ -667,7 +672,15 @@ class Walker3DStepperEnv(EnvBase):
         j = self.lookbehind
         N = self.next_step_index
         if not self.stop_on_next_step:
-            targets = self.terrain_info[N - j : N + k]
+            if N - j >= 0:
+                targets = self.terrain_info[N - j : N + k]
+            else:
+                targets = np.concatenate(
+                    (
+                        np.repeat(self.terrain_info[[0]], j, axis=0),
+                        self.terrain_info[N : N + k],
+                    )
+                )
             if len(targets) < (k + j):
                 # If running out of targets, repeat last target
                 targets = np.concatenate(
@@ -676,7 +689,7 @@ class Walker3DStepperEnv(EnvBase):
         else:
             targets = np.concatenate(
                 (
-                    self.terrain_info[[N - j]],
+                    self.terrain_info[N - j : N],
                     np.repeat(self.terrain_info[[N]], k, axis=0),
                 )
             )
@@ -837,19 +850,20 @@ class LaikagoCustomEnv(Walker3DCustomEnv):
 class LaikagoStepperEnv(Walker3DStepperEnv):
     control_step = 1 / 60
     llc_frame_skip = 1
-    sim_frame_skip = 8
+    sim_frame_skip = 4
 
     robot_class = Laikago
     robot_random_start = False
-    robot_init_position = [0.35, 0, 0.56]
+    robot_init_position = [0.25, 0, 0.53]
+    robot_init_velocity = [0.5, 0, 0.25]
 
-    step_radius = 0.14
+    step_radius = 0.16
     rendered_step_count = 4
-    init_step_separation = 0.4
+    init_step_separation = 0.45
 
     lookahead = 2
     lookbehind = 2
-    walk_target_index = -2
+    walk_target_index = -1
     step_bonus_smoothness = 6
 
     def __init__(self, **kwargs):
@@ -857,10 +871,10 @@ class LaikagoStepperEnv(Walker3DStepperEnv):
         super().__init__(**kwargs)
 
         N = self.max_curriculum + 1
-        self.terminal_height_curriculum = np.linspace(0.30, 0.2, N)
+        self.terminal_height_curriculum = np.linspace(0.20, 0.0, N)
         self.applied_gain_curriculum = np.linspace(1.0, 1.0, N)
 
-        self.dist_range = np.array([0.4, 0.75])
+        self.dist_range = np.array([0.45, 0.75])
         self.pitch_range = np.array([-20, +20])  # degrees
         self.yaw_range = np.array([-20, 20])
         self.tilt_range = np.array([-10, 10])
@@ -870,21 +884,53 @@ class LaikagoStepperEnv(Walker3DStepperEnv):
         self.foot_ids = [links[k].bodyPartIndex for k in names]
 
     def calc_base_reward(self, action):
-        super().calc_base_reward(action)
 
-        # Time-based early termination
-        self.done = self.done or (self.timestep > 240 and self.next_step_index <= 4)
+        # Bookkeeping stuff
+        old_linear_potential = self.linear_potential
+        self.calc_potential()
+        self.progress = self.linear_potential - old_linear_potential
+
+        self.energy_penalty = self.electricity_cost * float(
+            np.abs(action * self.robot.joint_speeds).mean()
+        )
+        self.energy_penalty += self.stall_torque_cost * float(np.square(action).mean())
+
+        self.joints_penalty = float(
+            self.joints_at_limit_cost * self.robot.joints_at_limit
+        )
 
         # posture is different from walker3d
-        abductor_angles = self.robot.joint_angles[[0, 3, 6, 9]] * RAD2DEG
-        mask = (-20 < abductor_angles) * (abductor_angles < 20)
-        self.posture_penalty = (1 * ~mask * np.abs(abductor_angles * DEG2RAD)).sum()
+        joint_angles = self.robot.joint_angles * RAD2DEG
+
+        hip_x_angles = joint_angles[[0, 3, 6, 9]]
+        good_mask = (-25 < hip_x_angles) * (hip_x_angles < 25)
+        self.posture_penalty = np.dot(1 * ~good_mask, np.abs(hip_x_angles * DEG2RAD))
+
+        hip_y_angles = joint_angles[[1, 4, 7, 10]]
+        good_mask = (-35 < hip_y_angles) * (hip_y_angles < 35)
+        self.posture_penalty += np.dot(1 * ~good_mask, np.abs(hip_y_angles * DEG2RAD))
+
+        knee_angles = joint_angles[[2, 5, 8, 11]]
+        good_mask = (-75 < knee_angles) * (knee_angles < -15)
+        self.posture_penalty += np.dot(1 * ~good_mask, np.abs(knee_angles * DEG2RAD))
+
+        if not -25 < self.robot.body_rpy[1] * RAD2DEG < 25:
+            self.posture_penalty += abs(self.robot.body_rpy[1])
+
+        self.progress *= 2
+        self.posture_penalty *= 0.2
 
         contacts = self._p.getContactPoints(bodyA=self.robot.id)
         ids = self.all_contact_object_ids
 
+        self.tall_bonus = 2
+        self.speed_penalty = 0
+
+        # Time-based early termination
+        self.done = self.timestep > 240 and self.next_step_index <= 4
+        foot_ids = self.foot_ids
         for c in contacts:
-            if {(c[2], c[4])} & ids and c[3] not in self.foot_ids:
+            if {(c[2], c[4])} & ids and c[3] not in foot_ids:
                 self.tall_bonus = -1
                 self.done = True
                 break

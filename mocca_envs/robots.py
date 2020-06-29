@@ -70,11 +70,20 @@ class WalkerBase:
         self.body_vel = np.dot(rot, self.robot_body.speed())
         vx, vy, vz = self.body_vel
 
-        for i, f in enumerate(self.feet):
-            self.feet_xyz[i] = f.pose().xyz()
-            if contact_object_ids is not None:
-                contact_ids = set((x[2], x[4]) for x in f.contact_list())
-                self.feet_contact[i] = 1.0 if contact_object_ids & contact_ids else 0.0
+        self.feet_xyz = np.array([f.pose().xyz() for f in self.feet])
+        if contact_object_ids is not None:
+            self.feet_contact = np.array(
+                [
+                    min(
+                        len(
+                            contact_object_ids
+                            & set((x[2], x[4]) for x in f.contact_list())
+                        ),
+                        1,
+                    )
+                    for f in self.feet
+                ]
+            )
 
         height = self.body_xyz[2] - np.min(self.feet_xyz[:, 2])
         more = np.array([height, vx, vy, vz, roll, pitch], dtype=np.float32)
@@ -547,16 +556,14 @@ class Laikago(WalkerBase):
         model_path = os.path.join(base_path, "laikago_toes_limits.urdf")
 
         self.base_position = np.array([0, 0, 0.6])
-        self.base_orientation = np.array([0.5, 0.5, 0.5, 0.5])
+        self.base_orientation = np.array([0, 0, 0, 1])
         self.base_velocity = np.array([0, 0, 0])
         self.base_angular_velocity = np.array([0, 0, 0])
-
-        flags = bc.URDF_USE_SELF_COLLISION
 
         self.id = bc.loadURDF(
             model_path,
             baseOrientation=self.base_orientation,
-            flags=flags,
+            flags=bc.URDF_USE_SELF_COLLISION,
             useFixedBase=False,
         )
 
@@ -568,17 +575,7 @@ class Laikago(WalkerBase):
         bias = []
 
         for j in range(bc.getNumJoints(self.id)):
-            # bc.changeDynamics(
-            #     self.id,
-            #     j,
-            #     lateralFriction=1.2,
-            #     spinningFriction=0.1,
-            #     rollingFriction=0.1,
-            #     # linearDamping=0,
-            #     # angularDamping=0,
-            # )
             info = bc.getJointInfo(self.id, j)
-
             joint_name = info[1].decode("utf8")
             part_name = info[12].decode("utf8")
 
@@ -619,4 +616,10 @@ class Laikago(WalkerBase):
         self.feet_xyz = np.zeros((len(self.foot_names), 3))
 
     def set_base_pose(self, pose=None):
-        pass
+        self.base_joint_angles = np.zeros(self.action_dim)
+        self.base_orientation = np.array([0, 0, 0, 1])
+
+        if pose == "running_start":
+            self.base_joint_angles[[2, 5, 8, 11]] = -np.pi / 6  # Lower legs
+            # self.base_joint_angles[[1, 10]] = -np.pi / 9  # diagonal upper legs
+            # self.base_joint_angles[[4, 7]] = np.pi / 9  # other diagonal upper legs
