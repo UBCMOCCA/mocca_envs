@@ -43,7 +43,7 @@ class WalkerBase:
 
         # Use pybullet's array version, should be faster
         j = self._p.getJointStates(self.id, self.ordered_joint_ids)
-        j = np.array(j)[:, 0:2].astype(np.float32)
+        j = np.array(j, dtype=object)[:, 0:2].astype(np.float32)
 
         self.joint_angles = j[:, 0]
         self.normalized_joint_angles = self.to_normalized(self.joint_angles)
@@ -116,9 +116,11 @@ class WalkerBase:
         # utility functions for converting from normalized to radians and vice versa
         # Inputs are thetas (normalized angles) directly from observation
         # weight is the range of motion, thigh can move 90 degrees, etc
-        weight = np.array([j.upperLimit - j.lowerLimit for j in self.ordered_joints])
+        weight = np.array(
+            [j.upperLimit - j.lowerLimit for j in self.ordered_joints], dtype=np.float32
+        )
         # bias is the angle corresponding to -1
-        bias = np.array([j.lowerLimit for j in self.ordered_joints])
+        bias = np.array([j.lowerLimit for j in self.ordered_joints], dtype=np.float32)
         self.to_radians = lambda thetas: weight * (thetas + 1) / 2 + bias
         self.to_normalized = lambda angles: 2 * (angles - bias) / weight - 1
 

@@ -1,7 +1,9 @@
 import math
+import os
 
 import gym
 import numpy as np
+import torch
 
 from mocca_envs.env_base import EnvBase
 from mocca_envs.bullet_objects import (
@@ -641,7 +643,9 @@ class Walker3DStepperEnv(EnvBase):
             and self.next_step_index != len(self.terrain_info) - 1  # exclude last step
         ):
             dist = self.foot_dist_to_target.min()
-            self.step_bonus = 50 * 2.718 ** (-dist ** self.step_bonus_smoothness / 0.25)
+            self.step_bonus = 50 * 2.718 ** (
+                -(dist ** self.step_bonus_smoothness) / 0.25
+            )
 
         # For remaining stationary
         self.target_bonus = 0
@@ -936,178 +940,109 @@ class LaikagoStepperEnv(Walker3DStepperEnv):
                 break
 
 
-class Walker3DPlannerEnv(Walker3DStepperEnv):
+class Walker3DPlannerEnv(EnvBase):
+    control_step = 1 / 60
+    llc_frame_skip = 1
+    sim_frame_skip = 4
 
-    plank_class = Pillar  # Pillar, Plank, LargePlank
-    n_steps = 256  # must be perfect square
-    step_radius = 0.25
-    rendered_step_count = n_steps
-    arena_half_size = 8
+    robot_class = Walker3D
+    robot_random_start = True
+    robot_init_position = [-15.5, -15.5, 1.32]
+    robot_init_velocity = None
+
+    # base controller
+    base_lookahead = 2
+    base_lookbehind = 1
+    base_step_param_dim = 5
 
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(self.robot_class, remove_ground=True, **kwargs)
+        self.robot.set_base_pose(pose="running_start")
 
-        self.k_nearest_steps = 10
+        self.query_base_controller = self.load_base_controller("MikePlannerBase.pt")
 
-        # Other are not used
-        self.yaw_range = np.array([-180, 180])
-        self.tilt_range = np.array([-15, 15])
-
-        hs = self.arena_half_size
-        x = np.linspace(-hs, hs, int(math.sqrt(self.n_steps)))
-        self._x, self._y = map(lambda a: a.flatten(), np.meshgrid(x, x))
-
-        steps_info_dim = self.k_nearest_steps * self.step_param_dim
-        high = np.inf * np.ones(self.robot_obs_dim + steps_info_dim)
+        self.robot_obs_dim = self.robot.observation_space.shape[0]
+        high = np.inf * np.ones(self.robot_obs_dim)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
-    def calc_feet_state(self):
-        """ Don't need to keep track steps reached in planner """
-        pass
+        high = np.inf * np.ones(
+            (self.base_lookahead + self.base_lookbehind) * self.base_step_param_dim
+        )
+        self.action_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
-    def generate_step_placements(self):
-        # Check just in case
-        self.curriculum = min(self.curriculum, self.max_curriculum)
-        ratio = self.curriculum / self.max_curriculum
+    def create_terrain(self):
+        rendered = self.is_rendered or self.use_egl
 
-        # {self.max_curriculum + 1} levels in total
-        yaw_range = self.yaw_range * ratio * DEG2RAD
-        tilt_range = self.tilt_range * ratio * DEG2RAD
+        # TODO: read size and scale from file, when specified
+        filename = "height_field_map_0.npy"
+        size = (128, 128)
+        scale = 4
 
-        N = self.n_steps
-        rng = self.np_random
-        phi = rng.uniform(*yaw_range, size=N)
-        x_tilt = rng.uniform(*tilt_range, size=N)
-        y_tilt = rng.uniform(*tilt_range, size=N)
+        self.terrain = HeightField(self._p, size, scale, rendered)
+        self.terrain.reload(data=filename, rng=self.np_random)
+        self.target = VSphere(self._p, radius=0.15, pos=None)
 
-        n = int(math.sqrt(N))
-        d = (self._x[1] - self._x[0]) / 3.5
-        x, y = map(lambda a: a + rng.uniform(-d, d, N), [self._x, self._y])
-        z = generate_fractal_noise_2d((n, n), (4, 4), 3, 0.8, self.np_random).flatten()
+    def load_base_controller(self, filename):
+        dir = os.path.dirname(os.path.realpath(__file__))
+        model_path = os.path.join(dir, "data", "controllers", filename)
+        actor_critic = torch.load(model_path).to("cpu")
 
-        # Set initial three steps
-        x[1] = x[0] + 0.75
-        x[2] = x[1] + 0.75
-        y[1:3] = y[0]
-        z[0:3] = z[0:3].mean()
-        x_tilt[0:3] = 0
-        y_tilt[0:3] = 0
+        def inference(o):
+            with torch.no_grad():
+                o = torch.from_numpy(o).unsqueeze(0)
+                value, action, _ = actor_critic.act(o, deterministic=True)
+                return value.squeeze().numpy(), action.squeeze().numpy()
 
-        return np.stack((x, y, z, phi, x_tilt, y_tilt), axis=1)
+        return inference
+
+    def get_observation_component(self):
+        return (self.robot_state,)
 
     def reset(self):
         self.timestep = 0
         self.done = False
-        self.target_reached_count = 0
 
-        self.set_stop_on_next_step = False
-        self.stop_on_next_step = False
+        self.robot_state = self.robot.reset(
+            random_pose=self.robot_random_start,
+            pos=self.robot_init_position,
+            vel=self.robot_init_velocity,
+        )
 
-        # set terrain before setting character
-        self.randomize_terrain()
-        self.target_step_index = self.np_random.randint(0, self.n_steps)
-        self.walk_target = self.terrain_info[self.target_step_index, 0:3]
-
-        pos = tuple(self.terrain_info[0, 0:3] + [0.3, 0, 1.32])
-        self.robot_state = self.robot.reset(random_pose=False, pos=pos)
-        self.robot.applied_gain = self.applied_gain_curriculum[self.curriculum]
+        self.target_xy = self.np_random.uniform(-16, 16, 2)
+        z = self.terrain.get_height_at(*self.target_xy)
+        self.target.set_position((*self.target_xy, z))
 
         # Reset camera
         if self.is_rendered or self.use_egl:
             self.camera.lookat(self.robot.body_xyz)
-            self.target.set_position(pos=self.walk_target)
 
-        # only after walk_target is set
-        self.calc_potential()
-
-        candidate_steps = self.delta_to_k_targets()
-        assert candidate_steps.shape[-1] == self.step_param_dim
-        state = np.concatenate((self.robot_state, candidate_steps.flatten()))
-
+        state = np.concatenate(self.get_observation_component())
         return state
 
     def step(self, action):
         self.timestep += 1
 
-        self.robot.apply_action(action)
+        base_obs = np.concatenate((self.robot_state, action))
+        base_value, base_action = self.query_base_controller(base_obs)
+
+        self.robot.apply_action(base_action)
         self.scene.global_step()
 
-        self.robot_state = self.robot.calc_state(self.all_contact_object_ids)
-        self.calc_env_state(action)
+        self.robot_state = self.robot.calc_state()
 
-        rewards = np.array(
-            [
-                self.progress,
-                -self.energy_penalty,
-                self.step_bonus,
-                self.target_bonus,
-                -self.speed_penalty * 0,
-                self.tall_bonus,
-                -self.posture_penalty,
-                -self.joints_penalty,
-            ]
-        )
-        reward = (
-            sum(rewards)
-            if not self.random_reward
-            else np.dot(self.np_random.uniform(0.8, 1.2, 8), rewards)
-        )
-
-        candidate_steps = self.delta_to_k_targets()
-        state = np.concatenate((self.robot_state, candidate_steps.flatten()))
+        state = np.concatenate(self.get_observation_component())
+        reward = 0
 
         if self.is_rendered or self.use_egl:
             self._handle_keyboard()
             self.camera.track(pos=self.robot.body_xyz)
-            self.target.set_color(
-                Colors["dodgerblue"]
-                if self.distance_to_target < 0.15
-                else Colors["crimson"]
-            )
 
-        info = (
-            {"steps_reached": self.next_step_index}
-            if self.done or self.timestep == self.max_timestep - 1
-            else {}
-        )
+        return state, reward, self.done, {}
 
-        return state, reward, self.done, info
 
-    def calc_env_state(self, action):
-        if not np.isfinite(self.robot_state).all():
-            print("~INF~", self.robot_state)
-            self.done = True
-
-        # detects contact and set next step
-        self.calc_base_reward(action)
-        self.calc_step_reward()
-        # use next step to calculate next k steps
-        self.targets = self.delta_to_k_targets(k=self.lookahead)
-
-    def delta_to_k_targets(self, k=None, pos=None, yaw=None):
-        """ Return positions (relative to root) of k steps nearest to character """
-        k = k or self.k_nearest_steps
-        pos = pos or self.robot.body_xyz
-        yaw = yaw or self.robot.body_rpy[2]
-
-        distances = np.linalg.norm(self.terrain_info[:, :2] - pos[:2], axis=1)
-        nearest_k = np.argsort(distances)[:k]
-        targets = self.terrain_info[nearest_k]
-
-        deltas = targets[:, :3] - pos
-        angles = np.arctan2(deltas[:, 1], deltas[:, 0]) - yaw
-        distances = distances[nearest_k]
-
-        return np.stack(
-            (
-                np.sin(angles) * distances,  # x
-                np.cos(angles) * distances,  # y
-                deltas[:, 2],  # z
-                targets[:, 4],  # x_tilt
-                targets[:, 5],  # y_tilt
-            ),
-            axis=1,
-        )
+class MikePlannerEnv(Walker3DPlannerEnv):
+    robot_class = Mike
+    robot_init_position = [-15.5, -15.5, 1.05]
 
 
 class Monkey3DCustomEnv(EnvBase):

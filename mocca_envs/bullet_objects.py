@@ -4,6 +4,7 @@ current_dir = os.path.dirname(os.path.realpath(__file__))
 
 import numpy as np
 from scipy.ndimage.filters import gaussian_filter
+from mocca_envs.misc_utils import generate_fractal_noise_2d
 
 DEG2RAD = np.pi / 180
 
@@ -335,63 +336,65 @@ class Bench:
 
 
 class HeightField:
-    def __init__(self, bc, height_field_size):
+    def __init__(self, bc, data_size, scale=1, rendered=False):
         self._p = bc
-        self.height_field_size = height_field_size
+        self.data_size = data_size
+        self.scale = scale
+        self.rendered = rendered
+
         self.id = -1
         self.shape_id = -1
 
-        texture_file = os.path.join(
-            current_dir, "data", "objects", "misc", "canyon.jpg"
-        )
-        self.texture_id = self._p.loadTexture(texture_file)
-        self.texture_scaling = 1
+    def get_height_at(self, x, y):
+        # x, y are in global coordinate, return z using height field
+        ox, oy = np.array(self.data_size) / self.scale / 2
+        ix = int((x + ox) * self.scale)
+        iy = int((y + oy) * self.scale)
+        return self.data2d[iy, ix]
 
-        self.digitize_bins = 32
+    def reload(self, data=None, rng=None):
+        if self.id != -1:
+            self._p.removeBody(self.id)
 
-    def reload(self, data=None, pos=(0, 0, 0), rendered=False):
-        rows = self.height_field_size[0]
-        cols = self.height_field_size[1]
+        rows = self.data_size[0]
+        cols = self.data_size[1]
 
-        self.data = self.get_random_height_field() if data is None else data
-        midpoint = int(self.data.shape[0] / 2 + rows / 2)
-        height = self.data.max() / 2 - self.data[midpoint : midpoint + 1].mean()
-        self.data -= self.data[midpoint : midpoint + 1].mean()
-
-        if self.id >= 0:
-            # Replace existing height field
-            self.shape_id = self._p.createCollisionShape(
-                shapeType=self._p.GEOM_HEIGHTFIELD,
-                meshScale=[1, 1, 1],
-                heightfieldTextureScaling=self.texture_scaling,
-                heightfieldData=self.data,
-                numHeightfieldRows=rows,
-                numHeightfieldColumns=cols,
-                replaceHeightfieldIndex=self.shape_id,
-            )
-
+        if type(data) == str:
+            file = os.path.join(current_dir, "data", "objects", "misc", data)
+            self.data = np.load(file)
+        elif type(data) == np.ndarray:
+            self.data = data
         else:
-            # Create if it's the first time
-            self.shape_id = self._p.createCollisionShape(
-                shapeType=self._p.GEOM_HEIGHTFIELD,
-                meshScale=[1, 1, 1],
-                heightfieldTextureScaling=self.texture_scaling,
-                heightfieldData=self.data,
-                numHeightfieldRows=rows,
-                numHeightfieldColumns=cols,
-            )
+            self.data = self.get_random_height_field(rng)
 
-            self.id = self._p.createMultiBody(0, self.shape_id, -1, (0, 0, height))
+        self.data2d = self.data.reshape(self.data_size)
 
-            self._p.changeDynamics(self.id, -1, lateralFriction=0.7, restitution=0.2)
+        s = 1 / self.scale
+        self.shape_id = self._p.createCollisionShape(
+            shapeType=self._p.GEOM_HEIGHTFIELD,
+            meshScale=[s, s, 1],
+            heightfieldTextureScaling=4,
+            heightfieldData=self.data,
+            numHeightfieldRows=rows,
+            numHeightfieldColumns=cols,
+            replaceHeightfieldIndex=self.shape_id,
+        )
 
-        if rendered:
+        h = (self.data.max() + self.data.min()) / 2
+        self.id = self._p.createMultiBody(0, self.shape_id, -1, (0, 0, h))
+
+        self._p.changeDynamics(
+            self.id,
+            -1,
+            lateralFriction=1.0,
+            restitution=0.1,
+            contactStiffness=30000,
+            contactDamping=1000,
+        )
+
+        if self.rendered:
             self._p.changeVisualShape(
-                self.id,
-                -1,
-                textureUniqueId=self.texture_id,
-                rgbaColor=[1, 1, 1, 1],
-                specularColor=[0, 0, 0],
+                self.id, -1, rgbaColor=[1, 1, 1, 1], specularColor=[0, 0, 0],
             )
 
     def get_random_height_field(self, rng=None):
@@ -400,42 +403,36 @@ class HeightField:
         rng = np.random if rng is None else rng
 
         # peak scale
-        scale = rng.normal(3, 1, size=num_peaks)[:, None, None]
+        scale = rng.uniform(0.1, 3, size=num_peaks)[:, None, None]
 
         # peak positions
-        x0 = rng.uniform(-1, 1, size=num_peaks)[:, None, None]
-        y0 = rng.uniform(-1, 1, size=num_peaks)[:, None, None]
+        a = self.data_size[0] / self.scale / 2
+        b = self.data_size[1] / self.scale / 2
+        x0 = rng.uniform(-a, a, size=num_peaks)[:, None, None]
+        y0 = rng.uniform(-b, b, size=num_peaks)[:, None, None]
 
         # peak spread
-        xs = rng.uniform(0.01, 0.02, size=num_peaks)[:, None, None]
-        ys = rng.uniform(0.01, 0.02, size=num_peaks)[:, None, None]
+        xs = rng.uniform(1, 16, size=num_peaks)[:, None, None]
+        ys = rng.uniform(1, 16, size=num_peaks)[:, None, None]
 
         # peak roundness
-        xp = rng.randint(1, 3, size=num_peaks)[:, None, None] * 2
-        yp = rng.randint(1, 3, size=num_peaks)[:, None, None] * 2
+        xp = rng.randint(1, 6, size=num_peaks)[:, None, None] * 2
+        yp = rng.randint(1, 6, size=num_peaks)[:, None, None] * 2
 
         # evaluate on grid points
-        rows = self.height_field_size[0]
-        cols = self.height_field_size[1]
-        x = np.linspace(-1, 1, rows)[None, :, None]
-        y = np.linspace(-1, 1, cols)[None, None, :]
+        x = np.linspace(-a, a, self.data_size[0])[None, :, None]
+        y = np.linspace(-b, b, self.data_size[1])[None, None, :]
         peaks = scale * np.exp(-((x - x0) ** xp / xs + (y - y0) ** yp / ys))
 
         # Make into one height field
-        peaks = np.sum(peaks, axis=0).flatten()
+        peaks = np.sum(peaks, axis=0).flatten() / self.scale
+        flats = generate_fractal_noise_2d(self.data_size, (4, 4), 2, 1, rng).flatten()
+        peaks = peaks + flats
 
-        # Add some ripples
-        noise = rng.uniform(-1, 1, size=self.height_field_size)
-        peaks += gaussian_filter(noise, 1).flatten()
+        # Make a flat platform
+        platform = peaks.reshape(self.data_size)[0:5, 0:5]
+        offset = platform.mean()
+        platform[:] = offset
+        peaks -= offset
 
-        # Make a flat platform in the centre
-        rows = self.height_field_size[0]
-        cols = self.height_field_size[1]
-        midpoints = peaks.reshape(self.height_field_size)[
-            int(rows / 2 - 1) : int(rows / 2 + 2), int(cols / 2 - 1) : int(cols / 2 + 2)
-        ]
-        midpoints[:] = midpoints.mean()
-
-        # bins = np.linspace(peaks.min(), peaks.max(), self.digitize_bins)
-        # digitized = bins[np.digitize(peaks, bins) - 1]
-        return peaks - peaks.min()
+        return peaks

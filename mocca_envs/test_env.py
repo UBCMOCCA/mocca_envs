@@ -68,7 +68,7 @@ while True:
     # base_pose_action = to_normalized(base_angles)[[0,1,2,3,6, 7,8,9,10,13]]
     # obs, reward, done, info = env.step(base_pose_action)
 
-    obs, reward, done, info = env.step(env.action_space.sample())
+    obs, reward, done, info = env.step(env.action_space.sample() * 0)
 
     if done:
         env.reset()
