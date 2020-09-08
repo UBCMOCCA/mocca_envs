@@ -127,10 +127,15 @@ class BodyPart:
         if self.bodyPartIndex == -1:
             (vx, vy, vz), _ = self._p.getBaseVelocity(self.bodies[self.bodyIndex])
         else:
-            (x, y, z), (a, b, c, d), _, _, _, _, (vx, vy, vz), (
-                vr,
-                vp,
-                vy,
+            (
+                (x, y, z),
+                (a, b, c, d),
+                _,
+                _,
+                _,
+                _,
+                (vx, vy, vz),
+                (vr, vp, vy,),
             ) = self._p.getLinkState(
                 self.bodies[self.bodyIndex], self.bodyPartIndex, computeLinkVelocity=1
             )

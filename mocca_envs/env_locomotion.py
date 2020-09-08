@@ -14,7 +14,6 @@ from mocca_envs.bullet_objects import (
     HeightField,
     MonkeyBar,
 )
-from mocca_envs.misc_utils import generate_fractal_noise_2d
 from mocca_envs.robots import Child3D, Laikago, Mike, Monkey3D, Walker3D
 
 
@@ -949,6 +948,10 @@ class Walker3DPlannerEnv(EnvBase):
     robot_random_start = True
     robot_init_position = [-15.5, -15.5, 1.32]
     robot_init_velocity = None
+    robot_torso_name = "waist"
+
+    termination_height = 0.5
+    action_scale = 2
 
     # base controller
     base_lookahead = 2
@@ -958,16 +961,17 @@ class Walker3DPlannerEnv(EnvBase):
     def __init__(self, **kwargs):
         super().__init__(self.robot_class, remove_ground=True, **kwargs)
         self.robot.set_base_pose(pose="running_start")
+        self.robot_torso_id = self.robot.parts[self.robot_torso_name].bodyPartIndex
 
         self.query_base_controller = self.load_base_controller("MikePlannerBase.pt")
 
         self.robot_obs_dim = self.robot.observation_space.shape[0]
-        high = np.inf * np.ones(self.robot_obs_dim)
+        # target xy
+        high = np.inf * np.ones(self.robot_obs_dim + 2)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
-        high = np.inf * np.ones(
-            (self.base_lookahead + self.base_lookbehind) * self.base_step_param_dim
-        )
+        N = self.base_lookahead + self.base_lookbehind
+        high = np.inf * np.ones(N * self.base_step_param_dim)
         self.action_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
     def create_terrain(self):
@@ -985,7 +989,7 @@ class Walker3DPlannerEnv(EnvBase):
     def load_base_controller(self, filename):
         dir = os.path.dirname(os.path.realpath(__file__))
         model_path = os.path.join(dir, "data", "controllers", filename)
-        actor_critic = torch.load(model_path).to("cpu")
+        actor_critic = torch.load(model_path, map_location="cpu")
 
         def inference(o):
             with torch.no_grad():
@@ -996,7 +1000,10 @@ class Walker3DPlannerEnv(EnvBase):
         return inference
 
     def get_observation_component(self):
-        return (self.robot_state,)
+        softsign = lambda a: a / (1 + abs(a))
+        sin_ = self.distance_to_target * math.sin(self.angle_to_target)
+        cos_ = self.distance_to_target * math.cos(self.angle_to_target)
+        return (self.robot_state, [softsign(sin_), softsign(cos_)])
 
     def reset(self):
         self.timestep = 0
@@ -1008,36 +1015,77 @@ class Walker3DPlannerEnv(EnvBase):
             vel=self.robot_init_velocity,
         )
 
-        self.target_xy = self.np_random.uniform(-16, 16, 2)
-        z = self.terrain.get_height_at(*self.target_xy)
-        self.target.set_position((*self.target_xy, z))
+        xy = self.np_random.uniform(-16, 16, 2)
+        z = self.terrain.get_height_at(*xy)
+        self.walk_target = np.array((*xy, z), dtype=np.float32)
+        self.target.set_position(self.walk_target)
 
         # Reset camera
         if self.is_rendered or self.use_egl:
             self.camera.lookat(self.robot.body_xyz)
 
+        # Order is important because walk_target is set up above
+        self.calc_potential()
         state = np.concatenate(self.get_observation_component())
         return state
 
     def step(self, action):
         self.timestep += 1
 
-        base_obs = np.concatenate((self.robot_state, action))
+        # N = self.base_lookbehind + self.base_lookahead
+        # if not hasattr(self, "temp_steps"):
+        #     self.temp_steps = [VSphere(self._p, 0.15) for _ in range(N)]
+        #
+        # xyzs = action.reshape((N, self.base_step_param_dim))[:, :3]
+        # a = -self.robot.body_rpy[2]
+        # M = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+        # for s, p in zip(self.temp_steps, xyzs):
+        #     y, x = M @ p[0:2]
+        #     s.set_position(self.robot.body_xyz + [x, y, p[2]])
+
+        # if not hasattr(self, "cam_lookat"):
+        #     self.cam_lookat = VSphere(self._p, 0.15)
+        #
+        # self.cam_lookat.set_position(self.camera._cam_target)
+
+        base_obs = np.concatenate((self.robot_state, action * self.action_scale))
         base_value, base_action = self.query_base_controller(base_obs)
 
         self.robot.apply_action(base_action)
         self.scene.global_step()
 
         self.robot_state = self.robot.calc_state()
+        self.calc_base_reward()
 
         state = np.concatenate(self.get_observation_component())
-        reward = 0
+        reward = self.progress + math.log(max(1, float(base_value))) / 3
 
         if self.is_rendered or self.use_egl:
             self._handle_keyboard()
-            self.camera.track(pos=self.robot.body_xyz)
+            self.camera.track(self.robot.body_xyz)
 
+        self.done = (
+            self.done
+            or self.robot_state[0] < self.termination_height  # relative torso height
+            or self.robot.body_xyz[2] < -5  # free falling off terrain
+            or self._p.getContactPoints(
+                bodyA=self.robot.id, linkIndexA=self.robot_torso_id
+            )  # torso contact ground
+        )
         return state, reward, self.done, {}
+
+    def calc_base_reward(self):
+        old_linear_potential = self.linear_potential
+        self.calc_potential()
+        linear_progress = self.linear_potential - old_linear_potential
+        self.progress = linear_progress
+
+    def calc_potential(self):
+        delta = self.walk_target - self.robot.body_xyz
+        theta = np.arctan2(delta[1], delta[0])
+        self.angle_to_target = theta - self.robot.body_rpy[2]
+        self.distance_to_target = (delta[0] ** 2 + delta[1] ** 2) ** (1 / 2)
+        self.linear_potential = -self.distance_to_target / self.scene.dt
 
 
 class MikePlannerEnv(Walker3DPlannerEnv):

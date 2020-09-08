@@ -16,13 +16,14 @@ class EnvBase(gym.Env):
     def __init__(
         self,
         robot_class,
+        robot_kwargs={},
         render=False,
         remove_ground=False,
         use_egl=False,
         use_ffmpeg=False,
         **kwargs
     ):
-        self.robot_kwargs = kwargs
+        self.robot_kwargs = robot_kwargs
         self.robot_class = robot_class
 
         self.is_rendered = render
