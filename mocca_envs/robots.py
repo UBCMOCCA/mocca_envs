@@ -43,7 +43,7 @@ class WalkerBase:
 
         # Use pybullet's array version, should be faster
         j = self._p.getJointStates(self.id, self.ordered_joint_ids)
-        j = np.array(j)[:, 0:2].astype(np.float32)
+        j = np.array(list(map(lambda x: x[0:2], j))).astype(np.float32)
 
         self.joint_angles = j[:, 0]
         self.normalized_joint_angles = self.to_normalized(self.joint_angles)
@@ -111,6 +111,13 @@ class WalkerBase:
         self.feet = [self.parts[f] for f in self.foot_names]
         self.feet_contact = np.zeros(len(self.foot_names), dtype=np.float32)
         self.feet_xyz = np.zeros((len(self.foot_names), 3))
+
+        self.base_joint_angles = np.zeros(self.action_dim)
+        self.base_joint_speeds = np.zeros(self.action_dim)
+        self.base_position = np.array([0, 0, 0])
+        self.base_orientation = np.array([0, 0, 0, 1])
+        self.base_velocity = np.array([0, 0, 0])
+        self.base_angular_velocity = np.array([0, 0, 0])
 
     def make_robot_utils(self):
         # utility functions for converting from normalized to radians and vice versa
@@ -188,7 +195,7 @@ class WalkerBase:
 
         pos = pos or self.base_position
         quat = quat or self.base_orientation
-        self._p.resetBasePositionAndOrientation(self.id, posObj=pos, ornObj=quat)
+        self.robot_body.reset_pose(pos, quat)
 
         vel = vel or self.base_velocity
         ang_vel = ang_vel or self.base_angular_velocity
@@ -340,11 +347,24 @@ class Walker2D(WalkerBase):
         "foot_left_joint": 50,
     }
 
-    def load_robot_model(self):
-        flags = self._p.MJCF_COLORS_FROM_FILE
-        model_path = os.path.join(current_dir, "data", "robots", "walker2d.xml")
-        root_link_name = "pelvis"
-        super(Walker2D, self).load_robot_model(model_path, flags, root_link_name)
+    def set_base_pose(self, pose=None):
+        self.base_joint_angles[:] = 0  # reset
+        self.base_orientation = np.array([0, 0, 0, 1])
+
+    def load_robot_model(self, model_path=None, flags=None, root_link_name=None):
+        # Need to call this first to parse body
+        flags = flags or self._p.MJCF_COLORS_FROM_FILE
+        model_path = model_path or os.path.join(
+            current_dir, "data", "robots", "walker2d.xml"
+        )
+        super().load_robot_model(model_path, flags, "pelvis")
+
+        # Need this to set pose and mirroring
+        self._right_joint_indices = np.array([1, 2, 3], dtype=np.int64)
+        self._left_joint_indices = np.array([4, 5, 6], dtype=np.int64)
+        self._negation_joint_indices = np.array([], dtype=np.int64)
+        self._rl = np.concatenate((self._right_joint_indices, self._left_joint_indices))
+        self._lr = np.concatenate((self._left_joint_indices, self._right_joint_indices))
 
 
 class Crab2D(WalkerBase):
