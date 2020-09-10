@@ -14,7 +14,7 @@ from mocca_envs.bullet_objects import (
     HeightField,
     MonkeyBar,
 )
-from mocca_envs.robots import Child3D, Laikago, Mike, Monkey3D, Walker3D
+from mocca_envs.robots import Child3D, Laikago, Mike, Monkey3D, Walker2D, Walker3D
 
 
 Colors = {
@@ -272,6 +272,33 @@ class Walker3DCustomEnv(EnvBase):
             right_action_indices,
             left_action_indices,
         )
+
+
+class Walker2DCustomEnv(Walker3DCustomEnv):
+    robot_class = Walker2D
+    robot_init_position = [0, 0, 2]
+
+    def reset(self):
+
+        if self.state_id >= 0:
+            self._p.restoreState(self.state_id)
+
+        super().reset()
+
+        if not self.state_id >= 0:
+            self.state_id = self._p.saveState()
+
+        state = np.concatenate((self.robot_state, [0], [0]))
+        return state
+
+    def step(self, action):
+        state, reward, self.done, info = super().step(action)
+
+        self.done = False
+        if self.is_rendered or self.use_egl:
+            self._handle_keyboard()
+
+        return state, reward, self.done, info
 
 
 class Child3DCustomEnv(Walker3DCustomEnv):
