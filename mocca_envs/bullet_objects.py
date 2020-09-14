@@ -280,7 +280,7 @@ class HeightField:
         self.shape_id = -1
         self.n_steps = 100
 
-        texture_file = os.path.join(current_dir, "data", "misc", "checker_blue2.png")
+        texture_file = os.path.join(current_dir, "data", "misc", "checker_blue.png")
         self.texture_id = self._p.loadTexture(texture_file)
         self.texture_scaling = 10
 
