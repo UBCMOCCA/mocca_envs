@@ -1129,13 +1129,13 @@ class Monkey3DCustomEnv(EnvBase):
     initial_height = 20
     bar_length = 5
 
-    def __init__(self, render=False):
+    def __init__(self, **kwargs):
         # Need these before calling constructor
         # because they are used in self.create_terrain()
         self.step_radius = 0.015
         self.rendered_step_count = 4
 
-        super().__init__(Monkey3D, render)
+        super().__init__(Monkey3D, **kwargs)
         self.robot.set_base_pose(pose="monkey_start")
         self.robot.base_position = (0, 0, self.initial_height)
         self.robot.base_velocity = np.array([3, 0, -1])
