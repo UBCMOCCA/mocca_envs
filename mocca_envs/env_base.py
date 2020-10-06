@@ -194,6 +194,9 @@ class EnvBase(gym.Env):
         elif keys.get(ord(" ")) == RELEASED:
             while True:
                 keys = self._p.getKeyboardEvents()
+                self._p.configureDebugVisualizer(
+                    self._p.COV_ENABLE_SINGLE_STEP_RENDERING, 1
+                )
                 if keys.get(ord(" ")) == RELEASED:
                     break
         else:
