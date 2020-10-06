@@ -394,7 +394,10 @@ class HeightField:
 
         if self.rendered:
             self._p.changeVisualShape(
-                self.id, -1, rgbaColor=[1, 1, 1, 1], specularColor=[0, 0, 0],
+                self.id,
+                -1,
+                rgbaColor=[1, 1, 1, 1],
+                specularColor=[0, 0, 0],
             )
 
     def get_random_height_field(self, rng=None):

@@ -18,14 +18,14 @@ class BulletClient(object):
     def __init__(self, connection_mode=None, use_ffmpeg=False, fps=60):
         """Creates a Bullet client and connects to a simulation.
 
-    Args:
-      connection_mode:
-        `None` connects to an existing simulation or, if fails, creates a
-          new headless simulation,
-        `pybullet.GUI` creates a new simulation with a GUI,
-        `pybullet.DIRECT` creates a headless simulation,
-        `pybullet.SHARED_MEMORY` connects to an existing simulation.
-    """
+        Args:
+          connection_mode:
+            `None` connects to an existing simulation or, if fails, creates a
+              new headless simulation,
+            `pybullet.GUI` creates a new simulation with a GUI,
+            `pybullet.DIRECT` creates a headless simulation,
+            `pybullet.SHARED_MEMORY` connects to an existing simulation.
+        """
         self._shapes = {}
 
         if connection_mode is None:
@@ -135,7 +135,11 @@ class BodyPart:
                 _,
                 _,
                 (vx, vy, vz),
-                (vr, vp, vy,),
+                (
+                    vr,
+                    vp,
+                    vy,
+                ),
             ) = self._p.getLinkState(
                 self.bodies[self.bodyIndex], self.bodyPartIndex, computeLinkVelocity=1
             )
@@ -388,8 +392,8 @@ class Camera:
         self.use_egl = use_egl
 
         self._fps = fps
-        self._target_period = 1 / (fps * 1.02)
-        self._counter = time.perf_counter()
+        self._target_period = 1 / fps
+        self._last_frame_time = time.perf_counter()
 
     def track(self, pos, smooth_coef=None):
 
@@ -444,8 +448,9 @@ class Camera:
         if self.use_egl:
             return
 
-        delta = time.perf_counter() - self._counter
-        time.sleep(max(self._target_period - delta, 0))
-        now = time.perf_counter()
-        self._fps = 0.99 * self._fps + 0.01 / (now - self._counter)
-        self._counter = now
+        time_spent = time.perf_counter() - self._last_frame_time
+        time.sleep(max(self._target_period - time_spent, 0))
+        self._last_frame_time = time.perf_counter()
+
+        # Need this otherwise mouse control will be laggy when rendered
+        self._p.configureDebugVisualizer(self._p.COV_ENABLE_SINGLE_STEP_RENDERING, 1)
