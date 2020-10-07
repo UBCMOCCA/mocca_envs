@@ -192,11 +192,11 @@ class EnvBase(gym.Env):
                 self._p.STATE_LOGGING_VIDEO_MP4, "{}.mp4".format(now)
             )
         elif keys.get(ord(" ")) == RELEASED:
+            self._p.configureDebugVisualizer(
+                self._p.COV_ENABLE_SINGLE_STEP_RENDERING, 0
+            )
             while True:
                 keys = self._p.getKeyboardEvents()
-                self._p.configureDebugVisualizer(
-                    self._p.COV_ENABLE_SINGLE_STEP_RENDERING, 1
-                )
                 if keys.get(ord(" ")) == RELEASED:
                     break
         else:
