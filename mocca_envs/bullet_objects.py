@@ -345,6 +345,11 @@ class HeightField:
         self.id = -1
         self.shape_id = -1
 
+        texture_file = os.path.join(
+            current_dir, "data", "objects", "misc", "checker_blue.png"
+        )
+        self.texture_id = self._p.loadTexture(texture_file)
+
     def get_height_at(self, x, y):
         # x, y are in global coordinate, return z using height field
         ox, oy = np.array(self.data_size) / self.scale / 2
@@ -396,6 +401,7 @@ class HeightField:
             self._p.changeVisualShape(
                 self.id,
                 -1,
+                textureUniqueId=self.texture_id,
                 rgbaColor=[1, 1, 1, 1],
                 specularColor=[0, 0, 0],
             )

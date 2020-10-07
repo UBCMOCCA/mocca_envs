@@ -981,6 +981,7 @@ class Walker3DPlannerEnv(EnvBase):
     action_scale = 2
 
     # base controller
+    base_filename = "Walker3DPlannerBase.pt"
     base_lookahead = 2
     base_lookbehind = 1
     base_step_param_dim = 5
@@ -990,7 +991,7 @@ class Walker3DPlannerEnv(EnvBase):
         self.robot.set_base_pose(pose="running_start")
         self.robot_torso_id = self.robot.parts[self.robot_torso_name].bodyPartIndex
 
-        self.query_base_controller = self.load_base_controller("MikePlannerBase.pt")
+        self.query_base_controller = self.load_base_controller(self.base_filename)
 
         self.robot_obs_dim = self.robot.observation_space.shape[0]
         # target xy
@@ -1118,6 +1119,7 @@ class Walker3DPlannerEnv(EnvBase):
 class MikePlannerEnv(Walker3DPlannerEnv):
     robot_class = Mike
     robot_init_position = [-15.5, -15.5, 1.05]
+    base_filename = "MikePlannerBase.pt"
 
 
 class Monkey3DCustomEnv(EnvBase):

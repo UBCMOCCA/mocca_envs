@@ -355,8 +355,8 @@ class World:
 
 class StadiumScene(Scene):
 
-    stadium_halflen = 105 * 0.25  # FOOBALL_FIELD_HALFLEN
-    stadium_halfwidth = 50 * 0.25  # FOOBALL_FIELD_HALFWID
+    stadium_halflen = 105 * 0.25
+    stadium_halfwidth = 50 * 0.25
 
     def initialize(self, remove_ground=False):
         current_dir = os.path.dirname(__file__)
