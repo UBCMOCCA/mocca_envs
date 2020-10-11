@@ -433,3 +433,4 @@ class Camera:
         now = time.perf_counter()
         self._fps = 0.99 * self._fps + 0.01 / (now - self._counter)
         self._counter = now
+        self._p.configureDebugVisualizer(self._p.COV_ENABLE_SINGLE_STEP_RENDERING, 1)

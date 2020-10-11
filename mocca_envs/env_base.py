@@ -143,6 +143,9 @@ class EnvBase(gym.Env):
         elif ord("r") in keys and keys[ord("r")] == self._p.KEY_WAS_RELEASED:
             self.done = True
         elif ord("z") in keys and keys[ord("z")] == self._p.KEY_WAS_RELEASED:
+            self._p.configureDebugVisualizer(
+                self._p.COV_ENABLE_SINGLE_STEP_RENDERING, 0
+            )
             while True:
                 keys = self._p.getKeyboardEvents()
                 if ord("z") in keys and keys[ord("z")] == self._p.KEY_WAS_RELEASED:
