@@ -416,6 +416,7 @@ class Camera:
         self._p.resetDebugVisualizerCamera(
             self._cam_dist, self._cam_yaw, self._cam_pitch, pos
         )
+        self._p.configureDebugVisualizer(self._p.COV_ENABLE_SINGLE_STEP_RENDERING, 0)
 
     def dump_rgb_array(self):
 

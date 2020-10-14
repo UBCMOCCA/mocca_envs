@@ -38,6 +38,8 @@ class EnvBase(gym.Env):
 
         self.metadata["video.frames_per_second"] = int(1 / self.control_step)
 
+        self.keypress_status = {}
+
         self.seed()
         self.initialize_scene_and_robot()
 
@@ -168,25 +170,96 @@ class EnvBase(gym.Env):
     def step(self, a):
         raise NotImplementedError
 
+    def _handle_mouse(self):
+        events = self._p.getMouseEvents()
+        for ev in events:
+            if (
+                ev[0] == 2
+                and ev[3] == 0
+                and ev[4] == self._p.KEY_WAS_RELEASED
+                and self.keypress_status.get(self._p.B3G_SHIFT)
+            ):
+                # (is mouse click) and (is left click)
+
+                (
+                    width,
+                    height,
+                    _,
+                    proj,
+                    _,
+                    _,
+                    _,
+                    _,
+                    yaw,
+                    pitch,
+                    dist,
+                    target,
+                ) = self._p.getDebugVisualizerCamera()
+
+                pitch *= np.pi / 180
+                yaw *= np.pi / 180
+
+                R = np.reshape(
+                    self._p.getMatrixFromQuaternion(
+                        self._p.getQuaternionFromEuler([pitch, 0, yaw])
+                    ),
+                    (3, 3),
+                )
+
+                # Can't use the ones returned by pybullet API, because they are wrong
+                camera_up = np.matmul(R, [0, 0, 1])
+                camera_forward = np.matmul(R, [0, 1, 0])
+                camera_right = np.matmul(R, [1, 0, 0])
+
+                x = ev[1] / width
+                y = ev[2] / height
+
+                # calculate from field of view, which should be constant 90 degrees
+                # can also get from projection matrix
+                # d = 1 / np.tan(np.pi / 2 / 2)
+                d = proj[5]
+
+                A = target - camera_forward * dist
+                aspect = height / width
+
+                B = (
+                    A
+                    + camera_forward * d
+                    + (x - 0.5) * 2 * camera_right / aspect
+                    - (y - 0.5) * 2 * camera_up
+                )
+
+                # C = np.array(
+                #     [
+                #         (B[2] * A[0] - A[2] * B[0]) / (B[2] - A[2]),
+                #         (B[2] * A[1] - A[2] * B[1]) / (B[2] - A[2]),
+                #         0,
+                #     ]
+                # )
+
+                if hasattr(self, "target"):
+                    for result in self._p.rayTest(A, 2 * dist * (B - A) + A):
+                        self.target.set_position(result[3])
+                        break
+
     def _handle_keyboard(self, keys=None, callback=None):
         if keys is None:
             keys = self._p.getKeyboardEvents()
 
         RELEASED = self._p.KEY_WAS_RELEASED
+        self.keypress_status = keys
 
         # keys is a dict, so need to check key exists
         if keys.get(ord("d")) == RELEASED:
             self.debug = True if not hasattr(self, "debug") else not self.debug
         elif keys.get(ord("r")) == RELEASED:
             self.done = True
-        elif keys.get(65280) == RELEASED:
-            # F1
+        elif keys.get(self._p.B3G_F1) == RELEASED:
             from imageio import imwrite
 
             now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
             imwrite("{}.png".format(now), self.camera.dump_rgb_array())
-        elif keys.get(65281) == RELEASED:
-            # F2
+        elif keys.get(pybullet.B3G_F2) == RELEASED:
             now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
             self._p.startStateLogging(
                 self._p.STATE_LOGGING_VIDEO_MP4, "{}.mp4".format(now)

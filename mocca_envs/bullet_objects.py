@@ -357,7 +357,7 @@ class HeightField:
         iy = int((y + oy) * self.scale)
         return self.data2d[iy, ix]
 
-    def reload(self, data=None, rng=None):
+    def reload(self, data=None, rng=None, scale=1.0):
         if self.id != -1:
             self._p.removeBody(self.id)
 
@@ -372,6 +372,7 @@ class HeightField:
         else:
             self.data = self.get_random_height_field(rng)
 
+        self.data *= scale
         self.data2d = self.data.reshape(self.data_size)
 
         s = 1 / self.scale
@@ -385,7 +386,9 @@ class HeightField:
             replaceHeightfieldIndex=self.shape_id,
         )
 
-        h = (self.data.max() + self.data.min()) / 2
+        self.max_z = self.data.max()
+        self.min_z = self.data.min()
+        h = (self.max_z + self.min_z) / 2
         self.id = self._p.createMultiBody(0, self.shape_id, -1, (0, 0, h))
 
         self._p.changeDynamics(

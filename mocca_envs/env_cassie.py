@@ -329,11 +329,11 @@ class CassieEnv(EnvBase):
         rsi=True,
     ):
         """
-            :params render: enables GUI rendering
-            :params planar: constrains the robot movement to a 2D plane (rather than the full 3D motion)
-            :params power_coef: multiplying factor that determines the torque limit
-            :params residual_control: if set to `True`, will add `self.base_angles` to the action
-            :params rsi: if set to `True`, will do Random State Initialization [https://www.cs.ubc.ca/~van/papers/2018-TOG-deepMimic/]
+        :params render: enables GUI rendering
+        :params planar: constrains the robot movement to a 2D plane (rather than the full 3D motion)
+        :params power_coef: multiplying factor that determines the torque limit
+        :params residual_control: if set to `True`, will add `self.base_angles` to the action
+        :params rsi: if set to `True`, will do Random State Initialization [https://www.cs.ubc.ca/~van/papers/2018-TOG-deepMimic/]
         """
         self.planar = planar
         self.residual_control = residual_control
