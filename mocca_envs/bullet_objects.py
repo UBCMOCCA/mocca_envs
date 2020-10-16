@@ -336,46 +336,82 @@ class Bench:
 
 
 class HeightField:
-    def __init__(self, bc, data_size, scale=1, rendered=False):
+    def __init__(
+        self,
+        bc,
+        size=None,
+        xy_scale=1,
+        z_scale=1,
+        rendered=False,
+        rng=None,
+        filename=None,
+    ):
         self._p = bc
-        self.data_size = data_size
-        self.scale = scale
+        self.data_size = size
+        self.xy_scale = xy_scale
+        self.z_scale = z_scale
         self.rendered = rendered
+        self.rng = rng or np.random
 
         self.id = -1
         self.shape_id = -1
 
-        texture_file = os.path.join(
-            current_dir, "data", "objects", "misc", "checker_blue.png"
-        )
+        base_path = (current_dir, "data", "objects", "misc")
+        texture_file = os.path.join(*base_path, "checker_blue.png")
         self.texture_id = self._p.loadTexture(texture_file)
 
-    def get_height_at(self, x, y):
-        # x, y are in global coordinate, return z using height field
-        ox, oy = np.array(self.data_size) / self.scale / 2
-        ix = int((x + ox) * self.scale)
-        iy = int((y + oy) * self.scale)
-        return self.data2d[iy, ix]
+        if filename is not None:
+            self.reload(data=filename)
+        else:
+            self.reload()
 
-    def reload(self, data=None, rng=None, scale=1.0):
+    def get_height_and_tilt_at(self, x, y):
+        # x, y are in global coordinate, return z using height field
+        max_ix = self.data2d.shape[1] - 1
+        max_iy = self.data2d.shape[0] - 1
+
+        ox, oy = np.array(self.data_size) / self.xy_scale / 2
+        ix = ((x + ox) * self.xy_scale).astype(np.int32)
+        iy = ((y + oy) * self.xy_scale).astype(np.int32)
+        not_in_bound = ~((0 < ix) * (ix <= max_ix) * (0 < iy) * (iy <= max_iy))
+        height = self.data2d[np.clip(iy, 0, max_iy), np.clip(ix, 0, max_ix)]
+        height[not_in_bound] = -10
+
+        length = 2 / self.xy_scale
+        x_tilt = np.arctan2(
+            self.data2d[np.clip(iy + 1, 0, max_iy), ix]
+            - self.data2d[np.clip(iy - 1, 0, max_iy), ix],
+            length,
+        )
+        y_tilt = -np.arctan2(
+            self.data2d[iy, np.clip(ix + 1, 0, max_ix)]
+            - self.data2d[iy, np.clip(ix - 1, 0, max_ix)],
+            length,
+        )
+
+        return height, x_tilt, y_tilt
+
+    def reload(self, data=None):
         if self.id != -1:
             self._p.removeBody(self.id)
-
-        rows = self.data_size[0]
-        cols = self.data_size[1]
 
         if type(data) == str:
             file = os.path.join(current_dir, "data", "objects", "misc", data)
             self.data = np.load(file)
+            size = int(len(self.data) ** (1 / 2))
+            self.data_size = (size, size)
         elif type(data) == np.ndarray:
             self.data = data
         else:
-            self.data = self.get_random_height_field(rng)
+            self.data = self.get_random_height_field(self.rng)
 
-        self.data *= scale
+        self.data *= self.z_scale
         self.data2d = self.data.reshape(self.data_size)
 
-        s = 1 / self.scale
+        rows = self.data2d.shape[0]
+        cols = self.data2d.shape[1]
+
+        s = 1 / self.xy_scale
         self.shape_id = self._p.createCollisionShape(
             shapeType=self._p.GEOM_HEIGHTFIELD,
             meshScale=[s, s, 1],
@@ -418,8 +454,8 @@ class HeightField:
         scale = rng.uniform(0.1, 3, size=num_peaks)[:, None, None]
 
         # peak positions
-        a = self.data_size[0] / self.scale / 2
-        b = self.data_size[1] / self.scale / 2
+        a = self.data_size[0] / self.xy_scale / 2
+        b = self.data_size[1] / self.xy_scale / 2
         x0 = rng.uniform(-a, a, size=num_peaks)[:, None, None]
         y0 = rng.uniform(-b, b, size=num_peaks)[:, None, None]
 
@@ -437,12 +473,13 @@ class HeightField:
         peaks = scale * np.exp(-((x - x0) ** xp / xs + (y - y0) ** yp / ys))
 
         # Make into one height field
-        peaks = np.sum(peaks, axis=0).flatten() / self.scale
+        peaks = np.sum(peaks, axis=0).flatten() / self.xy_scale
         flats = generate_fractal_noise_2d(self.data_size, (4, 4), 2, 1, rng).flatten()
         peaks = peaks + flats
 
         # Make a flat platform
-        platform = peaks.reshape(self.data_size)[0:5, 0:5]
+        size = int(3 * self.xy_scale)
+        platform = peaks.reshape(self.data_size)[0:size, 0:size]
         offset = platform.mean()
         platform[:] = offset
         peaks -= offset

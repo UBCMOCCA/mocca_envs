@@ -349,6 +349,7 @@ class Walker3DStepperEnv(EnvBase):
         # Fix-ordered Curriculum
         self.curriculum = 0
         self.max_curriculum = 9
+        self.advance_threshold = 12  # steps_reached
 
         # Robot settings
         N = self.max_curriculum + 1
@@ -547,7 +548,9 @@ class Walker3DStepperEnv(EnvBase):
             )
 
         info = (
-            {"steps_reached": self.next_step_index}
+            {
+                "curriculum_metric": self.next_step_index,
+            }
             if self.done or self.timestep == self.max_timestep - 1
             else {}
         )
@@ -970,6 +973,7 @@ class Walker3DPlannerEnv(EnvBase):
     control_step = 1 / 60
     llc_frame_skip = 1
     sim_frame_skip = 4
+    max_timestep = 1000
 
     robot_class = Walker3D
     robot_random_start = False
@@ -979,8 +983,9 @@ class Walker3DPlannerEnv(EnvBase):
     robot_torso_name = "waist"
 
     termination_height = 0.5
-    paths_to_plan = 4
-    steps_to_plan = 4
+    paths_to_plan = 1
+    # Actually N - 1, since last step of one path is the first step of next path
+    steps_to_plan = 5
 
     # base controller
     base_filename = "Walker3DPlannerBase.pt"
@@ -989,8 +994,9 @@ class Walker3DPlannerEnv(EnvBase):
     base_step_param_dim = 5
 
     def __init__(self, **kwargs):
-        self.curriculum = 1
+        self.curriculum = 6
         self.max_curriculum = 9
+        self.advance_threshold = -0.3  # negative linear potential
         self._prev_curriculum = self.curriculum
 
         super().__init__(self.robot_class, remove_ground=True, **kwargs)
@@ -1001,8 +1007,8 @@ class Walker3DPlannerEnv(EnvBase):
         N = self.steps_to_plan
 
         self.robot_obs_dim = self.robot.observation_space.shape[0]
-        # target direction (xy), (P * N * (xyz + normal)
-        high = np.inf * np.ones(self.robot_obs_dim + 2 + P * N * 6)
+        # target direction (xy), (P * N * (xyz + base_step_param_dim))
+        high = np.inf * np.ones(self.robot_obs_dim + 2 + P * N * 5)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
         # Probability of choosing one path to take
@@ -1010,20 +1016,29 @@ class Walker3DPlannerEnv(EnvBase):
         self.action_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
     def create_terrain(self):
-        if not hasattr(self, "terrain"):
-            # TODO: read size and scale from file, when specified
-            rendered = self.is_rendered or self.use_egl
-            size = (128, 128)
-            scale = 4
-            self.terrain = HeightField(self._p, size, scale, rendered)
-            self.target = VSphere(self._p, radius=0.15, pos=None)
+        rendered = self.is_rendered or self.use_egl
+        if hasattr(self, "terrain"):
+            self._p.removeBody(self.terrain.id)
+            if rendered:
+                self._p.removeBody(self.target.id)
+
+        filename = "height_field_map_1.npy"
+        scale = 16
 
         # Curriculum cannot be 0, otherwise raycast doesn't work
         self.curriculum = max(min(self.curriculum, self.max_curriculum), 1)
         ratio = self.curriculum / self.max_curriculum
 
-        filename = "height_field_map_0.npy"
-        self.terrain.reload(data=filename, rng=self.np_random, scale=ratio)
+        self.terrain = HeightField(
+            self._p,
+            xy_scale=scale,
+            z_scale=ratio,
+            rendered=rendered,
+            filename=filename,
+            rng=self.np_random,
+        )
+        if rendered:
+            self.target = VSphere(self._p, radius=0.15, pos=None)
 
     def load_base_controller(self, filename):
         dir = os.path.dirname(os.path.realpath(__file__))
@@ -1038,7 +1053,7 @@ class Walker3DPlannerEnv(EnvBase):
 
         return inference
 
-    def sample_paths(self, x0=None, y0=None):
+    def sample_paths(self, x0=None, y0=None, yaw0=None):
         """Generate P paths of N steps in world coordinate.
         Each step has 6 parameters for 3D translation and 3D normal vector.
         """
@@ -1052,64 +1067,32 @@ class Walker3DPlannerEnv(EnvBase):
 
         x0 = self.robot.body_xyz[0] if x0 is None else x0
         y0 = self.robot.body_xyz[1] if y0 is None else y0
-        yaw0 = self.robot.body_rpy[2]
+        yaw0 = self.robot.body_rpy[2] if yaw0 is None else yaw0
 
-        terrain_max_z = self.terrain.max_z * np.ones(N)
-        terrain_min_z = self.terrain.min_z * np.ones(N)
+        dr = rng.uniform(*dist_range, size=(P, N))
+        dphi = rng.uniform(*yaw_range, size=(P, N))
 
-        candidate_paths = []
+        # First step needs to be under
+        dr[:, 0] = 0
+        dphi[:, 0] = 0
 
-        # Need to make sure this terminates at some point...
-        max_num_retries = P * 5
-        retry_attempts = 0
+        phi = np.cumsum(dphi, axis=-1) + yaw0
+        x = np.cumsum(dr * np.cos(phi), axis=-1) + x0
+        y = np.cumsum(dr * np.sin(phi), axis=-1) + y0
 
-        while len(candidate_paths) < P and retry_attempts < max_num_retries:
-            dr = rng.uniform(*dist_range, size=N)
-            dphi = rng.uniform(*yaw_range, size=N)
+        z, x_tilt, y_tilt = self.terrain.get_height_and_tilt_at(x, y)
 
-            dr[0] = 0  # First step needs to be under
-
-            phi = np.cumsum(dphi) + yaw0
-            dx = dr * np.cos(phi)
-            dy = dr * np.sin(phi)
-
-            x = np.cumsum(dx) + x0
-            y = np.cumsum(dy) + y0
-
-            ray_from = np.stack((x, y, terrain_max_z), axis=-1)
-            ray_to = np.stack((x, y, terrain_min_z), axis=-1)
-            raycast_results = self._p.rayTestBatch(
-                ray_from,
-                ray_to,
-                numThreads=N,
-            )
-
-            # TODO: How to handle multiple hits?
-            results = np.array(
-                list(map(lambda x: (x[0], *x[3], *x[4]), raycast_results))
-            )
-            if (results[:, 0] != -1).all():
-                candidate_paths.append(results[:, 1:])
-            else:
-                retry_attempts += 1
-
-            # if not hasattr(self, "raycast_lines"):
-            #     self.raycast_lines = [self._p.addUserDebugLine(a, b) for a, b in zip(ray_from, ray_to)]
-            #     self.normal_lines = [self._p.addUserDebugLine(a, b) for a, b in zip(ray_from, ray_to)]
-            #
-            # for a, b, id in zip(ray_from, results[:, 1:4], self.raycast_lines):
-            #     self._p.addUserDebugLine(a, b, (1, 0, 0), 5, replaceItemUniqueId=id)
-            #
-            # for a, b, id in zip(results[:, 1:4], results[:, 4:], self.normal_lines):
-            #     self._p.addUserDebugLine(a, a + b, (0, 1, 0), 3, replaceItemUniqueId=id)
-
-        return np.array(candidate_paths), not retry_attempts < max_num_retries
-
-    def get_rotation_matrix(self, yaw):
-        col1 = np.array([math.cos(yaw), math.sin(yaw), 0])
-        col2 = np.array([-math.sin(yaw), math.cos(yaw), 0])
-        col3 = np.array([0, 0, 1])
-        return np.stack((col1, col2, col3), axis=-1)
+        # Tilts are global, need to convert to local
+        cos_phi = np.cos(phi)
+        sin_phi = np.sin(phi)
+        matrix = np.array(
+            [
+                [cos_phi, -sin_phi],
+                [sin_phi, cos_phi],
+            ]
+        )
+        x_tilt, y_tilt = (matrix * np.stack((x_tilt, y_tilt))[:, None]).sum(axis=1)
+        return np.stack((x, y, z, phi, x_tilt, y_tilt), axis=-1)
 
     def get_local_coordinates(self, targets):
         # targets should be (P, N, 6)
@@ -1122,22 +1105,14 @@ class Walker3DPlannerEnv(EnvBase):
         angle_to_targets = target_thetas - self.robot.body_rpy[2]
         distance_to_targets = np.linalg.norm(delta_positions[:, :, 0:2], axis=-1)
 
-        # Global to local has negative in front
-        rotation_matrix = self.get_rotation_matrix(-self.robot.body_rpy[2])[None, None]
-        surface_normals = targets[:, :, None, 3:]
-        local_normals = (rotation_matrix * surface_normals).sum(-1)
-
-        local_coordinates = np.stack(
+        local_parameters = np.stack(
             (
                 np.sin(angle_to_targets) * distance_to_targets,
                 np.cos(angle_to_targets) * distance_to_targets,
                 delta_positions[:, :, 2],
+                targets[:, :, 4],
+                targets[:, :, 5],
             ),
-            axis=-1,
-        )
-
-        local_parameters = np.concatenate(
-            (local_coordinates, local_normals),
             axis=-1,
         )
 
@@ -1169,10 +1144,7 @@ class Walker3DPlannerEnv(EnvBase):
                 )
             )
 
-        base_step_parameters = base_step_parameters.copy()
-        base_step_parameters[:, 3:] = 0
-
-        return base_step_parameters[:, 0:5]
+        return base_step_parameters
 
     def calc_next_step_index(self, path):
         feet_xy = self.robot.feet_xyz[:, 0:2]
@@ -1183,6 +1155,7 @@ class Walker3DPlannerEnv(EnvBase):
         if self.robot.feet_contact[closest_foot] and foot_distances[closest_foot] < 0.3:
             self.target_reached_count += 1
 
+            # stop_frame = 120 if self.next_step_index == self.steps_to_plan - 1 else 2
             if self.target_reached_count >= 2:
                 self.next_step_index += 1
                 self.target_reached_count = 0
@@ -1202,6 +1175,7 @@ class Walker3DPlannerEnv(EnvBase):
             self.create_terrain()
             self._prev_curriculum = self.curriculum
 
+        # self.robot.applied_gain = 1.2
         self.robot_state = self.robot.reset(
             random_pose=self.robot_random_start,
             pos=self.robot_init_position,
@@ -1210,7 +1184,7 @@ class Walker3DPlannerEnv(EnvBase):
 
         # Sample map smaller than actual terrain to prevent out of bound
         xy = self.np_random.uniform(-12, 12, 2)
-        z = self.terrain.get_height_at(*xy)
+        z, _, _ = self.terrain.get_height_and_tilt_at(xy[[0]], xy[[1]])
         self.walk_target = np.array((*xy, z))
 
         # Reset camera
@@ -1220,60 +1194,60 @@ class Walker3DPlannerEnv(EnvBase):
 
         self.calc_potential()  # walk_target must be set first
         # must be called before get observation
-        self.candidate_paths, _ = self.sample_paths()
+        self.candidate_paths = self.sample_paths()
         state = np.concatenate(self.get_observation_components())
         return state
 
     def step(self, action):
-        # N = self.base_lookbehind + self.base_lookahead
-        # if not hasattr(self, "temp_steps"):
-        #     self.temp_steps = [VSphere(self._p, 0.15) for _ in range(N)]
-        #
-        # xyzs = action.reshape((N, self.base_step_param_dim))[:, :3]
-        # a = -self.robot.body_rpy[2]
-        # M = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
-        # for s, p in zip(self.temp_steps, xyzs):
-        #     y, x = M @ p[0:2]
-        #     s.set_position(self.robot.body_xyz + [x, y, p[2]])
+        action_exp = np.exp(action)
+        action_prob = action_exp / action_exp.sum()
+        selected_action = np.random.choice(np.arange(self.paths_to_plan), p=action_prob)
+        selected_path = self.candidate_paths[selected_action]
 
-        # if not hasattr(self, "cam_lookat"):
-        #     self.cam_lookat = VSphere(self._p, 0.15)
-        #
-        # self.cam_lookat.set_position(self.camera._cam_target)
-
-        # action = np.random.rand(*action.shape)
-        selected_path = self.candidate_paths[np.argmax(action)]
-
-        self.next_step_index = 0 if self.timestep == 0 else 1
+        self.next_step_index = 0
         self.target_reached_count = 0
         reward = 0
 
-        while not self.done and self.next_step_index < self.steps_to_plan:
-            # if self.is_rendered and getattr(self, "debug", False):
-            #     if not hasattr(self, "raycast_lines"):
-            #         z = [0, 0, 0]
-            #         self.raycast_lines = [
-            #             self._p.addUserDebugLine(z, z) for _ in selected_path
-            #         ]
-            #         self.normal_lines = [
-            #             self._p.addUserDebugLine(z, z) for _ in selected_path
-            #         ]
+        while not self.done and self.next_step_index < self.steps_to_plan - 1:
+            # if not hasattr(self, "raycast_lines"):
+            #     z = [0, 0, 0]
+            #     self.raycast_lines = [
+            #         self._p.addUserDebugLine(z, z) for _ in selected_path
+            #     ]
+            #     self.normal_lines = [
+            #         self._p.addUserDebugLine(z, z) for _ in selected_path
+            #     ]
+            #     self.tilt_steps = [
+            #         Pillar(self._p, radius=0.25, pos=None)
+            #         for _ in range(self.steps_to_plan)
+            #     ]
+            #     for step in self.tilt_steps:
+            #         for link_id in range(-1, self._p.getNumJoints(step.id)):
+            #             self._p.setCollisionFilterGroupMask(step.id, link_id, 0, 0)
             #
+            # for params, id1, id2, step in zip(
+            #     selected_path, self.raycast_lines, self.normal_lines, self.tilt_steps
+            # ):
+            #     o = [0, 0, 1]
+            #     p = params[0:3]
+            #     q = self._p.getQuaternionFromEuler(params[[4, 5, 3]])
+            #     # q = self._p.getQuaternionFromEuler((*params[[4, 5]], 0))
             #
-            #     for p, id1, id2 in zip(selected_path, self.raycast_lines, self.normal_lines):
-            #         o = [0, 0, 3]
-            #         self._p.addUserDebugLine(
-            #             p[0:3] + o, p[0:3] - o, (1, 0, 0), 5, replaceItemUniqueId=id1
-            #         )
-            #         self._p.addUserDebugLine(
-            #             p[0:3], p[0:3] + p[3:6], (0, 0, 1), 5, replaceItemUniqueId=id2
-            #         )
+            #     m = np.reshape(
+            #         self._p.getMatrixFromQuaternion(
+            #             self._p.getQuaternionFromEuler((*params[[4, 5]], 0))
+            #         ),
+            #         (3, 3),
+            #     )
+            #     n = m @ [0, 0, 1]
             #
-            #
-            #     if not hasattr(self, "temp_target"):
-            #         self.temp_target = VSphere(self._p, radius=0.15, pos=None)
-            #
-            #     self.temp_target.set_position(selected_path[self.next_step_index, 0:3])
+            #     self._p.addUserDebugLine(
+            #         p + o, p - o, (1, 0, 0), 5, replaceItemUniqueId=id1
+            #     )
+            #     self._p.addUserDebugLine(
+            #         p, p + n, (0, 0, 1), 5, replaceItemUniqueId=id2
+            #     )
+            #     step.set_position(pos=p, quat=q)
 
             path_parameters = self.get_local_coordinates(selected_path)
             base_parameters = self.get_base_step_parameters(path_parameters)
@@ -1289,7 +1263,8 @@ class Walker3DPlannerEnv(EnvBase):
             self.calc_next_step_index(selected_path)
 
             self.calc_base_reward()
-            reward += self.progress + math.log(max(1, float(base_value))) / 3
+            # base_value * (1 - discount_factor)
+            reward += (self.progress + base_value * 0.01) / 2
 
             if self.is_rendered or self.use_egl:
                 self._handle_keyboard()
@@ -1298,9 +1273,10 @@ class Walker3DPlannerEnv(EnvBase):
 
             self.done = (
                 self.done
-                or self.robot_state[0]
-                < self.termination_height  # relative torso height
+                or self.robot_state[0] < self.termination_height
                 or self.robot.body_xyz[2] < -5  # free falling off terrain
+                or (self.linear_potential * self.scene.dt) > -0.3  # target within 30cm
+                or self.timestep >= self.max_timestep
                 or self._p.getContactPoints(
                     bodyA=self.robot.id, linkIndexA=self.robot_torso_id
                 )  # torso contact ground
@@ -1309,15 +1285,19 @@ class Walker3DPlannerEnv(EnvBase):
         if not self.done:
             # Need to keep planning
             # must be called before get observation
-            x0, y0 = selected_path[-1, 0:2]
-            candidate_paths, no_paths_found = self.sample_paths(x0, y0)
-            if not no_paths_found:
-                self.candidate_paths = candidate_paths
-            else:
-                self.done = True
+            x0, y0, yaw0 = selected_path[-1, [0, 1, 3]]
+            self.candidate_paths = self.sample_paths(x0, y0, yaw0)
 
         state = np.concatenate(self.get_observation_components())
-        return state, reward, self.done, {}
+        info = (
+            {
+                "curriculum_metric": self.linear_potential * self.scene.dt,
+            }
+            if self.done or self.timestep == self.max_timestep
+            else {}
+        )
+
+        return state, reward, self.done, info
 
     def calc_base_reward(self):
         old_linear_potential = self.linear_potential
