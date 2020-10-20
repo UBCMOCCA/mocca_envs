@@ -1087,11 +1087,11 @@ class Walker3DPlannerEnv(EnvBase):
         sin_phi = np.sin(phi)
         matrix = np.array(
             [
-                [cos_phi, -sin_phi],
-                [sin_phi, cos_phi],
+                [cos_phi, sin_phi],
+                [-sin_phi, cos_phi],
             ]
         )
-        x_tilt, y_tilt = (matrix * np.stack((x_tilt, y_tilt))[:, None]).sum(axis=1)
+        x_tilt, y_tilt = (matrix * np.stack((x_tilt, y_tilt))).sum(axis=1)
         return np.stack((x, y, z, phi, x_tilt, y_tilt), axis=-1)
 
     def get_local_coordinates(self, targets):
