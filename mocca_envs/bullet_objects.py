@@ -45,11 +45,12 @@ class VSphere:
 
 
 class BaseStep:
-    def __init__(self, bc, filename, scale, pos=None, quat=None):
+    def __init__(self, bc, filename, scale, pos=None, quat=None, options=None):
         self._p = bc
 
         pos = np.zeros(3) if pos is None else pos
         quat = np.array([0, 0, 0, 1]) if quat is None else quat
+        options = {} if options is None else options
 
         self.id = self._p.loadURDF(
             filename,
@@ -57,6 +58,7 @@ class BaseStep:
             baseOrientation=quat,
             useFixedBase=False,
             globalScaling=scale,
+            **options
         )
 
         self._pos_offset = np.array(self._p.getBasePositionAndOrientation(self.id)[0])
@@ -84,23 +86,23 @@ class BaseStep:
 
 
 class Pillar(BaseStep):
-    def __init__(self, bc, radius, pos=None, quat=None):
+    def __init__(self, bc, radius, pos=None, quat=None, options=None):
         filename = os.path.join(current_dir, "data", "objects", "steps", "pillar.urdf")
-        super().__init__(bc, filename, radius, pos, quat)
+        super().__init__(bc, filename, radius, pos, quat, options)
 
 
 class Plank(BaseStep):
-    def __init__(self, bc, width, pos=None, quat=None):
+    def __init__(self, bc, width, pos=None, quat=None, options=None):
         filename = os.path.join(current_dir, "data", "objects", "steps", "plank.urdf")
-        super().__init__(bc, filename, 2 * width, pos, quat)
+        super().__init__(bc, filename, 2 * width, pos, quat, options)
 
 
 class LargePlank(BaseStep):
-    def __init__(self, bc, width, pos=None, quat=None):
+    def __init__(self, bc, width, pos=None, quat=None, options=None):
         filename = os.path.join(
             current_dir, "data", "objects", "steps", "plank_large.urdf"
         )
-        super().__init__(bc, filename, 2 * width, pos, quat)
+        super().__init__(bc, filename, 2 * width, pos, quat, options)
 
 
 class Rectangle:
@@ -374,20 +376,25 @@ class HeightField:
         ix = ((x + ox) * self.xy_scale).astype(np.int32)
         iy = ((y + oy) * self.xy_scale).astype(np.int32)
         not_in_bound = ~((0 < ix) * (ix <= max_ix) * (0 < iy) * (iy <= max_iy))
-        height = self.data2d[np.clip(iy, 0, max_iy), np.clip(ix, 0, max_ix)]
-        height[not_in_bound] = -10
+        bix = np.clip(ix, 0, max_ix)
+        biy = np.clip(iy, 0, max_iy)
+        height = self.data2d[biy, bix]
 
         length = 2 / self.xy_scale
         x_tilt = np.arctan2(
-            self.data2d[np.clip(iy + 1, 0, max_iy), ix]
-            - self.data2d[np.clip(iy - 1, 0, max_iy), ix],
+            self.data2d[np.clip(iy + 1, 0, max_iy), bix]
+            - self.data2d[np.clip(iy - 1, 0, max_iy), bix],
             length,
         )
         y_tilt = -np.arctan2(
-            self.data2d[iy, np.clip(ix + 1, 0, max_ix)]
-            - self.data2d[iy, np.clip(ix - 1, 0, max_ix)],
+            self.data2d[biy, np.clip(ix + 1, 0, max_ix)]
+            - self.data2d[biy, np.clip(ix - 1, 0, max_ix)],
             length,
         )
+
+        height[not_in_bound] = -10
+        x_tilt[not_in_bound] = 0
+        y_tilt[not_in_bound] = 0
 
         return height, x_tilt, y_tilt
 

@@ -11,7 +11,9 @@ import numpy as np
 DEG2RAD = np.pi / 180
 
 env_name = sys.argv[1] if len(sys.argv) > 1 else "mocca_envs:Monkey3DCustomEnv-v0"
-env = gym.make(env_name, render=True)
+render = sys.argv[2] in ["True", "true", "1", 1] if len(sys.argv) > 2 else True
+
+env = gym.make(env_name, render=render)
 action_dim = env.action_space.shape[0]
 offset = 6
 

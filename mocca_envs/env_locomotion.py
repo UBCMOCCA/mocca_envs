@@ -986,6 +986,8 @@ class Walker3DPlannerEnv(EnvBase):
     paths_to_plan = 1
     # Actually N - 1, since last step of one path is the first step of next path
     steps_to_plan = 5
+    num_bridges = 1
+    bridge_length = 14
 
     # base controller
     base_filename = "Walker3DPlannerBase.pt"
@@ -1019,8 +1021,6 @@ class Walker3DPlannerEnv(EnvBase):
         rendered = self.is_rendered or self.use_egl
         if hasattr(self, "terrain"):
             self._p.removeBody(self.terrain.id)
-            if rendered:
-                self._p.removeBody(self.target.id)
 
         filename = "height_field_map_1.npy"
         scale = 16
@@ -1037,7 +1037,21 @@ class Walker3DPlannerEnv(EnvBase):
             filename=filename,
             rng=self.np_random,
         )
-        if rendered:
+
+        if not hasattr(self, "discrete_planks"):
+            options = {
+                "useMaximalCoordinates": True,
+                "flags": self._p.URDF_ENABLE_SLEEPING,
+            }
+            self.discrete_planks = [
+                Pillar(self._p, 0.25, options=options)
+                for _ in range(self.num_bridges * self.bridge_length)
+            ]
+            step_ids = set([(p.id, p.base_id) for p in self.discrete_planks])
+            cover_ids = set([(p.id, p.cover_id) for p in self.discrete_planks])
+            self.all_contact_object_ids = step_ids | cover_ids | {(self.terrain.id, -1)}
+
+        if rendered and not hasattr(self, "target"):
             self.target = VSphere(self._p, radius=0.15, pos=None)
 
     def load_base_controller(self, filename):
@@ -1082,7 +1096,16 @@ class Walker3DPlannerEnv(EnvBase):
 
         z, x_tilt, y_tilt = self.terrain.get_height_and_tilt_at(x, y)
 
-        # Tilts are global, need to convert to local
+        # Check if a discrete step at xy, if so, use its height
+        xy = np.stack((x, y), axis=-1).reshape(P * N, 2)
+        delta = xy[:, None] - self.discrete_planks_parameters[None, :, 0:2]
+        distance = np.linalg.norm(delta, axis=-1)
+        min_dist_index = np.argmin(distance, axis=-1)
+        replace_mask = distance[range(len(distance)), min_dist_index] < 0.25
+        z_replacement = self.discrete_planks_parameters[min_dist_index, 2]
+        z.reshape(P * N)[replace_mask] = z_replacement[replace_mask]
+
+        # Tilts are global, need to convert to its own coordinate axes
         cos_phi = np.cos(phi)
         sin_phi = np.sin(phi)
         matrix = np.array(
@@ -1092,6 +1115,7 @@ class Walker3DPlannerEnv(EnvBase):
             ]
         )
         x_tilt, y_tilt = (matrix * np.stack((x_tilt, y_tilt))).sum(axis=1)
+        # return self.discrete_planks_parameters[:self.steps_to_plan][None]
         return np.stack((x, y, z, phi, x_tilt, y_tilt), axis=-1)
 
     def get_local_coordinates(self, targets):
@@ -1175,6 +1199,53 @@ class Walker3DPlannerEnv(EnvBase):
             self.create_terrain()
             self._prev_curriculum = self.curriculum
 
+        def make_bridge(planks, default=False):
+            L = len(planks)
+
+            if default:
+                phi = 45 * DEG2RAD * np.cos(np.linspace(0, 2 * np.pi, L))
+                px = np.cumsum(0.8 * np.cos(phi)) + self.robot_init_position[0]
+                py = np.cumsum(0.8 * np.sin(phi)) + self.robot_init_position[1]
+            else:
+                while True:
+                    phi_max = 20 * DEG2RAD
+                    dphi = self.np_random.uniform(-phi_max, phi_max, L)
+                    phi = np.cumsum(dphi) + self.np_random.uniform(0, 2 * np.pi)
+                    pr = self.np_random.uniform(0.7, 1.1, L)
+                    px = np.cumsum(pr * np.cos(phi)) + self.np_random.uniform(-12, 12)
+                    py = np.cumsum(pr * np.sin(phi)) + self.np_random.uniform(-12, 12)
+                    # TODO: Hardcode map size
+                    if (
+                        min(px) > -15
+                        and max(px) < 15
+                        and min(py) > -15
+                        and max(py) < 15
+                    ):
+                        break
+
+            pz, _, _ = self.terrain.get_height_and_tilt_at(px, py)
+            im = np.argmax(pz) / (L - 1)
+            nx = np.linspace(0, 1, L)
+            s = self.np_random.uniform(0.25, 1)
+            a = -4 * (np.max(pz) + s - pz[0] - (pz[-1] - pz[0]) * im)
+            b = pz[-1] - pz[0] - a
+            pz = np.maximum(a * nx ** 2 + b * nx + pz[0], pz)
+
+            for x, y, z, yaw, plank in zip(px, py, pz, phi, planks):
+                q = self._p.getQuaternionFromEuler([0, 0, yaw])
+                plank.set_position(pos=(x, y, z), quat=q)
+
+            zero = np.zeros_like(px)
+            return np.stack((px, py, pz, phi, zero, zero), axis=1)
+
+        L = self.bridge_length
+        self.discrete_planks_parameters = np.concatenate(
+            [
+                make_bridge(self.discrete_planks[i * L : (i + 1) * L], i == 0)
+                for i in range(self.num_bridges)
+            ]
+        )
+
         # self.robot.applied_gain = 1.2
         self.robot_state = self.robot.reset(
             random_pose=self.robot_random_start,
@@ -1185,7 +1256,7 @@ class Walker3DPlannerEnv(EnvBase):
         # Sample map smaller than actual terrain to prevent out of bound
         xy = self.np_random.uniform(-12, 12, 2)
         z, _, _ = self.terrain.get_height_and_tilt_at(xy[[0]], xy[[1]])
-        self.walk_target = np.array((*xy, z))
+        self.walk_target = np.array((*xy, z[0]))
 
         # Reset camera
         if self.is_rendered or self.use_egl:
@@ -1201,7 +1272,9 @@ class Walker3DPlannerEnv(EnvBase):
     def step(self, action):
         action_exp = np.exp(action)
         action_prob = action_exp / action_exp.sum()
-        selected_action = np.random.choice(np.arange(self.paths_to_plan), p=action_prob)
+        selected_action = self.np_random.choice(
+            np.arange(self.paths_to_plan), p=action_prob
+        )
         selected_path = self.candidate_paths[selected_action]
 
         self.next_step_index = 0
@@ -1218,7 +1291,7 @@ class Walker3DPlannerEnv(EnvBase):
             #         self._p.addUserDebugLine(z, z) for _ in selected_path
             #     ]
             #     self.tilt_steps = [
-            #         Pillar(self._p, radius=0.25, pos=None)
+            #         Plank(self._p, 0.25, pos=None)
             #         for _ in range(self.steps_to_plan)
             #     ]
             #     for step in self.tilt_steps:
@@ -1259,7 +1332,7 @@ class Walker3DPlannerEnv(EnvBase):
             self.robot.apply_action(base_action)
             self.scene.global_step()
 
-            self.robot_state = self.robot.calc_state({(self.terrain.id, -1)})
+            self.robot_state = self.robot.calc_state(self.all_contact_object_ids)
             self.calc_next_step_index(selected_path)
 
             self.calc_base_reward()
