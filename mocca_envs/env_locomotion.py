@@ -14,7 +14,15 @@ from mocca_envs.bullet_objects import (
     HeightField,
     MonkeyBar,
 )
-from mocca_envs.robots import Child3D, Laikago, Mike, Monkey3D, Walker2D, Walker3D
+from mocca_envs.robots import (
+    Child3D,
+    Crab2D,
+    Laikago,
+    Mike,
+    Monkey3D,
+    Walker2D,
+    Walker3D,
+)
 
 
 Colors = {
@@ -276,7 +284,7 @@ class Walker3DCustomEnv(EnvBase):
 
 class Walker2DCustomEnv(Walker3DCustomEnv):
     robot_class = Walker2D
-    robot_init_position = [0, 0, 2]
+    robot_init_position = [0, 0, 1.35]
 
     def reset(self):
 
@@ -299,6 +307,11 @@ class Walker2DCustomEnv(Walker3DCustomEnv):
             self._handle_keyboard()
 
         return state, reward, self.done, info
+
+
+class Crab2DCustomEnv(Walker2DCustomEnv):
+    robot_class = Crab2D
+    robot_init_position = [0, 0, 1.35]
 
 
 class Child3DCustomEnv(Walker3DCustomEnv):

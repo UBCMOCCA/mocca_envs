@@ -382,7 +382,11 @@ class Crab2D(WalkerBase):
         "foot_joint": 50,
     }
 
-    def load_robot_model(self):
+    def set_base_pose(self, pose=None):
+        self.base_joint_angles[:] = 0  # reset
+        self.base_orientation = np.array([0, 0, 0, 1])
+
+    def load_robot_model(self, model_path=None, flags=None, root_link_name=None):
         flags = (
             self._p.MJCF_COLORS_FROM_FILE
             | self._p.URDF_USE_SELF_COLLISION
@@ -390,8 +394,14 @@ class Crab2D(WalkerBase):
         )
 
         model_path = os.path.join(current_dir, "data", "robots", "crab2d.xml")
-        root_link_name = "pelvis"
-        super(Crab2D, self).load_robot_model(model_path, flags, root_link_name)
+        super(Crab2D, self).load_robot_model(model_path, flags, "pelvis")
+
+        # Need this to set pose and mirroring
+        self._right_joint_indices = np.array([0, 1, 2], dtype=np.int64)
+        self._left_joint_indices = np.array([3, 4, 5], dtype=np.int64)
+        self._negation_joint_indices = np.array([], dtype=np.int64)
+        self._rl = np.concatenate((self._right_joint_indices, self._left_joint_indices))
+        self._lr = np.concatenate((self._left_joint_indices, self._right_joint_indices))
 
 
 class Monkey3D(Walker3D):
