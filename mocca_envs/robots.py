@@ -29,35 +29,41 @@ class WalkerBase:
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
     def apply_action(self, a):
-        assert np.isfinite(a).all()
-        normalized = self.applied_gain * np.clip(a, -1, 1)
+        # Do NOT modify in-place, faster to copy and replace than to clip...
+        b = a.copy()
+        b[b < -1] = -1
+        b[b > +1] = +1
 
         self._p.setJointMotorControlArray(
             bodyIndex=self.id,
             jointIndices=self.ordered_joint_ids,
             controlMode=self._p.TORQUE_CONTROL,
-            forces=self.ordered_joint_base_gains * normalized,
+            forces=self.ordered_joint_base_gains * self.applied_gain * b,
         )
 
     def calc_state(self, contact_object_ids=None):
 
         # Use pybullet's array version, should be faster
-        j = self._p.getJointStates(self.id, self.ordered_joint_ids)
-        j = np.array(list(map(lambda x: x[0:2], j))).astype(np.float32)
+        joint_info = self._p.getJointStates(self.id, self.ordered_joint_ids)
+        joint_angle_and_vel = np.array([j[0:2] for j in joint_info], dtype=np.float32)
 
-        self.joint_angles = j[:, 0]
+        self.joint_angles = joint_angle_and_vel[:, 0]
         self.normalized_joint_angles = self.to_normalized(self.joint_angles)
-        self.joint_speeds = 0.1 * j[:, 1]  # Normalize
+        self.joint_speeds = 0.1 * joint_angle_and_vel[:, 1]  # Normalize
         self.joints_at_limit = np.count_nonzero(
             np.abs(self.normalized_joint_angles) > 0.99
         )
 
-        body_pose = self.robot_body.pose()
+        # Faster if we don't use true CoM
+        # body_pose = self.robot_body.bp_pose
+        # self.body_xyz = body_pose.xyz()
+        # self.body_rpy = body_pose.rpy()
 
         # Faster if we don't use true CoM
-        self.body_xyz = body_pose.xyz()
+        pose = self.robot_body.get_pose()
+        self.body_xyz = pose[:3]
+        self.body_rpy = self._p.getEulerFromQuaternion(pose[3:])
 
-        self.body_rpy = body_pose.rpy()
         roll, pitch, yaw = self.body_rpy
 
         rot = np.array(
@@ -70,7 +76,7 @@ class WalkerBase:
         self.body_vel = np.dot(rot, self.robot_body.speed())
         vx, vy, vz = self.body_vel
 
-        self.feet_xyz = np.array([f.pose().xyz() for f in self.feet])
+        self.feet_xyz = np.array([f.bp_pose.xyz() for f in self.feet])
         if contact_object_ids is not None:
             self.feet_contact = np.array(
                 [
@@ -88,11 +94,15 @@ class WalkerBase:
         height = self.body_xyz[2] - np.min(self.feet_xyz[:, 2])
         more = np.array([height, vx, vy, vz, roll, pitch], dtype=np.float32)
 
+        # Faster than np.clip()
+        self.joint_speeds[self.joint_speeds < -5] = -5
+        self.joint_speeds[self.joint_speeds > +5] = +5
+
         state = np.concatenate(
             (more, self.normalized_joint_angles, self.joint_speeds, self.feet_contact)
         )
 
-        return np.clip(state, -5, +5)
+        return state
 
     def initialize(self):
         self.load_robot_model()
@@ -191,7 +201,9 @@ class WalkerBase:
             # Add small deviations
             ds = self.np_random.uniform(low=-0.1, high=0.1, size=self.action_dim)
             ps = self.to_normalized(base_joint_angles + ds)
-            base_joint_angles = self.to_radians(np.clip(ps, -0.95, 0.95))
+            ps[ps < -0.95] = -0.95
+            ps[ps > +0.95] = +0.95
+            base_joint_angles = self.to_radians(ps)
 
         self.reset_joint_states(base_joint_angles, self.base_joint_speeds)
 
@@ -529,7 +541,7 @@ class Mike(Walker3D):
 
         if hasattr(self, "glasses_id") and hasattr(self, "glasses_id"):
 
-            quat = self.robot_body.pose().orientation()
+            quat = self.robot_body.bp_pose.orientation()
             mat = np.array(self._p.getMatrixFromQuaternion(quat)).reshape(3, 3)
 
             glasses_xyz = self.body_xyz + np.matmul(mat, [0.25, 0, 0])

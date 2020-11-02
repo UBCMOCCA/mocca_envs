@@ -376,19 +376,25 @@ class HeightField:
         ix = ((x + ox) * self.xy_scale).astype(np.int32)
         iy = ((y + oy) * self.xy_scale).astype(np.int32)
         not_in_bound = ~((0 < ix) * (ix <= max_ix) * (0 < iy) * (iy <= max_iy))
-        bix = np.clip(ix, 0, max_ix)
-        biy = np.clip(iy, 0, max_iy)
+
+        def clip(a, a_min, a_max):
+            a[a < a_min] = a_min
+            a[a > a_max] = a_max
+            return a
+
+        bix = clip(ix, 0, max_ix)
+        biy = clip(iy, 0, max_iy)
         height = self.data2d[biy, bix]
 
         length = 2 / self.xy_scale
         x_tilt = np.arctan2(
-            self.data2d[np.clip(iy + 1, 0, max_iy), bix]
-            - self.data2d[np.clip(iy - 1, 0, max_iy), bix],
+            self.data2d[clip(iy + 1, 0, max_iy), bix]
+            - self.data2d[clip(iy - 1, 0, max_iy), bix],
             length,
         )
         y_tilt = -np.arctan2(
-            self.data2d[biy, np.clip(ix + 1, 0, max_ix)]
-            - self.data2d[biy, np.clip(ix - 1, 0, max_ix)],
+            self.data2d[biy, clip(ix + 1, 0, max_ix)]
+            - self.data2d[biy, clip(ix - 1, 0, max_ix)],
             length,
         )
 

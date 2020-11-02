@@ -3,6 +3,7 @@ import os
 
 import gym
 import numpy as np
+import numba as nb
 import torch
 
 from mocca_envs.env_base import EnvBase
@@ -24,6 +25,15 @@ Colors = {
 
 DEG2RAD = np.pi / 180
 RAD2DEG = 180 / np.pi
+
+
+@nb.njit(fastmath=True)
+def norm2_2d(a, out):
+    for row in range(a.shape[0]):
+        sum = 0
+        for col in range(a.shape[1]):
+            sum += a[row, col] ** 2
+        out[row] = np.sqrt(sum)
 
 
 class Walker3DCustomEnv(EnvBase):
@@ -318,7 +328,7 @@ class Walker3DStepperEnv(EnvBase):
 
     control_step = 1 / 60
     llc_frame_skip = 1
-    sim_frame_skip = 4
+    sim_frame_skip = 3
     max_timestep = 1000
 
     robot_class = Walker3D
@@ -373,12 +383,14 @@ class Walker3DStepperEnv(EnvBase):
 
         # robot_state + (2 targets) * (x, y, z, x_tilt, y_tilt)
         self.robot_obs_dim = self.robot.observation_space.shape[0]
-        high = np.inf * np.ones(
-            self.robot_obs_dim
-            + (self.lookahead + self.lookbehind) * self.step_param_dim
-        )
+        K = self.lookahead + self.lookbehind
+        high = np.inf * np.ones(self.robot_obs_dim + (K) * self.step_param_dim)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.action_space = self.robot.action_space
+
+        # pre-allocate buffers
+        self._distance_to_targets = np.zeros(K)
+        self.foot_dist_to_target = np.zeros(len(self.robot.feet))
 
     def generate_step_placements(self):
 
@@ -434,8 +446,12 @@ class Walker3DStepperEnv(EnvBase):
         step_ids = set()
         cover_ids = set()
 
+        options = {
+            "flags": self._p.URDF_ENABLE_SLEEPING | self._p.URDF_ENABLE_CACHED_GRAPHICS_SHAPES
+        }
+
         for index in range(self.rendered_step_count):
-            p = self.plank_class(self._p, self.step_radius)
+            p = self.plank_class(self._p, self.step_radius, options=options)
             self.steps.append(p)
             step_ids = step_ids | {(p.id, p.base_id)}
             cover_ids = cover_ids | {(p.id, p.cover_id)}
@@ -467,6 +483,9 @@ class Walker3DStepperEnv(EnvBase):
             self.set_step_state(next, oldest)
 
     def reset(self):
+        if self.state_id >= 0:
+            self._p.restoreState(self.state_id)
+
         self.timestep = 0
         self.done = False
         self.target_reached_count = 0
@@ -497,6 +516,9 @@ class Walker3DStepperEnv(EnvBase):
         self.calc_potential()
 
         state = np.concatenate((self.robot_state, self.targets.flatten()))
+
+        if not self.state_id >= 0:
+            self.state_id = self._p.saveState()
 
         return state
 
@@ -625,11 +647,17 @@ class Walker3DStepperEnv(EnvBase):
         next_step = self.steps[target_cover_index]
         target_cover_id = {(next_step.id, next_step.cover_id)}
 
-        self.foot_dist_to_target = np.linalg.norm(
+        # self.foot_dist_to_target = np.linalg.norm(
+        #     self.robot.feet_xyz[:, 0:2]
+        #     - self.terrain_info[self.next_step_index, [0, 1]],
+        #     axis=1,
+        # )
+
+        foot_delta = (
             self.robot.feet_xyz[:, 0:2]
-            - self.terrain_info[self.next_step_index, [0, 1]],
-            axis=1,
+            - self.terrain_info[self.next_step_index, [0, 1]]
         )
+        norm2_2d(foot_delta, self.foot_dist_to_target)
 
         def extract_foot_info(f):
             contact_ids = set((x[2], x[4]) for x in f.contact_list())
@@ -733,12 +761,13 @@ class Walker3DStepperEnv(EnvBase):
         target_thetas = np.arctan2(delta_pos[:, 1], delta_pos[:, 0])
 
         angle_to_targets = target_thetas - self.robot.body_rpy[2]
-        distance_to_targets = np.linalg.norm(delta_pos[:, 0:2], ord=2, axis=1)
+        # self._distance_to_targets = np.linalg.norm(delta_pos[:, 0:2], ord=2, axis=1)
+        norm2_2d(delta_pos[:, 0:2], self._distance_to_targets)
 
         deltas = np.stack(
             (
-                np.sin(angle_to_targets) * distance_to_targets,  # x
-                np.cos(angle_to_targets) * distance_to_targets,  # y
+                np.sin(angle_to_targets) * self._distance_to_targets,  # x
+                np.cos(angle_to_targets) * self._distance_to_targets,  # y
                 delta_pos[:, 2],  # z
                 targets[:, 4],  # x_tilt
                 targets[:, 5],  # y_tilt
@@ -996,7 +1025,7 @@ class Walker3DPlannerEnv(EnvBase):
     base_step_param_dim = 5
 
     def __init__(self, **kwargs):
-        self.curriculum = 6
+        self.curriculum = 9
         self.max_curriculum = 9
         self.advance_threshold = -0.3  # negative linear potential
         self._prev_curriculum = self.curriculum
@@ -1016,6 +1045,9 @@ class Walker3DPlannerEnv(EnvBase):
         # Probability of choosing one path to take
         high = np.inf * np.ones(P)
         self.action_space = gym.spaces.Box(-high, high, dtype=np.float32)
+
+        # Pre-allocate buffer
+        self.foot_dist_to_target = np.zeros(len(self.robot.feet))
 
     def create_terrain(self):
         rendered = self.is_rendered or self.use_egl
@@ -1096,15 +1128,6 @@ class Walker3DPlannerEnv(EnvBase):
 
         z, x_tilt, y_tilt = self.terrain.get_height_and_tilt_at(x, y)
 
-        # Check if a discrete step at xy, if so, use its height
-        xy = np.stack((x, y), axis=-1).reshape(P * N, 2)
-        delta = xy[:, None] - self.discrete_planks_parameters[None, :, 0:2]
-        distance = np.linalg.norm(delta, axis=-1)
-        min_dist_index = np.argmin(distance, axis=-1)
-        replace_mask = distance[range(len(distance)), min_dist_index] < 0.25
-        z_replacement = self.discrete_planks_parameters[min_dist_index, 2]
-        z.reshape(P * N)[replace_mask] = z_replacement[replace_mask]
-
         # Tilts are global, need to convert to its own coordinate axes
         cos_phi = np.cos(phi)
         sin_phi = np.sin(phi)
@@ -1115,8 +1138,29 @@ class Walker3DPlannerEnv(EnvBase):
             ]
         )
         x_tilt, y_tilt = (matrix * np.stack((x_tilt, y_tilt))).sum(axis=1)
-        # return self.discrete_planks_parameters[:self.steps_to_plan][None]
-        return np.stack((x, y, z, phi, x_tilt, y_tilt), axis=-1)
+
+        # Check if a discrete step at xy, if so, use its height
+        xy = np.stack((x, y), axis=-1).reshape(P * N, 2)
+        delta = xy[:, None] - self.discrete_planks_parameters[None, :, 0:2]
+
+        S = np.prod(delta.shape[0:2])
+        distance = np.zeros(S)
+        norm2_2d(delta.reshape((S, delta.shape[-1])), distance)
+        distance = distance.reshape(delta.shape[0:2])
+
+        min_dist_index = np.argmin(distance, axis=-1)
+        replace_mask = distance[range(P), min_dist_index] < 0.25
+        z_replacement = self.discrete_planks_parameters[min_dist_index, 2]
+        z.reshape(P * N)[replace_mask] = z_replacement[replace_mask]
+        x_tilt.reshape(P * N)[replace_mask] = 0
+        y_tilt.reshape(P * N)[replace_mask] = 0
+
+        if self.total_steps_made + self.steps_to_plan < self.bridge_length:
+            a = self.total_steps_made
+            b = a + self.steps_to_plan
+            return self.discrete_planks_parameters[a:b][None]
+        else:
+            return np.stack((x, y, z, phi, x_tilt, y_tilt), axis=-1)
 
     def get_local_coordinates(self, targets):
         # targets should be (P, N, 6)
@@ -1127,7 +1171,13 @@ class Walker3DPlannerEnv(EnvBase):
         target_thetas = np.arctan2(delta_positions[:, :, 1], delta_positions[:, :, 0])
 
         angle_to_targets = target_thetas - self.robot.body_rpy[2]
-        distance_to_targets = np.linalg.norm(delta_positions[:, :, 0:2], axis=-1)
+        # distance_to_targets = np.linalg.norm(delta_positions[:, :, 0:2], axis=-1)
+
+        delta_xy = delta_positions[:, :, 0:2]
+        S = np.prod(delta_xy.shape[0:2])
+        distance_to_targets = np.zeros(S)
+        norm2_2d(delta_xy.reshape((S, delta_xy.shape[-1])), distance_to_targets)
+        distance_to_targets = distance_to_targets.reshape(delta_xy.shape[0:2])
 
         local_parameters = np.stack(
             (
@@ -1173,15 +1223,21 @@ class Walker3DPlannerEnv(EnvBase):
     def calc_next_step_index(self, path):
         feet_xy = self.robot.feet_xyz[:, 0:2]
         step_xy = path[self.next_step_index, 0:2]
-        foot_distances = np.linalg.norm(feet_xy - step_xy, axis=-1)
-        closest_foot = np.argmin(foot_distances)
+        # self.foot_dist_to_target = np.linalg.norm(feet_xy - step_xy, axis=-1)
+        delta_xy = feet_xy - step_xy
+        norm2_2d(delta_xy, self.foot_dist_to_target)
+        closest_foot = np.argmin(self.foot_dist_to_target)
 
-        if self.robot.feet_contact[closest_foot] and foot_distances[closest_foot] < 0.3:
+        if (
+            self.robot.feet_contact[closest_foot]
+            and self.foot_dist_to_target[closest_foot] < 0.3
+        ):
             self.target_reached_count += 1
 
             # stop_frame = 120 if self.next_step_index == self.steps_to_plan - 1 else 2
             if self.target_reached_count >= 2:
                 self.next_step_index += 1
+                self.total_steps_made += 1
                 self.target_reached_count = 0
 
     def get_observation_components(self):
@@ -1192,6 +1248,7 @@ class Walker3DPlannerEnv(EnvBase):
         return (self.robot_state, [dx, dy], path_parameters.flatten())
 
     def reset(self):
+        self.total_steps_made = 0
         self.timestep = 0
         self.done = False
 
@@ -1281,46 +1338,42 @@ class Walker3DPlannerEnv(EnvBase):
         self.target_reached_count = 0
         reward = 0
 
+        x_tilt = selected_path[:, 4]
+        y_tilt = selected_path[:, 5]
+        if not hasattr(self, "raycast_lines"):
+            z = [0, 0, 0]
+            self.raycast_lines = [self._p.addUserDebugLine(z, z) for _ in selected_path]
+            self.normal_lines = [self._p.addUserDebugLine(z, z) for _ in selected_path]
+            self.tilt_steps = [
+                Pillar(self._p, 0.25, pos=None) for _ in range(self.steps_to_plan)
+            ]
+            for step in self.tilt_steps:
+                for link_id in range(-1, self._p.getNumJoints(step.id)):
+                    self._p.setCollisionFilterGroupMask(step.id, link_id, 0, 0)
+
+        for params, id1, id2, step in zip(
+            selected_path, self.raycast_lines, self.normal_lines, self.tilt_steps
+        ):
+            o = [0, 0, 1]
+            p = params[0:3]
+            q = self._p.getQuaternionFromEuler(params[[4, 5, 3]])
+            # q = self._p.getQuaternionFromEuler((*params[[4, 5]], 0))
+
+            m = np.reshape(
+                self._p.getMatrixFromQuaternion(
+                    self._p.getQuaternionFromEuler((*params[[4, 5]], 0))
+                ),
+                (3, 3),
+            )
+            n = m @ [0, 0, 1]
+
+            self._p.addUserDebugLine(
+                p + o, p - o, (1, 0, 0), 5, replaceItemUniqueId=id1
+            )
+            self._p.addUserDebugLine(p, p + n, (0, 0, 1), 5, replaceItemUniqueId=id2)
+            step.set_position(pos=p, quat=q)
+
         while not self.done and self.next_step_index < self.steps_to_plan - 1:
-            # if not hasattr(self, "raycast_lines"):
-            #     z = [0, 0, 0]
-            #     self.raycast_lines = [
-            #         self._p.addUserDebugLine(z, z) for _ in selected_path
-            #     ]
-            #     self.normal_lines = [
-            #         self._p.addUserDebugLine(z, z) for _ in selected_path
-            #     ]
-            #     self.tilt_steps = [
-            #         Plank(self._p, 0.25, pos=None)
-            #         for _ in range(self.steps_to_plan)
-            #     ]
-            #     for step in self.tilt_steps:
-            #         for link_id in range(-1, self._p.getNumJoints(step.id)):
-            #             self._p.setCollisionFilterGroupMask(step.id, link_id, 0, 0)
-            #
-            # for params, id1, id2, step in zip(
-            #     selected_path, self.raycast_lines, self.normal_lines, self.tilt_steps
-            # ):
-            #     o = [0, 0, 1]
-            #     p = params[0:3]
-            #     q = self._p.getQuaternionFromEuler(params[[4, 5, 3]])
-            #     # q = self._p.getQuaternionFromEuler((*params[[4, 5]], 0))
-            #
-            #     m = np.reshape(
-            #         self._p.getMatrixFromQuaternion(
-            #             self._p.getQuaternionFromEuler((*params[[4, 5]], 0))
-            #         ),
-            #         (3, 3),
-            #     )
-            #     n = m @ [0, 0, 1]
-            #
-            #     self._p.addUserDebugLine(
-            #         p + o, p - o, (1, 0, 0), 5, replaceItemUniqueId=id1
-            #     )
-            #     self._p.addUserDebugLine(
-            #         p, p + n, (0, 0, 1), 5, replaceItemUniqueId=id2
-            #     )
-            #     step.set_position(pos=p, quat=q)
 
             path_parameters = self.get_local_coordinates(selected_path)
             base_parameters = self.get_base_step_parameters(path_parameters)
