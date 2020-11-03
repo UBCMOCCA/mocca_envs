@@ -328,7 +328,7 @@ class Walker3DStepperEnv(EnvBase):
 
     control_step = 1 / 60
     llc_frame_skip = 1
-    sim_frame_skip = 3
+    sim_frame_skip = 4
     max_timestep = 1000
 
     robot_class = Walker3D
@@ -447,7 +447,8 @@ class Walker3DStepperEnv(EnvBase):
         cover_ids = set()
 
         options = {
-            "flags": self._p.URDF_ENABLE_SLEEPING | self._p.URDF_ENABLE_CACHED_GRAPHICS_SHAPES
+            # self._p.URDF_ENABLE_SLEEPING |
+            "flags": self._p.URDF_ENABLE_CACHED_GRAPHICS_SHAPES
         }
 
         for index in range(self.rendered_step_count):

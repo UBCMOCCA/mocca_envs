@@ -477,9 +477,9 @@ class Mike(Walker3D):
     foot_names = ["right_foot", "left_foot"]
 
     power_coef = {
-        "abdomen_z": 0,
-        "abdomen_y": 0,
-        "abdomen_x": 0,
+        "abdomen_z": 10,
+        "abdomen_y": 10,
+        "abdomen_x": 10,
         "right_hip_x": 80,
         "right_hip_z": 60,
         "right_hip_y": 100,
