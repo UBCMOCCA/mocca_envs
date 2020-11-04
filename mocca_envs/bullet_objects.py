@@ -3,7 +3,8 @@ import os
 current_dir = os.path.dirname(os.path.realpath(__file__))
 
 import numpy as np
-from scipy.ndimage.filters import gaussian_filter
+import pybullet
+
 from mocca_envs.misc_utils import generate_fractal_noise_2d
 
 DEG2RAD = np.pi / 180
@@ -80,8 +81,11 @@ class BaseStep:
         pos = np.zeros(3) if pos is None else pos
         quat = np.array([0, 0, 0, 1]) if quat is None else quat
 
-        self._p.resetBasePositionAndOrientation(
-            self.id, posObj=pos + self._pos_offset, ornObj=quat
+        pybullet.resetBasePositionAndOrientation(
+            self.id,
+            posObj=pos + self._pos_offset,
+            ornObj=quat,
+            physicsClientId=self._p._client,
         )
 
 

@@ -1,9 +1,12 @@
+import math
 import os
 
 current_dir = os.path.dirname(os.path.realpath(__file__))
 
 import gym
+import numba as nb
 import numpy as np
+import pybullet
 
 from mocca_envs.bullet_utils import BodyPart, Joint
 
@@ -28,52 +31,48 @@ class WalkerBase:
         high = np.inf * np.ones(self.state_dim)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
-    def apply_action(self, a):
-        # Do NOT modify in-place, faster to copy and replace than to clip...
-        b = a.copy()
-        b[b < -1] = -1
-        b[b > +1] = +1
+        self._root_matrix = np.eye(3)
 
-        self._p.setJointMotorControlArray(
+    def apply_action(self, a):
+        pybullet.setJointMotorControlArray(
             bodyIndex=self.id,
             jointIndices=self.ordered_joint_ids,
-            controlMode=self._p.TORQUE_CONTROL,
-            forces=self.ordered_joint_base_gains * self.applied_gain * b,
+            controlMode=pybullet.TORQUE_CONTROL,
+            forces=self.ordered_joint_base_gains * self.applied_gain * a,
+            physicsClientId=self._p._client,
         )
 
     def calc_state(self, contact_object_ids=None):
 
         # Use pybullet's array version, should be faster
-        joint_info = self._p.getJointStates(self.id, self.ordered_joint_ids)
-        joint_angle_and_vel = np.array([j[0:2] for j in joint_info], dtype=np.float32)
-
-        self.joint_angles = joint_angle_and_vel[:, 0]
-        self.normalized_joint_angles = self.to_normalized(self.joint_angles)
-        self.joint_speeds = 0.1 * joint_angle_and_vel[:, 1]  # Normalize
-        self.joints_at_limit = np.count_nonzero(
-            np.abs(self.normalized_joint_angles) > 0.99
+        joint_info = pybullet.getJointStates(
+            self.id, self.ordered_joint_ids, physicsClientId=self._p._client
         )
 
-        # Faster if we don't use true CoM
-        # body_pose = self.robot_body.bp_pose
-        # self.body_xyz = body_pose.xyz()
-        # self.body_rpy = body_pose.rpy()
+        joint_angle_and_vel = np.array([j[0:2] for j in joint_info], dtype=np.float32)
+        self.joint_angles = joint_angle_and_vel[:, 0]
+        self.joint_speeds = 0.1 * joint_angle_and_vel[:, 1]
+
+        self.normalized_joint_angles = self.to_normalized(self.joint_angles)
+        self.joints_at_limit = np.count_nonzero(
+            abs(self.normalized_joint_angles) > 0.99
+        )
 
         # Faster if we don't use true CoM
         pose = self.robot_body.get_pose()
         self.body_xyz = pose[:3]
-        self.body_rpy = self._p.getEulerFromQuaternion(pose[3:])
+        self.body_rpy = pybullet.getEulerFromQuaternion(pose[3:])
 
         roll, pitch, yaw = self.body_rpy
 
-        rot = np.array(
-            [
-                [np.cos(-yaw), -np.sin(-yaw), 0],
-                [np.sin(-yaw), np.cos(-yaw), 0],
-                [0, 0, 1],
-            ]
-        )
-        self.body_vel = np.dot(rot, self.robot_body.speed())
+        yaw_cos = math.cos(-yaw)
+        yaw_sin = math.sin(-yaw)
+        self._root_matrix[0, 0] = yaw_cos
+        self._root_matrix[0, 1] = -yaw_sin
+        self._root_matrix[1, 0] = yaw_sin
+        self._root_matrix[1, 1] = yaw_cos
+
+        self.body_vel = self._root_matrix.dot(self.robot_body.speed())
         vx, vy, vz = self.body_vel
 
         self.feet_xyz = np.array([f.bp_pose.xyz() for f in self.feet])
@@ -91,15 +90,19 @@ class WalkerBase:
                 ]
             )
 
-        height = self.body_xyz[2] - np.min(self.feet_xyz[:, 2])
-        more = np.array([height, vx, vy, vz, roll, pitch], dtype=np.float32)
+        height = self.body_xyz[2] - min(self.feet_xyz[:, 2])
 
         # Faster than np.clip()
         self.joint_speeds[self.joint_speeds < -5] = -5
         self.joint_speeds[self.joint_speeds > +5] = +5
 
         state = np.concatenate(
-            (more, self.normalized_joint_angles, self.joint_speeds, self.feet_contact)
+            (
+                [height, vx, vy, vz, roll, pitch],
+                self.normalized_joint_angles,
+                self.joint_speeds,
+                self.feet_contact,
+            )
         )
 
         return state
@@ -138,8 +141,17 @@ class WalkerBase:
         )
         # bias is the angle corresponding to -1
         bias = np.array([j.lowerLimit for j in self.ordered_joints], dtype=np.float32)
-        self.to_radians = lambda thetas: weight * (thetas + 1) / 2 + bias
-        self.to_normalized = lambda angles: 2 * (angles - bias) / weight - 1
+
+        @nb.njit(fastmath=True)
+        def to_radians(theta):
+            return weight * (theta + 1) / 2 + bias
+
+        @nb.njit(fastmath=True)
+        def to_normalized(angle):
+            return 2 * (angle - bias) / weight - 1
+
+        self.to_radians = to_radians
+        self.to_normalized = to_normalized
 
     def parse_joints_and_links(self, bodies):
         self.parts = {}
@@ -222,20 +234,26 @@ class WalkerBase:
         return robot_state
 
     def reset_joint_states(self, positions, velocities):
-        bc = self._p
 
-        for j, pos, vel in zip(self.ordered_joint_ids, positions, velocities):
-            bc.resetJointState(self.id, j, targetValue=pos, targetVelocity=vel)
+        for joint_id, pos, vel in zip(self.ordered_joint_ids, positions, velocities):
+            pybullet.resetJointState(
+                self.id,
+                joint_id,
+                targetValue=pos,
+                targetVelocity=vel,
+                physicsClientId=self._p._client,
+            )
 
-        bc.setJointMotorControlArray(
+        pybullet.setJointMotorControlArray(
             bodyIndex=self.id,
             jointIndices=self.ordered_joint_ids,
-            controlMode=bc.POSITION_CONTROL,
+            controlMode=pybullet.POSITION_CONTROL,
             targetPositions=self._zeros,
             targetVelocities=self._zeros,
             positionGains=self._gains,
             velocityGains=self._gains,
             forces=self._zeros,
+            physicsClientId=self._p._client,
         )
 
 
@@ -321,7 +339,7 @@ class Walker3D(WalkerBase):
             self.base_joint_angles[[6, 11]] = -np.pi / 2  # knee
             self.base_joint_angles[[7, 12]] = angle  # ankles
             self.base_orientation = np.array(
-                self._p.getQuaternionFromEuler([0, -angle, 0])
+                pybullet.getQuaternionFromEuler([0, -angle, 0])
             )
         elif pose == "crawl":
             self.base_joint_angles[[13, 17]] = np.pi / 2  # shoulder x
@@ -331,7 +349,7 @@ class Walker3D(WalkerBase):
             self.base_joint_angles[[6, 11]] = -120 * DEG2RAD  # knee
             self.base_joint_angles[[7, 12]] = -20 * DEG2RAD  # ankles
             self.base_orientation = np.array(
-                self._p.getQuaternionFromEuler([0, 90 * DEG2RAD, 0])
+                pybullet.getQuaternionFromEuler([0, 90 * DEG2RAD, 0])
             )
 
 
@@ -396,9 +414,9 @@ class Crab2D(WalkerBase):
 
     def load_robot_model(self):
         flags = (
-            self._p.MJCF_COLORS_FROM_FILE
-            | self._p.URDF_USE_SELF_COLLISION
-            | self._p.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
+            pybullet.MJCF_COLORS_FROM_FILE
+            | pybullet.URDF_USE_SELF_COLLISION
+            | pybullet.URDF_USE_SELF_COLLISION_EXCLUDE_ALL_PARENTS
         )
 
         model_path = os.path.join(current_dir, "data", "robots", "crab2d.xml")
@@ -470,7 +488,7 @@ class Monkey3D(Walker3D):
             self.base_joint_angles[[22]] = -90 * DEG2RAD  # finger
             self.base_joint_angles[[6, 11]] = -90 * DEG2RAD  # ankles
             self.base_joint_angles[[7, 12]] = -90 * DEG2RAD  # knees
-            self.base_orientation = np.array(self._p.getQuaternionFromEuler([0, 0, 0]))
+            self.base_orientation = np.array(pybullet.getQuaternionFromEuler([0, 0, 0]))
 
 
 class Mike(Walker3D):
@@ -515,7 +533,7 @@ class Mike(Walker3D):
         f = lambda x: os.path.join(current_dir, "data", "objects", "misc", x)
 
         glasses_shape = self._p.createVisualShape(
-            shapeType=self._p.GEOM_MESH,
+            shapeType=pybullet.GEOM_MESH,
             fileName=f("glasses.obj"),
             meshScale=[0.02, 0.02, 0.02],
             visualFrameOrientation=[0, 0, 1, 1],
@@ -525,7 +543,7 @@ class Mike(Walker3D):
         )
 
         hardhat_shape = self._p.createVisualShape(
-            shapeType=self._p.GEOM_MESH,
+            shapeType=pybullet.GEOM_MESH,
             fileName=f("hardhat.obj"),
             meshScale=[0.02, 0.02, 0.02],
         )
@@ -542,13 +560,23 @@ class Mike(Walker3D):
         if hasattr(self, "glasses_id") and hasattr(self, "glasses_id"):
 
             quat = self.robot_body.bp_pose.orientation()
-            mat = np.array(self._p.getMatrixFromQuaternion(quat)).reshape(3, 3)
+            mat = np.array(pybullet.getMatrixFromQuaternion(quat)).reshape(3, 3)
 
             glasses_xyz = self.body_xyz + np.matmul(mat, [0.25, 0, 0])
-            self._p.resetBasePositionAndOrientation(self.glasses_id, glasses_xyz, quat)
+            pybullet.resetBasePositionAndOrientation(
+                self.glasses_id,
+                glasses_xyz,
+                quat,
+                physicsClientId=self._p._client,
+            )
 
             hardhat_xyz = self.body_xyz + np.matmul(mat, [0, -0.4, 0.15])
-            self._p.resetBasePositionAndOrientation(self.hardhat_id, hardhat_xyz, quat)
+            pybullet.resetBasePositionAndOrientation(
+                self.hardhat_id,
+                hardhat_xyz,
+                quat,
+                physicsClientId=self._p._client,
+            )
 
         return state
 

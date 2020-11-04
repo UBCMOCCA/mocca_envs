@@ -4,6 +4,7 @@ import os
 import gym
 import numpy as np
 import numba as nb
+import pybullet
 import torch
 
 from mocca_envs.env_base import EnvBase
@@ -16,7 +17,7 @@ from mocca_envs.bullet_objects import (
     MonkeyBar,
 )
 from mocca_envs.robots import Child3D, Laikago, Mike, Monkey3D, Walker2D, Walker3D
-
+from common.misc_utils import numba_norm2_2d
 
 Colors = {
     "dodgerblue": (0.11764705882352941, 0.5647058823529412, 1.0, 1.0),
@@ -25,15 +26,6 @@ Colors = {
 
 DEG2RAD = np.pi / 180
 RAD2DEG = 180 / np.pi
-
-
-@nb.njit(fastmath=True)
-def norm2_2d(a, out):
-    for row in range(a.shape[0]):
-        sum = 0
-        for col in range(a.shape[1]):
-            sum += a[row, col] ** 2
-        out[row] = np.sqrt(sum)
 
 
 class Walker3DCustomEnv(EnvBase):
@@ -466,7 +458,7 @@ class Walker3DStepperEnv(EnvBase):
     def set_step_state(self, info_index, step_index):
         pos = self.terrain_info[info_index, 0:3]
         phi, x_tilt, y_tilt = self.terrain_info[info_index, 3:6]
-        quaternion = np.array(self._p.getQuaternionFromEuler([x_tilt, y_tilt, phi]))
+        quaternion = np.array(pybullet.getQuaternionFromEuler([x_tilt, y_tilt, phi]))
         self.steps[step_index].set_position(pos=pos, quat=quaternion)
 
     def randomize_terrain(self):
@@ -594,7 +586,7 @@ class Walker3DStepperEnv(EnvBase):
 
     def calc_potential(self):
 
-        walk_target_theta = np.arctan2(
+        walk_target_theta = math.atan2(
             self.walk_target[1] - self.robot.body_xyz[1],
             self.walk_target[0] - self.robot.body_xyz[0],
         )
@@ -607,6 +599,23 @@ class Walker3DStepperEnv(EnvBase):
         ) ** (1 / 2)
 
         self.linear_potential = -self.distance_to_target / self.scene.dt
+
+    @staticmethod
+    @nb.njit(fastmath=True)
+    def _calc_base_reward(action, joint_speed, electricity_coef, stall_torque_coef):
+        electricity_sum = 0
+        stall_torque_sum = 0
+        N = len(action)
+
+        for i in range(N):
+            electricity_sum += abs(action[i] * joint_speed[i])
+            stall_torque_sum += action[i] ** 2
+
+        electricity_cost = electricity_coef * electricity_sum / N
+        stall_torque_cost = stall_torque_coef * stall_torque_sum / N
+        energy_penalty = electricity_cost + stall_torque_cost
+
+        return energy_penalty
 
     def calc_base_reward(self, action):
 
@@ -629,14 +638,14 @@ class Walker3DStepperEnv(EnvBase):
         speed = (v[0] ** 2 + v[1] ** 2 + v[2] ** 2) ** (1 / 2)
         self.speed_penalty = max(speed - 1.6, 0)
 
-        self.energy_penalty = self.electricity_cost * float(
-            np.abs(action * self.robot.joint_speeds).mean()
+        self.energy_penalty = self._calc_base_reward(
+            action,
+            self.robot.joint_speeds,
+            self.electricity_cost,
+            self.stall_torque_cost,
         )
-        self.energy_penalty += self.stall_torque_cost * float(np.square(action).mean())
 
-        self.joints_penalty = float(
-            self.joints_at_limit_cost * self.robot.joints_at_limit
-        )
+        self.joints_penalty = self.joints_at_limit_cost * self.robot.joints_at_limit
 
         terminal_height = self.terminal_height_curriculum[self.curriculum]
         self.tall_bonus = 2.0 if self.robot_state[0] > terminal_height else -1.0
@@ -658,7 +667,7 @@ class Walker3DStepperEnv(EnvBase):
             self.robot.feet_xyz[:, 0:2]
             - self.terrain_info[self.next_step_index, [0, 1]]
         )
-        norm2_2d(foot_delta, self.foot_dist_to_target)
+        numba_norm2_2d(foot_delta, self.foot_dist_to_target)
 
         def extract_foot_info(f):
             contact_ids = set((x[2], x[4]) for x in f.contact_list())
@@ -763,15 +772,15 @@ class Walker3DStepperEnv(EnvBase):
 
         angle_to_targets = target_thetas - self.robot.body_rpy[2]
         # self._distance_to_targets = np.linalg.norm(delta_pos[:, 0:2], ord=2, axis=1)
-        norm2_2d(delta_pos[:, 0:2], self._distance_to_targets)
+        numba_norm2_2d(delta_pos[:, 0:2], self._distance_to_targets)
 
-        deltas = np.stack(
+        deltas = np.concatenate(
             (
-                np.sin(angle_to_targets) * self._distance_to_targets,  # x
-                np.cos(angle_to_targets) * self._distance_to_targets,  # y
-                delta_pos[:, 2],  # z
-                targets[:, 4],  # x_tilt
-                targets[:, 5],  # y_tilt
+                (np.sin(angle_to_targets) * self._distance_to_targets)[:, None],  # x
+                (np.cos(angle_to_targets) * self._distance_to_targets)[:, None],  # y
+                (delta_pos[:, 2])[:, None],  # z
+                (targets[:, 4])[:, None],  # x_tilt
+                (targets[:, 5])[:, None],  # y_tilt
             ),
             axis=1,
         )
@@ -1146,7 +1155,7 @@ class Walker3DPlannerEnv(EnvBase):
 
         S = np.prod(delta.shape[0:2])
         distance = np.zeros(S)
-        norm2_2d(delta.reshape((S, delta.shape[-1])), distance)
+        numba_norm2_2d(delta.reshape((S, delta.shape[-1])), distance)
         distance = distance.reshape(delta.shape[0:2])
 
         min_dist_index = np.argmin(distance, axis=-1)
@@ -1177,7 +1186,7 @@ class Walker3DPlannerEnv(EnvBase):
         delta_xy = delta_positions[:, :, 0:2]
         S = np.prod(delta_xy.shape[0:2])
         distance_to_targets = np.zeros(S)
-        norm2_2d(delta_xy.reshape((S, delta_xy.shape[-1])), distance_to_targets)
+        numba_norm2_2d(delta_xy.reshape((S, delta_xy.shape[-1])), distance_to_targets)
         distance_to_targets = distance_to_targets.reshape(delta_xy.shape[0:2])
 
         local_parameters = np.stack(
@@ -1226,7 +1235,7 @@ class Walker3DPlannerEnv(EnvBase):
         step_xy = path[self.next_step_index, 0:2]
         # self.foot_dist_to_target = np.linalg.norm(feet_xy - step_xy, axis=-1)
         delta_xy = feet_xy - step_xy
-        norm2_2d(delta_xy, self.foot_dist_to_target)
+        numba_norm2_2d(delta_xy, self.foot_dist_to_target)
         closest_foot = np.argmin(self.foot_dist_to_target)
 
         if (
@@ -1557,7 +1566,7 @@ class Monkey3DCustomEnv(EnvBase):
     def set_step_state(self, info_index, step_index):
         pos = self.terrain_info[info_index, 0:3]
         phi = self.terrain_info[info_index, 3]
-        quaternion = np.array(self._p.getQuaternionFromEuler([90 * DEG2RAD, 0, phi]))
+        quaternion = np.array(pybullet.getQuaternionFromEuler([90 * DEG2RAD, 0, phi]))
         self.steps[step_index].set_position(pos=pos, quat=quaternion)
 
     def randomize_terrain(self):

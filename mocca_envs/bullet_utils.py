@@ -101,9 +101,13 @@ class BodyPart:
         self, body_id, link_id=-1
     ):  # a method you will most probably need a lot to get pose and orientation
         if link_id == -1:
-            (x, y, z), (a, b, c, d) = self._p.getBasePositionAndOrientation(body_id)
+            (x, y, z), (a, b, c, d) = pybullet.getBasePositionAndOrientation(
+                body_id, physicsClientId=self._p._client
+            )
         else:
-            (x, y, z), (a, b, c, d), _, _, _, _ = self._p.getLinkState(body_id, link_id)
+            (x, y, z), (a, b, c, d), _, _, _, _ = pybullet.getLinkState(
+                body_id, link_id, physicsClientId=self._p._client
+            )
         return np.array([x, y, z, a, b, c, d])
 
     def get_position(self):
@@ -125,23 +129,15 @@ class BodyPart:
 
     def speed(self):
         if self.bodyPartIndex == -1:
-            (vx, vy, vz), _ = self._p.getBaseVelocity(self.bodies[self.bodyIndex])
+            (vx, vy, vz), _ = pybullet.getBaseVelocity(
+                self.bodies[self.bodyIndex], physicsClientId=self._p._client
+            )
         else:
-            (
-                (x, y, z),
-                (a, b, c, d),
-                _,
-                _,
-                _,
-                _,
-                (vx, vy, vz),
-                (
-                    vr,
-                    vp,
-                    vy,
-                ),
-            ) = self._p.getLinkState(
-                self.bodies[self.bodyIndex], self.bodyPartIndex, computeLinkVelocity=1
+            (_, _, _, _, _, _, (vx, vy, vz), _,) = pybullet.getLinkState(
+                self.bodies[self.bodyIndex],
+                self.bodyPartIndex,
+                computeLinkVelocity=1,
+                physicsClientId=self._p._client,
             )
         return np.array([vx, vy, vz])
 
@@ -155,31 +151,45 @@ class BodyPart:
         return self.current_orientation()
 
     def reset_position(self, position):
-        self._p.resetBasePositionAndOrientation(
-            self.bodies[self.bodyIndex], position, self.get_orientation()
+        pybullet.resetBasePositionAndOrientation(
+            self.bodies[self.bodyIndex],
+            position,
+            self.get_orientation(),
+            physicsClientId=self._p._client,
         )
 
     def reset_orientation(self, orientation):
-        self._p.resetBasePositionAndOrientation(
-            self.bodies[self.bodyIndex], self.get_position(), orientation
+        pybullet.resetBasePositionAndOrientation(
+            self.bodies[self.bodyIndex],
+            self.get_position(),
+            orientation,
+            physicsClientId=self._p._client,
         )
 
     def reset_velocity(self, linearVelocity=[0, 0, 0], angularVelocity=[0, 0, 0]):
-        self._p.resetBaseVelocity(
-            self.bodies[self.bodyIndex], linearVelocity, angularVelocity
+        pybullet.resetBaseVelocity(
+            self.bodies[self.bodyIndex],
+            linearVelocity,
+            angularVelocity,
+            physicsClientId=self._p._client,
         )
 
     def reset_pose(self, position, orientation):
-        self._p.resetBasePositionAndOrientation(
-            self.bodies[self.bodyIndex], position, orientation
+        pybullet.resetBasePositionAndOrientation(
+            self.bodies[self.bodyIndex],
+            position,
+            orientation,
+            physicsClientId=self._p._client,
         )
 
     def pose(self):
         return self.bp_pose
 
     def contact_list(self):
-        return self._p.getContactPoints(
-            bodyA=self.bodies[self.bodyIndex], linkIndexA=self.bodyPartIndex
+        return pybullet.getContactPoints(
+            bodyA=self.bodies[self.bodyIndex],
+            linkIndexA=self.bodyPartIndex,
+            physicsClientId=self._p._client,
         )
 
 
