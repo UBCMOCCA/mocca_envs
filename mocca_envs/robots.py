@@ -219,8 +219,8 @@ class WalkerBase:
 
         self.reset_joint_states(base_joint_angles, self.base_joint_speeds)
 
-        pos = pos or self.base_position
-        quat = quat or self.base_orientation
+        pos = pos if pos is not None else self.base_position
+        quat = quat if quat is not None else self.base_orientation
         self.robot_body.reset_pose(pos, quat)
 
         vel = vel or self.base_velocity

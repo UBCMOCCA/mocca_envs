@@ -341,7 +341,6 @@ class Walker3DStepperEnv(EnvBase):
 
     def __init__(self, **kwargs):
         # Handle non-robot kwargs
-        self.random_reward = kwargs.pop("random_reward", False)
         plank_name = kwargs.pop("plank_class", None)
         self.plank_class = globals().get(plank_name, self.plank_class)
 
@@ -492,11 +491,11 @@ class Walker3DStepperEnv(EnvBase):
             pos=self.robot_init_position,
             vel=self.robot_init_velocity,
         )
-        self.calc_feet_state()
 
         # Randomize platforms
-        self.randomize_terrain()
         self.next_step_index = self.lookbehind
+        self.randomize_terrain()
+        self.calc_feet_state()
 
         # Reset camera
         if self.is_rendered or self.use_egl:
@@ -528,26 +527,9 @@ class Walker3DStepperEnv(EnvBase):
         self.robot_state = self.robot.calc_state()
         self.calc_env_state(action)
 
-        if not self.random_reward:
-            reward = self.progress - self.energy_penalty
-            reward += self.step_bonus + self.target_bonus - self.speed_penalty * 0
-            reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
-        else:
-            reward = np.dot(
-                self.np_random.uniform(0.8, 1.2, 8),
-                np.array(
-                    [
-                        self.progress,
-                        -self.energy_penalty,
-                        self.step_bonus,
-                        self.target_bonus,
-                        -self.speed_penalty * 0,
-                        self.tall_bonus,
-                        -self.posture_penalty,
-                        -self.joints_penalty,
-                    ]
-                ),
-            )
+        reward = self.progress - self.energy_penalty
+        reward += self.step_bonus + self.target_bonus - self.speed_penalty
+        reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
 
         # targets is calculated by calc_env_state()
         state = np.concatenate((self.robot_state, self.targets.flatten()))
@@ -562,13 +544,9 @@ class Walker3DStepperEnv(EnvBase):
                 else Colors["crimson"]
             )
 
-        info = (
-            {
-                "curriculum_metric": self.next_step_index,
-            }
-            if self.done or self.timestep == self.max_timestep - 1
-            else {}
-        )
+        info = {}
+        if self.done or self.timestep == self.max_timestep - 1:
+            info["curriculum_metric"] = self.next_step_index
 
         return state, reward, self.done, info
 
@@ -893,7 +871,6 @@ class LaikagoCustomEnv(Walker3DCustomEnv):
     robot_init_position = [0, 0, 0.56]
 
     def __init__(self, **kwargs):
-        kwargs.pop("random_reward", False)
         kwargs.pop("plank_class", None)
         super().__init__(**kwargs)
 
