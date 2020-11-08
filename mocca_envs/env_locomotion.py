@@ -1,9 +1,11 @@
-import math
+from math import sin, cos, atan2, sqrt
 import os
 
+from bottleneck import ss, anynan, nanargmax, nanmin
 import gym
+from numba import njit
 import numpy as np
-import numba as nb
+from numpy import concatenate
 import pybullet
 import torch
 
@@ -76,7 +78,7 @@ class Walker3DCustomEnv(EnvBase):
         self.randomize_target()
 
         self.walk_target = np.array(
-            [self.dist * math.cos(self.angle), self.dist * math.sin(self.angle), 1.0]
+            [self.dist * cos(self.angle), self.dist * sin(self.angle), 1.0]
         )
         self.close_count = 0
 
@@ -93,12 +95,12 @@ class Walker3DCustomEnv(EnvBase):
 
         self.calc_potential()
 
-        sin_ = self.distance_to_target * math.sin(self.angle_to_target)
+        sin_ = self.distance_to_target * sin(self.angle_to_target)
         sin_ = sin_ / (1 + abs(sin_))
-        cos_ = self.distance_to_target * math.cos(self.angle_to_target)
+        cos_ = self.distance_to_target * cos(self.angle_to_target)
         cos_ = cos_ / (1 + abs(cos_))
 
-        state = np.concatenate((self.robot_state, [sin_], [cos_]))
+        state = concatenate((self.robot_state, [sin_], [cos_]))
 
         return state
 
@@ -115,12 +117,12 @@ class Walker3DCustomEnv(EnvBase):
         reward = self.progress + self.target_bonus - self.energy_penalty
         reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
 
-        sin_ = self.distance_to_target * math.sin(self.angle_to_target)
+        sin_ = self.distance_to_target * sin(self.angle_to_target)
         sin_ = sin_ / (1 + abs(sin_))
-        cos_ = self.distance_to_target * math.cos(self.angle_to_target)
+        cos_ = self.distance_to_target * cos(self.angle_to_target)
         cos_ = cos_ / (1 + abs(cos_))
 
-        state = np.concatenate((self.robot_state, [sin_], [cos_]))
+        state = concatenate((self.robot_state, [sin_], [cos_]))
 
         if self.is_rendered or self.use_egl:
             self._handle_keyboard()
@@ -143,13 +145,10 @@ class Walker3DCustomEnv(EnvBase):
         walk_target_delta = self.walk_target - self.robot.body_xyz
 
         self.angle_to_target = walk_target_theta - self.robot.body_rpy[2]
-
-        self.distance_to_target = (
-            walk_target_delta[0] ** 2 + walk_target_delta[1] ** 2
-        ) ** (1 / 2)
+        self.distance_to_target = sqrt(ss(walk_target_delta[0:2]))
 
         self.linear_potential = -self.distance_to_target / self.scene.dt
-        self.angular_potential = math.cos(self.angle_to_target)
+        self.angular_potential = cos(self.angle_to_target)
 
     def calc_base_reward(self, action):
 
@@ -196,7 +195,7 @@ class Walker3DCustomEnv(EnvBase):
             self.target_bonus = 2
 
     def calc_env_state(self, action):
-        if not np.isfinite(self.robot_state).all():
+        if anynan(self.robot_state):
             print("~INF~", self.robot_state)
             self.done = True
 
@@ -209,9 +208,7 @@ class Walker3DCustomEnv(EnvBase):
             self.close_count = 0
             self.add_angular_progress = True
             self.randomize_target()
-            delta = self.dist * np.array(
-                [math.cos(self.angle), math.sin(self.angle), 0.0]
-            )
+            delta = self.dist * np.array([cos(self.angle), sin(self.angle), 0.0])
             self.walk_target += delta
             self.calc_potential()
 
@@ -221,7 +218,7 @@ class Walker3DCustomEnv(EnvBase):
         # _ + 6 accounting for global
         right = self.robot._right_joint_indices + 6
         # _ + action_dim to get velocities, last one is right foot contact
-        right = np.concatenate(
+        right = concatenate(
             (
                 right,
                 right + action_dim,
@@ -233,7 +230,7 @@ class Walker3DCustomEnv(EnvBase):
         )
         # Do the same for left
         left = self.robot._left_joint_indices + 6
-        left = np.concatenate(
+        left = concatenate(
             (
                 left,
                 left + action_dim,
@@ -246,7 +243,7 @@ class Walker3DCustomEnv(EnvBase):
 
         # Used for creating mirrored observations
 
-        negation_obs_indices = np.concatenate(
+        negation_obs_indices = concatenate(
             (
                 # vy, roll
                 [2, 4],
@@ -290,7 +287,7 @@ class Walker2DCustomEnv(Walker3DCustomEnv):
         if not self.state_id >= 0:
             self.state_id = self._p.saveState()
 
-        state = np.concatenate((self.robot_state, [0], [0]))
+        state = concatenate((self.robot_state, [0], [0]))
         return state
 
     def step(self, action):
@@ -329,7 +326,7 @@ class Walker3DStepperEnv(EnvBase):
     robot_init_velocity = None
 
     plank_class = LargePlank  # Pillar, Plank, LargePlank
-    n_steps = 20
+    num_steps = 20
     step_radius = 0.25
     rendered_step_count = 3
     init_step_separation = 0.75
@@ -338,6 +335,7 @@ class Walker3DStepperEnv(EnvBase):
     lookbehind = 1
     walk_target_index = -1
     step_bonus_smoothness = 1
+    stop_steps = [6, 7, 13, 14]
 
     def __init__(self, **kwargs):
         # Handle non-robot kwargs
@@ -369,8 +367,8 @@ class Walker3DStepperEnv(EnvBase):
         self.yaw_range = np.array([-20, 20])
         self.tilt_range = np.array([-15, 15])
         self.step_param_dim = 5
-        # x, y, z, phi, x_tilt, y_tilt
-        self.terrain_info = np.zeros((self.n_steps, self.step_param_dim + 1))
+        # Important to do this once before reset!
+        self.terrain_info = self.generate_step_placements()
 
         # robot_state + (2 targets) * (x, y, z, x_tilt, y_tilt)
         self.robot_obs_dim = self.robot.observation_space.shape[0]
@@ -396,7 +394,7 @@ class Walker3DStepperEnv(EnvBase):
         pitch_range = self.pitch_range * ratio * DEG2RAD + np.pi / 2
         tilt_range = self.tilt_range * ratio * DEG2RAD
 
-        N = self.n_steps
+        N = self.num_steps
         dr = self.np_random.uniform(*dist_range, size=N)
         dphi = self.np_random.uniform(*yaw_range, size=N)
         dtheta = self.np_random.uniform(*pitch_range, size=N)
@@ -460,13 +458,14 @@ class Walker3DStepperEnv(EnvBase):
         quaternion = np.array(pybullet.getQuaternionFromEuler([x_tilt, y_tilt, phi]))
         self.steps[step_index].set_position(pos=pos, quat=quaternion)
 
-    def randomize_terrain(self):
-        self.terrain_info = self.generate_step_placements()
+    def randomize_terrain(self, replace=True):
+        if replace:
+            self.terrain_info = self.generate_step_placements()
         for index in range(self.rendered_step_count):
             self.set_step_state(index, index)
 
     def update_steps(self):
-        if self.rendered_step_count == self.n_steps:
+        if self.rendered_step_count == self.num_steps:
             return
 
         if self.next_step_index >= self.rendered_step_count:
@@ -491,10 +490,12 @@ class Walker3DStepperEnv(EnvBase):
             pos=self.robot_init_position,
             vel=self.robot_init_velocity,
         )
+        self.swing_leg = 1 if self.robot.mirrored else 0
 
         # Randomize platforms
+        replace = self.next_step_index >= self.num_steps / 2
         self.next_step_index = self.lookbehind
-        self.randomize_terrain()
+        self.randomize_terrain(replace)
         self.calc_feet_state()
 
         # Reset camera
@@ -507,7 +508,7 @@ class Walker3DStepperEnv(EnvBase):
         # Order is important because walk_target is set up above
         self.calc_potential()
 
-        state = np.concatenate((self.robot_state, self.targets.flatten()))
+        state = concatenate((self.robot_state, self.targets.flatten()))
 
         if not self.state_id >= 0:
             self.state_id = self._p.saveState()
@@ -521,18 +522,18 @@ class Walker3DStepperEnv(EnvBase):
         self.scene.global_step()
 
         # Stop on the 7th and 14th step, but need to specify N-1 as well
-        self.set_stop_on_next_step = self.next_step_index in [6, 7, 13, 14]
+        self.set_stop_on_next_step = self.next_step_index in self.stop_steps
 
         # Don't calculate the contacts for now
         self.robot_state = self.robot.calc_state()
         self.calc_env_state(action)
 
         reward = self.progress - self.energy_penalty
-        reward += self.step_bonus + self.target_bonus - self.speed_penalty
+        reward += self.step_bonus + self.target_bonus - self.speed_penalty * 0
         reward += self.tall_bonus - self.posture_penalty - self.joints_penalty
 
         # targets is calculated by calc_env_state()
-        state = np.concatenate((self.robot_state, self.targets.flatten()))
+        state = concatenate((self.robot_state, self.targets.flatten()))
 
         if self.is_rendered or self.use_egl:
             self._handle_keyboard(callback=self.handle_keyboard)
@@ -564,22 +565,19 @@ class Walker3DStepperEnv(EnvBase):
 
     def calc_potential(self):
 
-        walk_target_theta = math.atan2(
+        walk_target_theta = atan2(
             self.walk_target[1] - self.robot.body_xyz[1],
             self.walk_target[0] - self.robot.body_xyz[0],
         )
         walk_target_delta = self.walk_target - self.robot.body_xyz
 
         self.angle_to_target = walk_target_theta - self.robot.body_rpy[2]
-
-        self.distance_to_target = (
-            walk_target_delta[0] ** 2 + walk_target_delta[1] ** 2
-        ) ** (1 / 2)
+        self.distance_to_target = sqrt(ss(walk_target_delta[0:2]))
 
         self.linear_potential = -self.distance_to_target / self.scene.dt
 
     @staticmethod
-    @nb.njit(fastmath=True)
+    @njit(fastmath=True)
     def _calc_base_reward(action, joint_speed, electricity_coef, stall_torque_coef):
         electricity_sum = 0
         stall_torque_sum = 0
@@ -612,8 +610,7 @@ class Walker3DStepperEnv(EnvBase):
         if not -0.4 < self.robot.body_rpy[0] < 0.4:
             self.posture_penalty += abs(self.robot.body_rpy[0])
 
-        v = self.robot.body_vel
-        speed = (v[0] ** 2 + v[1] ** 2 + v[2] ** 2) ** (1 / 2)
+        speed = sqrt(ss(self.robot.body_vel))
         self.speed_penalty = max(speed - 1.6, 0)
 
         self.energy_penalty = self._calc_base_reward(
@@ -627,7 +624,8 @@ class Walker3DStepperEnv(EnvBase):
 
         terminal_height = self.terminal_height_curriculum[self.curriculum]
         self.tall_bonus = 2.0 if self.robot_state[0] > terminal_height else -1.0
-        self.done = self.done or self.tall_bonus < 0
+        abs_height = self.robot.body_xyz[2] - self.terrain_info[self.next_step_index, 2]
+        self.done = self.done or self.tall_bonus < 0 or abs_height < -3
 
     def calc_feet_state(self):
         # Calculate contact separately for step
@@ -655,7 +653,12 @@ class Walker3DStepperEnv(EnvBase):
 
         info = np.array(list(map(extract_foot_info, self.robot.feet)))
         self.robot.feet_contact[:] = info[:, 0]
-        self.target_reached = max(info[:, 1]) > 0
+        if (
+            self.next_step_index - 1 in self.stop_steps
+            and self.next_step_index - 2 in self.stop_steps
+        ):
+            self.swing_leg = nanargmax(info[:, 1])
+        self.target_reached = info[self.swing_leg, 1] > 0
 
         # At least one foot is on the plank
         if self.target_reached:
@@ -670,6 +673,7 @@ class Walker3DStepperEnv(EnvBase):
             # Needed for not over counting step bonus
             if self.target_reached_count >= 2:
                 if not self.stop_on_next_step:
+                    self.swing_leg = (self.swing_leg + 1) % 2
                     self.next_step_index += 1
                     self.target_reached_count = 0
                     self.update_steps()
@@ -687,7 +691,7 @@ class Walker3DStepperEnv(EnvBase):
             and self.target_reached_count == 1
             and self.next_step_index != len(self.terrain_info) - 1  # exclude last step
         ):
-            dist = self.foot_dist_to_target.min()
+            dist = nanmin(self.foot_dist_to_target)
             self.step_bonus = 50 * 2.718 ** (
                 -(dist ** self.step_bonus_smoothness) / 0.25
             )
@@ -699,7 +703,7 @@ class Walker3DStepperEnv(EnvBase):
             self.target_bonus = 2.0
 
     def calc_env_state(self, action):
-        if not np.isfinite(self.robot_state).all():
+        if anynan(self.robot_state):
             print("~INF~", self.robot_state)
             self.done = True
 
@@ -724,7 +728,7 @@ class Walker3DStepperEnv(EnvBase):
             if N - j >= 0:
                 targets = self.terrain_info[N - j : N + k]
             else:
-                targets = np.concatenate(
+                targets = concatenate(
                     (
                         np.repeat(self.terrain_info[[0]], j, axis=0),
                         self.terrain_info[N : N + k],
@@ -732,11 +736,11 @@ class Walker3DStepperEnv(EnvBase):
                 )
             if len(targets) < (k + j):
                 # If running out of targets, repeat last target
-                targets = np.concatenate(
+                targets = concatenate(
                     (targets, np.repeat(targets[[-1]], (k + j) - len(targets), axis=0))
                 )
         else:
-            targets = np.concatenate(
+            targets = concatenate(
                 (
                     self.terrain_info[N - j : N],
                     np.repeat(self.terrain_info[[N]], k, axis=0),
@@ -752,7 +756,7 @@ class Walker3DStepperEnv(EnvBase):
         # self._distance_to_targets = np.linalg.norm(delta_pos[:, 0:2], ord=2, axis=1)
         numba_norm2_2d(delta_pos[:, 0:2], self._distance_to_targets)
 
-        deltas = np.concatenate(
+        deltas = concatenate(
             (
                 (np.sin(angle_to_targets) * self._distance_to_targets)[:, None],  # x
                 (np.cos(angle_to_targets) * self._distance_to_targets)[:, None],  # y
@@ -769,7 +773,7 @@ class Walker3DStepperEnv(EnvBase):
 
         action_dim = self.robot.action_space.shape[0]
 
-        right_obs_indices = np.concatenate(
+        right_obs_indices = concatenate(
             (
                 # joint angle indices + 6 accounting for global
                 6 + self.robot._right_joint_indices,
@@ -784,7 +788,7 @@ class Walker3DStepperEnv(EnvBase):
         )
 
         # Do the same for left, except using +1 for left foot contact
-        left_obs_indices = np.concatenate(
+        left_obs_indices = concatenate(
             (
                 6 + self.robot._left_joint_indices,
                 6 + self.robot._left_joint_indices + action_dim,
@@ -795,7 +799,7 @@ class Walker3DStepperEnv(EnvBase):
             )
         )
 
-        robot_neg_obs_indices = np.concatenate(
+        robot_neg_obs_indices = concatenate(
             (
                 # vy, roll
                 [2, 4],
@@ -817,7 +821,7 @@ class Walker3DStepperEnv(EnvBase):
             dtype=np.int64,
         ).flatten()
 
-        negation_obs_indices = np.concatenate(
+        negation_obs_indices = concatenate(
             (robot_neg_obs_indices, steps_neg_obs_indices + self.robot_obs_dim)
         )
 
@@ -1186,7 +1190,7 @@ class Walker3DPlannerEnv(EnvBase):
         if N - j >= 0:
             base_step_parameters = path[N - j : N + k]
         else:
-            base_step_parameters = np.concatenate(
+            base_step_parameters = concatenate(
                 (
                     np.repeat(path[[0]], j, axis=0),
                     path[N : N + k],
@@ -1194,7 +1198,7 @@ class Walker3DPlannerEnv(EnvBase):
             )
         if len(base_step_parameters) < (k + j):
             # If running out of targets, repeat last target
-            base_step_parameters = np.concatenate(
+            base_step_parameters = concatenate(
                 (
                     base_step_parameters,
                     np.repeat(
@@ -1229,8 +1233,8 @@ class Walker3DPlannerEnv(EnvBase):
 
     def get_observation_components(self):
         softsign = lambda x: x / (1 + abs(x))
-        dx = 5 * softsign(self.distance_to_target) * math.cos(self.angle_to_target)
-        dy = 5 * softsign(self.distance_to_target) * math.sin(self.angle_to_target)
+        dx = 5 * softsign(self.distance_to_target) * cos(self.angle_to_target)
+        dy = 5 * softsign(self.distance_to_target) * sin(self.angle_to_target)
         path_parameters = self.get_local_coordinates(self.candidate_paths)
         return (self.robot_state, [dx, dy], path_parameters.flatten())
 
@@ -1283,7 +1287,7 @@ class Walker3DPlannerEnv(EnvBase):
             return np.stack((px, py, pz, phi, zero, zero), axis=1)
 
         L = self.bridge_length
-        self.discrete_planks_parameters = np.concatenate(
+        self.discrete_planks_parameters = concatenate(
             [
                 make_bridge(self.discrete_planks[i * L : (i + 1) * L], i == 0)
                 for i in range(self.num_bridges)
@@ -1310,7 +1314,7 @@ class Walker3DPlannerEnv(EnvBase):
         self.calc_potential()  # walk_target must be set first
         # must be called before get observation
         self.candidate_paths = self.sample_paths()
-        state = np.concatenate(self.get_observation_components())
+        state = concatenate(self.get_observation_components())
         return state
 
     def step(self, action):
@@ -1365,7 +1369,7 @@ class Walker3DPlannerEnv(EnvBase):
             path_parameters = self.get_local_coordinates(selected_path)
             base_parameters = self.get_base_step_parameters(path_parameters)
 
-            base_obs = np.concatenate((self.robot_state, base_parameters.flatten()))
+            base_obs = concatenate((self.robot_state, base_parameters.flatten()))
             base_value, base_action = self.query_base_controller(base_obs)
 
             self.timestep += 1
@@ -1401,7 +1405,7 @@ class Walker3DPlannerEnv(EnvBase):
             x0, y0, yaw0 = selected_path[-1, [0, 1, 3]]
             self.candidate_paths = self.sample_paths(x0, y0, yaw0)
 
-        state = np.concatenate(self.get_observation_components())
+        state = concatenate(self.get_observation_components())
         info = (
             {
                 "curriculum_metric": self.linear_potential * self.scene.dt,
@@ -1422,7 +1426,7 @@ class Walker3DPlannerEnv(EnvBase):
         delta = self.walk_target - self.robot.body_xyz
         theta = np.arctan2(delta[1], delta[0])
         self.angle_to_target = theta - self.robot.body_rpy[2]
-        self.distance_to_target = (delta[0] ** 2 + delta[1] ** 2) ** (1 / 2)
+        self.distance_to_target = sqrt(ss(delta[0:2]))
         self.linear_potential = -self.distance_to_target / self.scene.dt
 
 
@@ -1458,7 +1462,7 @@ class Monkey3DCustomEnv(EnvBase):
         self.joints_at_limit_cost = 0.1
 
         # Env settings
-        self.n_steps = 32
+        self.num_steps = 32
         self.lookahead = 2
         self.next_step_index = 2
 
@@ -1466,7 +1470,7 @@ class Monkey3DCustomEnv(EnvBase):
         self.pitch_limit = 0
         self.yaw_limit = 0
         self.r_range = np.array([0.3, 0.5])
-        self.terrain_info = np.zeros((self.n_steps, 4))
+        self.terrain_info = np.zeros((self.num_steps, 4))
 
         # robot_state + (2 targets) * (x, y, z) + {swing, pivot}_leg + swing_{xyz, quat}
         robot_obs_dim = self.robot.observation_space.shape[0]
@@ -1479,14 +1483,14 @@ class Monkey3DCustomEnv(EnvBase):
         high = np.inf * np.ones(robot_act_dim)
         self.action_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
-    def generate_step_placements(self, n_steps=50, yaw_limit=30, pitch_limit=25):
+    def generate_step_placements(self, num_steps=50, yaw_limit=30, pitch_limit=25):
 
         y_range = np.array([-yaw_limit, yaw_limit]) * DEG2RAD
         p_range = np.array([90 - pitch_limit, 90 + pitch_limit]) * DEG2RAD
 
-        dr = self.np_random.uniform(*self.r_range, size=n_steps)
-        dphi = self.np_random.uniform(*y_range, size=n_steps)
-        dtheta = self.np_random.uniform(*p_range, size=n_steps)
+        dr = self.np_random.uniform(*self.r_range, size=num_steps)
+        dphi = self.np_random.uniform(*y_range, size=num_steps)
+        dtheta = self.np_random.uniform(*p_range, size=num_steps)
 
         # special treatment for first steps
         dphi[0] = 0
@@ -1549,14 +1553,14 @@ class Monkey3DCustomEnv(EnvBase):
     def randomize_terrain(self):
 
         self.terrain_info = self.generate_step_placements(
-            self.n_steps, self.yaw_limit, self.pitch_limit
+            self.num_steps, self.yaw_limit, self.pitch_limit
         )
 
         for index in range(self.rendered_step_count):
             self.set_step_state(index, index)
 
     def update_steps(self):
-        if self.rendered_step_count == self.n_steps:
+        if self.rendered_step_count == self.num_steps:
             return
 
         if self.next_step_index >= self.rendered_step_count:
@@ -1595,7 +1599,7 @@ class Monkey3DCustomEnv(EnvBase):
         self.robot_state = self.robot.reset(random_pose=False)
 
         self.base_phi = DEG2RAD * np.array(
-            [-10] + [20, -20] * (self.n_steps // 2 - 1) + [10]
+            [-10] + [20, -20] * (self.num_steps // 2 - 1) + [10]
         )
         self.base_phi *= np.sign(float(not self.robot.mirrored) - 0.5)
 
@@ -1610,7 +1614,7 @@ class Monkey3DCustomEnv(EnvBase):
         # Order is important because walk_target is set up above
         self.calc_potential()
 
-        state = np.concatenate(self.get_observation_components())
+        state = concatenate(self.get_observation_components())
 
         return state
 
@@ -1639,7 +1643,7 @@ class Monkey3DCustomEnv(EnvBase):
 
         self.done = self.done or (self.timestep > 180 and self.next_step_index <= 2)
 
-        state = np.concatenate(self.get_observation_components())
+        state = concatenate(self.get_observation_components())
 
         if self.is_rendered:
             self._handle_keyboard()
@@ -1650,9 +1654,7 @@ class Monkey3DCustomEnv(EnvBase):
     def calc_potential(self):
 
         walk_target_delta = self.walk_target - self.robot.body_xyz
-        self.distance_to_target = (
-            walk_target_delta[0] ** 2 + walk_target_delta[1] ** 2
-        ) ** (1 / 2)
+        self.distance_to_target = sqrt(ss(walk_target_delta[0:2]))
 
         swing_foot_name = "right_palm" if self.swing_leg == 0 else "left_palm"
         swing_foot_xyz = self.robot.parts[swing_foot_name].pose().xyz()
@@ -1684,8 +1686,7 @@ class Monkey3DCustomEnv(EnvBase):
         if not -90 < self.robot.body_rpy[2] * RAD2DEG < 90:
             self.posture_penalty += abs(self.robot.body_rpy[2])
 
-        v = self.robot.body_vel
-        speed = (v[0] ** 2 + v[1] ** 2 + v[2] ** 2) ** (1 / 2)
+        speed = sqrt(ss(self.robot.body_vel))
         self.speed_penalty = max(speed - 1.6, 0)
 
         self.energy_penalty = self.electricity_cost * float(
@@ -1717,7 +1718,7 @@ class Monkey3DCustomEnv(EnvBase):
             if i == self.swing_leg:
 
                 delta = self.robot.feet_xyz[self.swing_leg] - p_xyz
-                distance = (delta[0] ** 2 + delta[1] ** 2) ** (1 / 2)
+                distance = sqrt(ss(delta[0:2]))
                 self.foot_dist_to_target = distance
 
                 palm_name = "right_palm" if self.swing_leg == 0 else "left_palm"
@@ -1765,7 +1766,7 @@ class Monkey3DCustomEnv(EnvBase):
             self.target_bonus = 2.0
 
     def calc_env_state(self, action):
-        if not np.isfinite(self.robot_state).all():
+        if anynan(self.robot_state):
             print("~INF~", self.robot_state)
             self.done = True
 
@@ -1790,7 +1791,7 @@ class Monkey3DCustomEnv(EnvBase):
         targets = self.terrain_info[self.next_step_index : self.next_step_index + k]
         if len(targets) < k:
             # If running out of targets, repeat last target
-            targets = np.concatenate(
+            targets = concatenate(
                 (targets, np.repeat(targets[[-1]], k - len(targets), axis=0))
             )
 

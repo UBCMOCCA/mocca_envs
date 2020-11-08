@@ -3,9 +3,11 @@ import os
 
 current_dir = os.path.dirname(os.path.realpath(__file__))
 
+from bottleneck import nanmin
 import gym
-import numba as nb
+from numba import njit
 import numpy as np
+from numpy import concatenate
 import pybullet
 
 from mocca_envs.bullet_utils import BodyPart, Joint
@@ -14,6 +16,8 @@ DEG2RAD = np.pi / 180
 
 
 class WalkerBase:
+
+    root_link_name = None
 
     mirrored = False
     applied_gain = 1.0
@@ -32,6 +36,11 @@ class WalkerBase:
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
         self._root_matrix = np.eye(3)
+        # self.joint_angles = np.zeros(self.action_dim, dtype=np.float32)
+        # self.joint_speeds = np.zeros(self.action_dim, dtype=np.float32)
+        self.joint_angles, self.joint_speeds = np.zeros(
+            (2, self.action_dim), dtype=np.float32
+        )
 
     def apply_action(self, a):
         pybullet.setJointMotorControlArray(
@@ -45,23 +54,56 @@ class WalkerBase:
     def calc_state(self, contact_object_ids=None):
 
         # Use pybullet's array version, should be faster
-        joint_info = pybullet.getJointStates(
-            self.id, self.ordered_joint_ids, physicsClientId=self._p._client
-        )
+        # joint_info = pybullet.getJointStates(
+        #     self.id, self.ordered_joint_ids, physicsClientId=self._p._client
+        # )
+        #
+        # joint_angle_and_vel = np.array([j[0:2] for j in joint_info], dtype=np.float32)
+        # self.joint_angles = joint_angle_and_vel[:, 0]
+        # self.joint_speeds = 0.1 * joint_angle_and_vel[:, 1]
 
-        joint_angle_and_vel = np.array([j[0:2] for j in joint_info], dtype=np.float32)
-        self.joint_angles = joint_angle_and_vel[:, 0]
-        self.joint_speeds = 0.1 * joint_angle_and_vel[:, 1]
+        pybullet.getJointStates2(
+            self.id,
+            self.ordered_joint_ids,
+            self.joint_angles,
+            self.joint_speeds,
+            physicsClientId=self._p._client,
+        )
+        self.joint_speeds *= 0.1
 
         self.normalized_joint_angles = self.to_normalized(self.joint_angles)
         self.joints_at_limit = np.count_nonzero(
             abs(self.normalized_joint_angles) > 0.99
         )
 
-        # Faster if we don't use true CoM
-        pose = self.robot_body.get_pose()
-        self.body_xyz = pose[:3]
-        self.body_rpy = pybullet.getEulerFromQuaternion(pose[3:])
+        if self.root_and_foot_ids is not None:
+            link_states = pybullet.getLinkStates(
+                self.id,
+                self.root_and_foot_ids,
+                computeLinkVelocity=1,
+                physicsClientId=self._p._client,
+            )
+            root_state = link_states[0]
+            self.body_xyz = np.array(root_state[0])
+            body_global_vel = root_state[6]
+            self.body_rpy = pybullet.getEulerFromQuaternion(root_state[1])
+            self.feet_xyz = np.array([state[0] for state in link_states[1:]])
+
+            # pose = self.robot_body.get_pose()
+            # print("body_xyz", np.abs(self.body_xyz - pose[:3]))
+            # print("body_vel", np.linalg.norm(self.robot_body.speed() - root_state[6]))
+            # print("body_rpy", np.abs(np.array(self.body_rpy) - pybullet.getEulerFromQuaternion(pose[3:])) * 180 / np.pi)
+        else:
+            pose = self.robot_body.get_pose()
+            self.body_xyz = pose[:3]
+            self.body_rpy = pybullet.getEulerFromQuaternion(pose[3:])
+            body_global_vel = self.robot_body.speed()
+
+            # self.feet_xyz = np.array([f.bp_pose.xyz() for f in self.feet])
+            foot_info = pybullet.getLinkStates(
+                self.id, self.foot_ids, physicsClientId=self._p._client
+            )
+            self.feet_xyz = np.array([f[0] for f in foot_info])
 
         roll, pitch, yaw = self.body_rpy
 
@@ -72,10 +114,9 @@ class WalkerBase:
         self._root_matrix[1, 0] = yaw_sin
         self._root_matrix[1, 1] = yaw_cos
 
-        self.body_vel = self._root_matrix.dot(self.robot_body.speed())
+        self.body_vel = self._root_matrix.dot(body_global_vel)
         vx, vy, vz = self.body_vel
 
-        self.feet_xyz = np.array([f.bp_pose.xyz() for f in self.feet])
         if contact_object_ids is not None:
             self.feet_contact = np.array(
                 [
@@ -90,13 +131,14 @@ class WalkerBase:
                 ]
             )
 
-        height = self.body_xyz[2] - min(self.feet_xyz[:, 2])
+        # bottleneck is faster if data is ndarray, otherwise use built-in min()
+        height = self.body_xyz[2] - nanmin(self.feet_xyz[:, 2])
 
         # Faster than np.clip()
         self.joint_speeds[self.joint_speeds < -5] = -5
         self.joint_speeds[self.joint_speeds > +5] = +5
 
-        state = np.concatenate(
+        state = concatenate(
             (
                 [height, vx, vy, vz, roll, pitch],
                 self.normalized_joint_angles,
@@ -125,6 +167,14 @@ class WalkerBase:
         self.feet_contact = np.zeros(len(self.foot_names), dtype=np.float32)
         self.feet_xyz = np.zeros((len(self.foot_names), 3))
 
+        self.foot_ids = [f.bodyPartIndex for f in self.feet]
+        if self.root_link_name is not None:
+            self.root_and_foot_ids = [
+                f.bodyPartIndex for f in [self.parts[self.root_link_name]] + self.feet
+            ]
+        else:
+            self.root_and_foot_ids = None
+
         self.base_joint_angles = np.zeros(self.action_dim)
         self.base_joint_speeds = np.zeros(self.action_dim)
         self.base_position = np.array([0, 0, 0])
@@ -142,11 +192,11 @@ class WalkerBase:
         # bias is the angle corresponding to -1
         bias = np.array([j.lowerLimit for j in self.ordered_joints], dtype=np.float32)
 
-        @nb.njit(fastmath=True)
+        @njit(fastmath=True)
         def to_radians(theta):
             return weight * (theta + 1) / 2 + bias
 
-        @nb.njit(fastmath=True)
+        @njit(fastmath=True)
         def to_normalized(angle):
             return 2 * (angle - bias) / weight - 1
 
@@ -259,6 +309,7 @@ class WalkerBase:
 
 class Walker3D(WalkerBase):
 
+    root_link_name = "torso"
     foot_names = ["right_foot", "left_foot"]
 
     power_coef = {
@@ -316,8 +367,8 @@ class Walker3D(WalkerBase):
             [8, 9, 10, 11, 12, 17, 18, 19, 20], dtype=np.int64
         )
         self._negation_joint_indices = np.array([0, 2], dtype=np.int64)  # abdomen_[x,z]
-        self._rl = np.concatenate((self._right_joint_indices, self._left_joint_indices))
-        self._lr = np.concatenate((self._left_joint_indices, self._right_joint_indices))
+        self._rl = concatenate((self._right_joint_indices, self._left_joint_indices))
+        self._lr = concatenate((self._left_joint_indices, self._right_joint_indices))
 
     def set_base_pose(self, pose=None):
         self.base_joint_angles[:] = 0  # reset
@@ -395,8 +446,8 @@ class Walker2D(WalkerBase):
         self._right_joint_indices = np.array([1, 2, 3], dtype=np.int64)
         self._left_joint_indices = np.array([4, 5, 6], dtype=np.int64)
         self._negation_joint_indices = np.array([], dtype=np.int64)
-        self._rl = np.concatenate((self._right_joint_indices, self._left_joint_indices))
-        self._lr = np.concatenate((self._left_joint_indices, self._right_joint_indices))
+        self._rl = concatenate((self._right_joint_indices, self._left_joint_indices))
+        self._lr = concatenate((self._left_joint_indices, self._right_joint_indices))
 
 
 class Crab2D(WalkerBase):
@@ -472,8 +523,8 @@ class Monkey3D(Walker3D):
             [8, 9, 10, 11, 12, 18, 19, 20, 21, 22], dtype=np.int64
         )
         self._negation_joint_indices = np.array([0, 2], dtype=np.int64)  # abdomen_[x,z]
-        self._rl = np.concatenate((self._right_joint_indices, self._left_joint_indices))
-        self._lr = np.concatenate((self._left_joint_indices, self._right_joint_indices))
+        self._rl = concatenate((self._right_joint_indices, self._left_joint_indices))
+        self._lr = concatenate((self._left_joint_indices, self._right_joint_indices))
 
     def set_base_pose(self, pose=None):
         self.base_joint_angles[:] = 0  # reset
@@ -492,6 +543,7 @@ class Monkey3D(Walker3D):
 
 
 class Mike(Walker3D):
+    root_link_name = "waist"
     foot_names = ["right_foot", "left_foot"]
 
     power_coef = {
@@ -608,8 +660,8 @@ class Laikago(WalkerBase):
     _right_joint_indices = np.array([0, 1, 2, 6, 7, 8], dtype=np.int64)
     _left_joint_indices = np.array([3, 4, 5, 9, 10, 11], dtype=np.int64)
     _negation_joint_indices = np.array([], dtype=np.int64)
-    _rl = np.concatenate((_right_joint_indices, _left_joint_indices))
-    _lr = np.concatenate((_left_joint_indices, _right_joint_indices))
+    _rl = concatenate((_right_joint_indices, _left_joint_indices))
+    _lr = concatenate((_left_joint_indices, _right_joint_indices))
 
     def initialize(self):
         bc = self._p

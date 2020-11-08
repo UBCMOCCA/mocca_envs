@@ -12,6 +12,7 @@ setup(
         "gym>=0.10.10",
         "numpy",
         "numba",
+        "bottleneck",
         # And any other dependencies
     ],
     packages=find_packages(include="mocca_envs*"),

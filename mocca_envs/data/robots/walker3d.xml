@@ -18,7 +18,7 @@
                 <geom name="head" pos="0 0 0" size=".1" type="sphere" user="258"/>
             </body>
             <body name="torso" pos="0 0 0">
-                <geom name="torso1" pos="0 0 0" size=".14" conaffinity="1" contype="1" type="sphere"/>
+                <geom name="torso" pos="0 0 0" size=".14" conaffinity="1" contype="1" type="sphere"/>
             </body>
             <geom name="right_shoulder" pos="0 -0.15 0.08" size=".05" type="sphere"/>
             <geom name="left_shoulder" pos="0 0.15 0.08" size=".05" type="sphere"/>
