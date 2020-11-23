@@ -1,7 +1,7 @@
 from math import sin, cos, atan2, sqrt
 import os
 
-from bottleneck import ss, anynan, nanargmax, nanmin
+from bottleneck import ss, anynan, nanargmax, nanargmin, nanmin
 import gym
 from numba import njit
 import numpy as np
@@ -19,7 +19,6 @@ from mocca_envs.bullet_objects import (
     MonkeyBar,
 )
 from mocca_envs.robots import Child3D, Laikago, Mike, Monkey3D, Walker2D, Walker3D
-from common.misc_utils import numba_norm2_2d
 
 Colors = {
     "dodgerblue": (0.11764705882352941, 0.5647058823529412, 1.0, 1.0),
@@ -378,8 +377,10 @@ class Walker3DStepperEnv(EnvBase):
         self.action_space = self.robot.action_space
 
         # pre-allocate buffers
-        self._distance_to_targets = np.zeros(K)
-        self.foot_dist_to_target = np.zeros(len(self.robot.feet))
+        self._foot_target_contacts = np.zeros(
+            (len(self.robot.feet), 1), dtype=np.float32
+        )
+        self.foot_dist_to_target = np.zeros(len(self.robot.feet), dtype=np.float32)
 
     def generate_step_placements(self):
 
@@ -495,6 +496,7 @@ class Walker3DStepperEnv(EnvBase):
         # Randomize platforms
         replace = self.next_step_index >= self.num_steps / 2
         self.next_step_index = self.lookbehind
+        self._prev_next_step_index = self.next_step_index - 1
         self.randomize_terrain(replace)
         self.calc_feet_state()
 
@@ -565,15 +567,14 @@ class Walker3DStepperEnv(EnvBase):
 
     def calc_potential(self):
 
-        walk_target_theta = atan2(
-            self.walk_target[1] - self.robot.body_xyz[1],
-            self.walk_target[0] - self.robot.body_xyz[0],
-        )
+        # walk_target_theta = atan2(
+        #     self.walk_target[1] - self.robot.body_xyz[1],
+        #     self.walk_target[0] - self.robot.body_xyz[0],
+        # )
+        # self.angle_to_target = walk_target_theta - self.robot.body_rpy[2]
+
         walk_target_delta = self.walk_target - self.robot.body_xyz
-
-        self.angle_to_target = walk_target_theta - self.robot.body_rpy[2]
         self.distance_to_target = sqrt(ss(walk_target_delta[0:2]))
-
         self.linear_potential = -self.distance_to_target / self.scene.dt
 
     @staticmethod
@@ -631,34 +632,40 @@ class Walker3DStepperEnv(EnvBase):
         # Calculate contact separately for step
         target_cover_index = self.next_step_index % self.rendered_step_count
         next_step = self.steps[target_cover_index]
-        target_cover_id = {(next_step.id, next_step.cover_id)}
+        # target_cover_id = {(next_step.id, next_step.cover_id)}
 
-        # self.foot_dist_to_target = np.linalg.norm(
-        #     self.robot.feet_xyz[:, 0:2]
-        #     - self.terrain_info[self.next_step_index, [0, 1]],
-        #     axis=1,
-        # )
-
-        foot_delta = (
-            self.robot.feet_xyz[:, 0:2]
-            - self.terrain_info[self.next_step_index, [0, 1]]
+        self.foot_dist_to_target = np.sqrt(
+            ss(
+                self.robot.feet_xyz[:, 0:2]
+                - self.terrain_info[self.next_step_index, 0:2],
+                axis=1,
+            )
         )
-        numba_norm2_2d(foot_delta, self.foot_dist_to_target)
 
-        def extract_foot_info(f):
-            contact_ids = set((x[2], x[4]) for x in f.contact_list())
-            contact = 1.0 if contact_ids else 0.0
-            target = len(target_cover_id & contact_ids)
-            return contact, target
+        robot_id = self.robot.id
+        client_id = self._p._client
+        target_id_list = [next_step.id]
+        target_cover_id_list = [next_step.cover_id]
+        self._foot_target_contacts.fill(0)
 
-        info = np.array(list(map(extract_foot_info, self.robot.feet)))
-        self.robot.feet_contact[:] = info[:, 0]
+        for i, (foot, contact) in enumerate(
+            zip(self.robot.feet, self._foot_target_contacts)
+        ):
+            self.robot.feet_contact[i] = pybullet.getContactStates(
+                bodyA=robot_id,
+                linkIndexA=foot.bodyPartIndex,
+                bodiesB=target_id_list,
+                linkIndicesB=target_cover_id_list,
+                results=contact,
+                physicsClientId=client_id,
+            )
+
         if (
             self.next_step_index - 1 in self.stop_steps
             and self.next_step_index - 2 in self.stop_steps
         ):
-            self.swing_leg = nanargmax(info[:, 1])
-        self.target_reached = info[self.swing_leg, 1] > 0
+            self.swing_leg = nanargmax(self._foot_target_contacts[:, 0])
+        self.target_reached = self._foot_target_contacts[self.swing_leg, 0] > 0
 
         # At least one foot is on the plank
         if self.target_reached:
@@ -724,28 +731,33 @@ class Walker3DStepperEnv(EnvBase):
         k = self.lookahead
         j = self.lookbehind
         N = self.next_step_index
-        if not self.stop_on_next_step:
-            if N - j >= 0:
-                targets = self.terrain_info[N - j : N + k]
+        if self._prev_next_step_index != self.next_step_index:
+            if not self.stop_on_next_step:
+                if N - j >= 0:
+                    targets = self.terrain_info[N - j : N + k]
+                else:
+                    targets = concatenate(
+                        (
+                            [self.terrain_info[0]] * j,
+                            self.terrain_info[N : N + k],
+                        )
+                    )
+                if len(targets) < (k + j):
+                    # If running out of targets, repeat last target
+                    targets = concatenate(
+                        (targets, [targets[-1]] * ((k + j) - len(targets)))
+                    )
             else:
                 targets = concatenate(
                     (
-                        np.repeat(self.terrain_info[[0]], j, axis=0),
-                        self.terrain_info[N : N + k],
+                        self.terrain_info[N - j : N],
+                        [self.terrain_info[N]] * k,
                     )
                 )
-            if len(targets) < (k + j):
-                # If running out of targets, repeat last target
-                targets = concatenate(
-                    (targets, np.repeat(targets[[-1]], (k + j) - len(targets), axis=0))
-                )
+            self._prev_next_step_index = self.next_step_index
+            self._targets = targets
         else:
-            targets = concatenate(
-                (
-                    self.terrain_info[N - j : N],
-                    np.repeat(self.terrain_info[[N]], k, axis=0),
-                )
-            )
+            targets = self._targets
 
         self.walk_target = targets[self.walk_target_index, 0:3]
 
@@ -753,13 +765,12 @@ class Walker3DStepperEnv(EnvBase):
         target_thetas = np.arctan2(delta_pos[:, 1], delta_pos[:, 0])
 
         angle_to_targets = target_thetas - self.robot.body_rpy[2]
-        # self._distance_to_targets = np.linalg.norm(delta_pos[:, 0:2], ord=2, axis=1)
-        numba_norm2_2d(delta_pos[:, 0:2], self._distance_to_targets)
+        distance_to_targets = np.sqrt(ss(delta_pos[:, 0:2], axis=1))
 
         deltas = concatenate(
             (
-                (np.sin(angle_to_targets) * self._distance_to_targets)[:, None],  # x
-                (np.cos(angle_to_targets) * self._distance_to_targets)[:, None],  # y
+                (np.sin(angle_to_targets) * distance_to_targets)[:, None],  # x
+                (np.cos(angle_to_targets) * distance_to_targets)[:, None],  # y
                 (delta_pos[:, 2])[:, None],  # z
                 (targets[:, 4])[:, None],  # x_tilt
                 (targets[:, 5])[:, None],  # y_tilt
@@ -1133,13 +1144,9 @@ class Walker3DPlannerEnv(EnvBase):
         # Check if a discrete step at xy, if so, use its height
         xy = np.stack((x, y), axis=-1).reshape(P * N, 2)
         delta = xy[:, None] - self.discrete_planks_parameters[None, :, 0:2]
+        distance = np.sqrt(ss(delta, axis=-1))
 
-        S = np.prod(delta.shape[0:2])
-        distance = np.zeros(S)
-        numba_norm2_2d(delta.reshape((S, delta.shape[-1])), distance)
-        distance = distance.reshape(delta.shape[0:2])
-
-        min_dist_index = np.argmin(distance, axis=-1)
+        min_dist_index = nanargmin(distance, axis=-1)
         replace_mask = distance[range(P), min_dist_index] < 0.25
         z_replacement = self.discrete_planks_parameters[min_dist_index, 2]
         z.reshape(P * N)[replace_mask] = z_replacement[replace_mask]
@@ -1162,13 +1169,7 @@ class Walker3DPlannerEnv(EnvBase):
         target_thetas = np.arctan2(delta_positions[:, :, 1], delta_positions[:, :, 0])
 
         angle_to_targets = target_thetas - self.robot.body_rpy[2]
-        # distance_to_targets = np.linalg.norm(delta_positions[:, :, 0:2], axis=-1)
-
-        delta_xy = delta_positions[:, :, 0:2]
-        S = np.prod(delta_xy.shape[0:2])
-        distance_to_targets = np.zeros(S)
-        numba_norm2_2d(delta_xy.reshape((S, delta_xy.shape[-1])), distance_to_targets)
-        distance_to_targets = distance_to_targets.reshape(delta_xy.shape[0:2])
+        distance_to_targets = np.sqrt(ss(delta_positions[:, :, 0:2], axis=-1))
 
         local_parameters = np.stack(
             (
@@ -1214,10 +1215,8 @@ class Walker3DPlannerEnv(EnvBase):
     def calc_next_step_index(self, path):
         feet_xy = self.robot.feet_xyz[:, 0:2]
         step_xy = path[self.next_step_index, 0:2]
-        # self.foot_dist_to_target = np.linalg.norm(feet_xy - step_xy, axis=-1)
-        delta_xy = feet_xy - step_xy
-        numba_norm2_2d(delta_xy, self.foot_dist_to_target)
-        closest_foot = np.argmin(self.foot_dist_to_target)
+        self.foot_dist_to_target = np.sqrt(ss(feet_xy - step_xy, axis=-1))
+        closest_foot = nanargmin(self.foot_dist_to_target)
 
         if (
             self.robot.feet_contact[closest_foot]

@@ -8,11 +8,32 @@ import gym
 from numba import njit
 import numpy as np
 from numpy import concatenate
+import scipy.linalg
 import pybullet
 
 from mocca_envs.bullet_utils import BodyPart, Joint
 
 DEG2RAD = np.pi / 180
+FSCAL = scipy.linalg.get_blas_funcs("scal", arrays=(np.array(1, dtype=np.float32),))
+# FCOPY = scipy.linalg.get_blas_funcs("copy", arrays=(np.array(1, dtype=np.float32),))
+# FAXPY = scipy.linalg.get_blas_funcs("axpy", arrays=(np.array(1, dtype=np.float32),))
+
+
+@njit(fastmath=True)
+def count_nonzero_abs(a, b):
+    count = 0
+    for i in range(len(a)):
+        count += abs(a[i]) > b
+    return count
+
+
+@njit(fastmath=True)
+def clip(a, amin, amax):
+    for i in range(len(a)):
+        if a[i] > amax:
+            a[i] = amax
+        elif a[i] < amin:
+            a[i] = amin
 
 
 class WalkerBase:
@@ -35,19 +56,18 @@ class WalkerBase:
         high = np.inf * np.ones(self.state_dim)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
-        self._root_matrix = np.eye(3)
-        # self.joint_angles = np.zeros(self.action_dim, dtype=np.float32)
-        # self.joint_speeds = np.zeros(self.action_dim, dtype=np.float32)
         self.joint_angles, self.joint_speeds = np.zeros(
             (2, self.action_dim), dtype=np.float32
         )
+        self.normalized_joint_angles = np.zeros_like(self.joint_angles)
 
     def apply_action(self, a):
+        forces = self.matrix_joint_base_gains.dot(a).dot(self.applied_gain)
         pybullet.setJointMotorControlArray(
-            bodyIndex=self.id,
+            bodyUniqueId=self.id,
             jointIndices=self.ordered_joint_ids,
             controlMode=pybullet.TORQUE_CONTROL,
-            forces=self.ordered_joint_base_gains * self.applied_gain * a,
+            forces=forces,
             physicsClientId=self._p._client,
         )
 
@@ -69,12 +89,10 @@ class WalkerBase:
             self.joint_speeds,
             physicsClientId=self._p._client,
         )
-        self.joint_speeds *= 0.1
+        FSCAL(0.1, self.joint_speeds)
 
-        self.normalized_joint_angles = self.to_normalized(self.joint_angles)
-        self.joints_at_limit = np.count_nonzero(
-            abs(self.normalized_joint_angles) > 0.99
-        )
+        self.to_normalized(self.joint_angles, self.normalized_joint_angles)
+        self.joints_at_limit = count_nonzero_abs(self.normalized_joint_angles, 0.99)
 
         if self.root_and_foot_ids is not None:
             link_states = pybullet.getLinkStates(
@@ -84,15 +102,12 @@ class WalkerBase:
                 physicsClientId=self._p._client,
             )
             root_state = link_states[0]
-            self.body_xyz = np.array(root_state[0])
+            self.body_xyz = np.fromiter(root_state[0], dtype=np.float32)
             body_global_vel = root_state[6]
             self.body_rpy = pybullet.getEulerFromQuaternion(root_state[1])
-            self.feet_xyz = np.array([state[0] for state in link_states[1:]])
-
-            # pose = self.robot_body.get_pose()
-            # print("body_xyz", np.abs(self.body_xyz - pose[:3]))
-            # print("body_vel", np.linalg.norm(self.robot_body.speed() - root_state[6]))
-            # print("body_rpy", np.abs(np.array(self.body_rpy) - pybullet.getEulerFromQuaternion(pose[3:])) * 180 / np.pi)
+            self.feet_xyz = np.array(
+                [state[0] for state in link_states[1:]], dtype=np.float32
+            )
         else:
             pose = self.robot_body.get_pose()
             self.body_xyz = pose[:3]
@@ -103,18 +118,18 @@ class WalkerBase:
             foot_info = pybullet.getLinkStates(
                 self.id, self.foot_ids, physicsClientId=self._p._client
             )
-            self.feet_xyz = np.array([f[0] for f in foot_info])
+            self.feet_xyz = np.array([f[0] for f in foot_info], dtype=np.float32)
 
         roll, pitch, yaw = self.body_rpy
 
         yaw_cos = math.cos(-yaw)
         yaw_sin = math.sin(-yaw)
-        self._root_matrix[0, 0] = yaw_cos
-        self._root_matrix[0, 1] = -yaw_sin
-        self._root_matrix[1, 0] = yaw_sin
-        self._root_matrix[1, 1] = yaw_cos
-
-        self.body_vel = self._root_matrix.dot(body_global_vel)
+        vxg, vyg, vzg = body_global_vel
+        self.body_vel = (
+            yaw_cos * vxg - yaw_sin * vyg,
+            yaw_sin * vxg + yaw_cos * vyg,
+            vzg,
+        )
         vx, vy, vz = self.body_vel
 
         if contact_object_ids is not None:
@@ -135,8 +150,9 @@ class WalkerBase:
         height = self.body_xyz[2] - nanmin(self.feet_xyz[:, 2])
 
         # Faster than np.clip()
-        self.joint_speeds[self.joint_speeds < -5] = -5
-        self.joint_speeds[self.joint_speeds > +5] = +5
+        clip(self.joint_speeds, -5, 5)
+        # self.joint_speeds[self.joint_speeds < -5] = -5
+        # self.joint_speeds[self.joint_speeds > +5] = +5
 
         state = concatenate(
             (
@@ -192,13 +208,18 @@ class WalkerBase:
         # bias is the angle corresponding to -1
         bias = np.array([j.lowerLimit for j in self.ordered_joints], dtype=np.float32)
 
+        a = 2 / weight
+        b = 2 * bias / weight + 1
+
         @njit(fastmath=True)
         def to_radians(theta):
             return weight * (theta + 1) / 2 + bias
 
         @njit(fastmath=True)
-        def to_normalized(angle):
-            return 2 * (angle - bias) / weight - 1
+        def to_normalized(angle, out):
+            # out = a * angle - b
+            for i in range(len(angle)):
+                out[i] = a[i] * angle[i] - b[i]
 
         self.to_radians = to_radians
         self.to_normalized = to_normalized
@@ -244,7 +265,10 @@ class WalkerBase:
                     self.ordered_joint_base_gains.append(gain)
 
         # need to use it to calculate torques later
-        self.ordered_joint_base_gains = np.array(self.ordered_joint_base_gains)
+        self.ordered_joint_base_gains = np.array(
+            self.ordered_joint_base_gains, dtype=np.float32
+        )
+        self.matrix_joint_base_gains = np.diag(self.ordered_joint_base_gains)
         self._zeros = [0 for _ in self.ordered_joint_ids]
         self._gains = [0.1 for _ in self.ordered_joint_ids]
 
@@ -262,10 +286,10 @@ class WalkerBase:
         if random_pose:
             # Add small deviations
             ds = self.np_random.uniform(low=-0.1, high=0.1, size=self.action_dim)
-            ps = self.to_normalized(base_joint_angles + ds)
-            ps[ps < -0.95] = -0.95
-            ps[ps > +0.95] = +0.95
-            base_joint_angles = self.to_radians(ps)
+            self.to_normalized(base_joint_angles + ds, ds)
+            ds[ds < -0.95] = -0.95
+            ds[ds > +0.95] = +0.95
+            base_joint_angles = self.to_radians(ds)
 
         self.reset_joint_states(base_joint_angles, self.base_joint_speeds)
 
