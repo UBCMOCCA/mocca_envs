@@ -11,7 +11,6 @@ setup(
         "pybullet",
         "gym>=0.10.10",
         "numpy",
-        "numba",
         "bottleneck",
         # And any other dependencies
     ],
