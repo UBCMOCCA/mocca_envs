@@ -159,7 +159,7 @@ class MonkeyBar:
         rgba = (55 / 255, 55 / 255, 55 / 255, 1) if rgba is None else rgba
 
         self._pos = pos
-        self._quat = np.array([0.0, 0.0, 0.0, 1.0])
+        self._quat = np.array([1.0, 0.0, 0.0, 1.0])
 
         box_shape = self._p.createCollisionShape(
             self._p.GEOM_CYLINDER, radius=r, height=h
@@ -173,6 +173,8 @@ class MonkeyBar:
             baseCollisionShapeIndex=box_shape,
             baseVisualShapeIndex=box_vshape,
             basePosition=self._pos,
+            baseInertialFrameOrientation=self._quat,
+            flags=self._p.URDF_ENABLE_CACHED_GRAPHICS_SHAPES
         )
 
         # self._p.changeDynamics(

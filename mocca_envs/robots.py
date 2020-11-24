@@ -5,6 +5,7 @@ current_dir = os.path.dirname(os.path.realpath(__file__))
 
 from bottleneck import nanmin
 import gym
+from numba import njit
 import numpy as np
 from numpy import concatenate
 import scipy.linalg

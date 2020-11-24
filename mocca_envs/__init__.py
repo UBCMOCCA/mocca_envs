@@ -92,8 +92,8 @@ register(
 )
 
 register(
-    id="Monkey3DCustomEnv-v0",
-    entry_point="mocca_envs.env_locomotion:Monkey3DCustomEnv",
+    id="Monkey3DStepperEnv-v0",
+    entry_point="mocca_envs.env_locomotion:Monkey3DStepperEnv",
     max_episode_steps=1000,
 )
 

@@ -3,6 +3,7 @@ import os
 
 from bottleneck import ss, anynan, nanargmax, nanargmin, nanmin
 import gym
+from numba import njit
 import numpy as np
 from numpy import concatenate
 import pybullet
@@ -368,18 +369,17 @@ class Walker3DStepperEnv(EnvBase):
         # Important to do this once before reset!
         self.terrain_info = self.generate_step_placements()
 
-        # robot_state + (2 targets) * (x, y, z, x_tilt, y_tilt)
+        # Observation and Action spaces
         self.robot_obs_dim = self.robot.observation_space.shape[0]
         K = self.lookahead + self.lookbehind
-        high = np.inf * np.ones(self.robot_obs_dim + (K) * self.step_param_dim)
+        high = np.inf * np.ones(self.robot_obs_dim + K * self.step_param_dim)
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
         self.action_space = self.robot.action_space
 
         # pre-allocate buffers
-        self._foot_target_contacts = np.zeros(
-            (len(self.robot.feet), 1), dtype=np.float32
-        )
-        self.foot_dist_to_target = np.zeros(len(self.robot.feet), dtype=np.float32)
+        F = len(self.robot.feet)
+        self._foot_target_contacts = np.zeros((F, 1), dtype=np.float32)
+        self.foot_dist_to_target = np.zeros(F, dtype=np.float32)
 
     def generate_step_placements(self):
 
@@ -1434,99 +1434,81 @@ class MikePlannerEnv(Walker3DPlannerEnv):
     base_filename = "MikePlannerBase.pt"
 
 
-class Monkey3DCustomEnv(EnvBase):
+class Monkey3DStepperEnv(Walker3DStepperEnv):
 
-    control_step = 1 / 60
-    llc_frame_skip = 1
-    sim_frame_skip = 4
+    robot_class = Monkey3D
+    robot_random_start = False
+    robot_init_position = [0, 0, 0]
+    robot_init_velocity = None
 
-    initial_height = 20
-    bar_length = 5
+    step_radius = 0.015
+    step_length = 5
+
+    stop_steps = []
 
     def __init__(self, **kwargs):
-        # Need these before calling constructor
-        # because they are used in self.create_terrain()
-        self.step_radius = 0.015
-        self.rendered_step_count = 4
 
-        super().__init__(Monkey3D, **kwargs)
+        self.swing_leg = 0
+        super().__init__(**kwargs)
         self.robot.set_base_pose(pose="monkey_start")
-        self.robot.base_position = (0, 0, self.initial_height)
-        self.robot.base_velocity = np.array([3, 0, -1])
 
-        # Robot settings
-        self.electricity_cost = 4.5
-        self.stall_torque_cost = 0.225
-        self.joints_at_limit_cost = 0.1
-
-        # Env settings
-        self.num_steps = 32
-        self.lookahead = 2
-        self.next_step_index = 2
+        N = self.max_curriculum + 1
+        self.applied_gain_curriculum = np.linspace(1.0, 1.0, N)
 
         # Terrain info
-        self.pitch_limit = 0
-        self.yaw_limit = 0
-        self.r_range = np.array([0.3, 0.5])
-        self.terrain_info = np.zeros((self.num_steps, 4))
+        self.dist_range = np.array([0.3, 0.5])
+        self.pitch_range = np.array([-30, +30])
+        self.yaw_range = np.array([-20, 20])
+        self.tilt_range = np.array([-15, 15])
+        self.step_param_dim = 5
+        self.terrain_info = self.generate_step_placements()
 
-        # robot_state + (2 targets) * (x, y, z) + {swing, pivot}_leg + swing_{xyz, quat}
-        robot_obs_dim = self.robot.observation_space.shape[0]
-        base_env_dim = robot_obs_dim + self.lookahead * 3 + 2 + 7
-        high = np.inf * np.ones(base_env_dim)
-        self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
+    def generate_step_placements(self):
 
-        # torques
-        robot_act_dim = self.robot.action_space.shape[0]
-        high = np.inf * np.ones(robot_act_dim)
-        self.action_space = gym.spaces.Box(-high, high, dtype=np.float32)
+        # Check just in case
+        self.curriculum = min(self.curriculum, self.max_curriculum)
+        ratio = self.curriculum / self.max_curriculum
 
-    def generate_step_placements(self, num_steps=50, yaw_limit=30, pitch_limit=25):
+        # {self.max_curriculum + 1} levels in total
+        dist_upper = np.linspace(*self.dist_range, self.max_curriculum + 1)
+        dist_range = np.array([self.dist_range[0], dist_upper[self.curriculum]])
+        yaw_range = self.yaw_range * ratio * DEG2RAD
+        pitch_range = self.pitch_range * ratio * DEG2RAD + np.pi / 2
+        tilt_range = self.tilt_range * ratio * DEG2RAD
 
-        y_range = np.array([-yaw_limit, yaw_limit]) * DEG2RAD
-        p_range = np.array([90 - pitch_limit, 90 + pitch_limit]) * DEG2RAD
+        N = self.num_steps
+        dr = self.np_random.uniform(*dist_range, size=N)
+        dphi = self.np_random.uniform(*yaw_range, size=N)
+        dtheta = self.np_random.uniform(*pitch_range, size=N)
+        x_tilt = self.np_random.uniform(*tilt_range, size=N)
+        y_tilt = self.np_random.uniform(*tilt_range, size=N)
 
-        dr = self.np_random.uniform(*self.r_range, size=num_steps)
-        dphi = self.np_random.uniform(*y_range, size=num_steps)
-        dtheta = self.np_random.uniform(*p_range, size=num_steps)
-
-        # special treatment for first steps
+        # Special treatment for first step
+        dr[0] = 0
         dphi[0] = 0
-        dphi[1] = 0
+        dtheta[0] = np.pi / 2
+        x_tilt[0] = 0
+        y_tilt[0] = 0
 
-        phi = np.cumsum(dphi)
+        dphi = np.cumsum(dphi)
 
-        dx = dr * np.sin(dtheta) * np.cos(phi + self.base_phi)
-        # clip to prevent overlapping
-        dx = np.sign(dx) * np.minimum(
-            np.maximum(np.abs(dx), self.step_radius * 2.5), self.r_range[1]
-        )
-        dy = dr * np.sin(dtheta) * np.sin(phi + self.base_phi)
+        dx = dr * np.sin(dtheta) * np.cos(dphi)
+        dy = dr * np.sin(dtheta) * np.sin(dphi)
         dz = dr * np.cos(dtheta)
 
-        # first step is on the arm that is behind
-        i = np.argmin(self.robot.feet_xyz[:, 0])
-        dx[0] = self.robot.feet_xyz[i, 0]
-        dy[0] = self.robot.feet_xyz[i, 1]
-        dz[0] = self.robot.feet_xyz[i, 2]
-
-        # second step on the arm that is in front
-        j = np.argmax(self.robot.feet_xyz[:, 0])
-        dx[1] = self.robot.feet_xyz[j, 0] - dx[0] + 0.01
-        dy[1] = self.robot.feet_xyz[j, 1] - dy[0]
-        dz[1] = self.robot.feet_xyz[j, 2] - dz[0] - 0.02
+        # Fix overlapping steps
+        dx_max = np.maximum(np.abs(dx[2:]), self.step_radius * 2.5)
+        dx[2:] = np.sign(dx[2:]) * np.minimum(dx_max, self.dist_range[1])
 
         dx[0] += 0.04
-        dz[0] += -self.initial_height + 0.04
+        dz[0] += 0.04
 
-        x = np.cumsum(dx)
-        y = np.cumsum(dy)
-        z = np.cumsum(dz) + self.initial_height
+        # Put first step right on hand
+        x = np.cumsum(dx) + self.robot.feet_xyz[self.swing_leg, 0]
+        y = np.cumsum(dy) + self.robot.feet_xyz[self.swing_leg, 1]
+        z = np.cumsum(dz) + self.robot.feet_xyz[self.swing_leg, 2]
 
-        self.swing_leg = i
-        self.pivot_leg = j
-
-        return np.stack((x, y, z, phi), axis=1)
+        return np.stack((x, y, z, dphi, x_tilt, y_tilt), axis=1)
 
     def create_terrain(self):
         self.steps = []
@@ -1534,281 +1516,154 @@ class Monkey3DCustomEnv(EnvBase):
         cover_ids = set()
 
         for index in range(self.rendered_step_count):
-            p = MonkeyBar(self._p, self.step_radius, self.bar_length)
+            p = MonkeyBar(self._p, self.step_radius, self.step_length)
             self.steps.append(p)
             step_ids = step_ids | {(p.id, p.base_id)}
             cover_ids = cover_ids | {(p.id, p.cover_id)}
 
         # Need set for detecting contact
-        self.all_contact_object_ids = set(step_ids) | set(cover_ids) | self.ground_ids
+        self.all_contact_object_ids = set(step_ids) | set(cover_ids)
 
-    def set_step_state(self, info_index, step_index):
-        pos = self.terrain_info[info_index, 0:3]
-        phi = self.terrain_info[info_index, 3]
-        quaternion = np.array(pybullet.getQuaternionFromEuler([90 * DEG2RAD, 0, phi]))
-        self.steps[step_index].set_position(pos=pos, quat=quaternion)
-
-    def randomize_terrain(self):
-
-        self.terrain_info = self.generate_step_placements(
-            self.num_steps, self.yaw_limit, self.pitch_limit
-        )
-
-        for index in range(self.rendered_step_count):
-            self.set_step_state(index, index)
-
-    def update_steps(self):
-        if self.rendered_step_count == self.num_steps:
-            return
-
-        if self.next_step_index >= self.rendered_step_count:
-            oldest = self.next_step_index % self.rendered_step_count
-            next = min(self.next_step_index, len(self.terrain_info) - 1)
-            self.set_step_state(next, oldest)
-
-    def get_observation_components(self):
-        swing_foot_name = "right_palm" if self.swing_leg == 0 else "left_palm"
-        swing_foot_xyz = self.robot.parts[swing_foot_name].pose().xyz()
-        swing_foot_delta = self.walk_target - swing_foot_xyz
-        swing_foot_quat = self.robot.parts[swing_foot_name].pose().orientation()
-
-        return (
-            self.robot_state[:-2],
-            self.robot.feet_contact,
-            self.targets.flatten(),
-            [self.swing_leg, self.pivot_leg],
-            swing_foot_delta,
-            swing_foot_quat,
-        )
+        if not self.remove_ground:
+            self.all_contact_object_ids |= self.ground_ids
 
     def reset(self):
-        self.done = False
-        self.free_fall_count = 0
-        self.target_reached_count = 0
+        if self.state_id >= 0:
+            self._p.restoreState(self.state_id)
+
         self.timestep = 0
+        self.done = False
+        self.target_reached_count = 0
 
-        for i in range(self._p.getNumConstraints()):
-            id = self._p.getConstraintUniqueId(i)
-            self._p.removeConstraint(id)
+        self.set_stop_on_next_step = False
+        self.stop_on_next_step = False
 
-        # start at 2 because first 2 are already in contact
-        self.next_step_index = 2
-
-        self.robot_state = self.robot.reset(random_pose=False)
-
-        self.base_phi = DEG2RAD * np.array(
-            [-10] + [20, -20] * (self.num_steps // 2 - 1) + [10]
+        self.robot.applied_gain = self.applied_gain_curriculum[self.curriculum]
+        self.robot_state = self.robot.reset(
+            random_pose=self.robot_random_start,
+            pos=self.robot_init_position,
+            vel=self.robot_init_velocity,
         )
-        self.base_phi *= np.sign(float(not self.robot.mirrored) - 0.5)
+        self.swing_leg = 1 if self.robot.mirrored else 0
 
-        self.randomize_terrain()
+        # Randomize platforms
+        # replace = self.next_step_index >= self.num_steps / 2
+        self.next_step_index = self.lookbehind
+        self._prev_next_step_index = self.next_step_index - 1
+        self.randomize_terrain(replace=True)
         self.calc_feet_state()
 
         # Reset camera
-        if self.is_rendered:
+        if self.is_rendered or self.use_egl:
             self.camera.lookat(self.robot.body_xyz)
 
-        self.targets = self.delta_to_k_targets(k=self.lookahead)
+        self.targets = self.delta_to_k_targets()
+        assert self.targets.shape[-1] == self.step_param_dim
+
         # Order is important because walk_target is set up above
         self.calc_potential()
 
-        state = concatenate(self.get_observation_components())
+        state = concatenate((self.robot_state, self.targets.flatten()))
+
+        if not self.state_id >= 0:
+            self.state_id = self._p.saveState()
 
         return state
-
-    def step(self, action):
-        # action *= 0
-        self.timestep += 1
-
-        action[17 if self.swing_leg == 0 else 22] = +1
-        action[17 if self.pivot_leg == 0 else 22] = -1
-
-        # action[[17, 22]] = -1
-
-        self.robot.apply_action(action)
-        self.scene.global_step()
-
-        # Don't calculate the contacts for now
-        self.robot_state = self.robot.calc_state(contact_object_ids=None)
-        self.calc_env_state(action)
-
-        reward = self.progress - 0 * self.energy_penalty
-        reward += self.step_bonus + (self.target_bonus - self.speed_penalty) * 0
-        reward += 0 * (self.tall_bonus - self.posture_penalty - self.joints_penalty)
-
-        contact_penalty = self.robot.feet_contact[self.swing_leg]
-        reward += -contact_penalty
-
-        self.done = self.done or (self.timestep > 180 and self.next_step_index <= 2)
-
-        state = concatenate(self.get_observation_components())
-
-        if self.is_rendered:
-            self._handle_keyboard()
-            self.camera.track(pos=self.robot.body_xyz)
-
-        return state, reward, self.done, {}
-
-    def calc_potential(self):
-
-        walk_target_delta = self.walk_target - self.robot.body_xyz
-        self.distance_to_target = sqrt(ss(walk_target_delta[0:2]))
-
-        swing_foot_name = "right_palm" if self.swing_leg == 0 else "left_palm"
-        swing_foot_xyz = self.robot.parts[swing_foot_name].pose().xyz()
-        swing_foot_delta = self.walk_target - swing_foot_xyz
-        swing_distance = np.linalg.norm(swing_foot_delta)
-
-        self.linear_potential = -self.distance_to_target / self.scene.dt
-        self.swing_potential = -swing_distance / self.scene.dt
 
     def calc_base_reward(self, action):
 
         # Bookkeeping stuff
         old_linear_potential = self.linear_potential
-        old_swing_potential = self.swing_potential
 
         self.calc_potential()
 
         linear_progress = self.linear_potential - old_linear_potential
-        swing_progress = self.swing_potential - old_swing_potential
-        self.progress = 0 * linear_progress + swing_progress
+        self.progress = linear_progress
 
         self.posture_penalty = 0
-        if not -60 < self.robot.body_rpy[0] * RAD2DEG < 60:
-            self.posture_penalty += abs(self.robot.body_rpy[0])
-
-        if not -40 < self.robot.body_rpy[1] * RAD2DEG < 40:
+        if not -0.2 < self.robot.body_rpy[1] < 0.4:
             self.posture_penalty = abs(self.robot.body_rpy[1])
 
-        if not -90 < self.robot.body_rpy[2] * RAD2DEG < 90:
-            self.posture_penalty += abs(self.robot.body_rpy[2])
+        if not -0.4 < self.robot.body_rpy[0] < 0.4:
+            self.posture_penalty += abs(self.robot.body_rpy[0])
 
         speed = sqrt(ss(self.robot.body_vel))
         self.speed_penalty = max(speed - 1.6, 0)
 
-        self.energy_penalty = self.electricity_cost * float(
-            np.abs(action * self.robot.joint_speeds).mean()
-        )
-        self.energy_penalty += self.stall_torque_cost * float(np.square(action).mean())
-
-        self.joints_penalty = float(
-            self.joints_at_limit_cost * self.robot.joints_at_limit
+        self.energy_penalty = self._calc_base_reward(
+            action,
+            self.robot.joint_speeds,
+            self.electricity_cost,
+            self.stall_torque_cost,
         )
 
-        self.tall_bonus = 2.0 * float((self.robot.feet_contact == 1).any())
-        self.done = self.done or (self.free_fall_count > 30)
+        self.joints_penalty = self.joints_at_limit_cost * self.robot.joints_at_limit
+
+        self.tall_bonus = 1
+        abs_height = self.robot.body_xyz[2] - self.terrain_info[self.next_step_index, 2]
+        self.done = self.done or self.tall_bonus < 0 or abs_height < -3
 
     def calc_feet_state(self):
         # Calculate contact separately for step
         target_cover_index = self.next_step_index % self.rendered_step_count
         next_step = self.steps[target_cover_index]
-        p_xyz = self.terrain_info[self.next_step_index, [0, 1, 2]]
+        # target_cover_id = {(next_step.id, next_step.cover_id)}
 
-        for i, f in enumerate(self.robot.feet):
-
-            contact_ids = set((x[2], x[4]) for x in f.contact_list())
-            if self.all_contact_object_ids & contact_ids:
-                self.robot.feet_contact[i] = 1.0
-            else:
-                self.robot.feet_contact[i] = 0.0
-
-            if i == self.swing_leg:
-
-                delta = self.robot.feet_xyz[self.swing_leg] - p_xyz
-                distance = sqrt(ss(delta[0:2]))
-                self.foot_dist_to_target = distance
-
-                palm_name = "right_palm" if self.swing_leg == 0 else "left_palm"
-                palm_id = self.robot.parts[palm_name].bodyPartIndex
-                palm_contacts = set(
-                    (x[2], x[4])
-                    for x in self._p.getContactPoints(self.robot.id, linkIndexA=palm_id)
-                )
-
-                # self.target_reached = bool(
-                #     {(next_step.id, next_step.cover_id)} & contact_ids
-                # ) and bool({(next_step.id, next_step.cover_id)} & finger_contacts)
-
-                self.target_reached_count += bool(
-                    {(next_step.id, next_step.cover_id)} & palm_contacts
-                )
-
-                self.target_reached = self.target_reached_count >= 1
-
-                if not self.target_reached:
-                    continue
-
-                # Update next step
-                self.target_reached_count = 0
-                self.next_step_index += 1
-                self.next_step_index = min(
-                    self.next_step_index, self.terrain_info.shape[0] - 1
-                )
-                self.update_steps()
-                self.pivot_leg = self.swing_leg
-                self.swing_leg = (self.swing_leg + 1) % 2
-
-    def calc_step_reward(self):
-
-        self.step_bonus = 0
-        if self.target_reached:
-            self.step_bonus = 50 * np.exp(-self.foot_dist_to_target / 0.25)
-
-        # For last step only
-        self.target_bonus = 0
-        if (
-            self.next_step_index == len(self.terrain_info) - 1
-            and self.distance_to_target < 0.15
-        ):
-            self.target_bonus = 2.0
-
-    def calc_env_state(self, action):
-        if anynan(self.robot_state):
-            print("~INF~", self.robot_state)
-            self.done = True
-
-        cur_step_index = self.next_step_index
-
-        # detects contact and set next step
-        self.calc_feet_state()
-        self.calc_base_reward(action)
-        self.calc_step_reward()
-        # use next step to calculate next k steps
-        self.targets = self.delta_to_k_targets(k=self.lookahead)
-
-        # use contact to detect done
-        mask = float(np.sum(self.robot.feet_contact) == 0)
-        self.free_fall_count = mask * self.free_fall_count + mask
-
-        if cur_step_index != self.next_step_index:
-            self.calc_potential()
-
-    def delta_to_k_targets(self, k=1):
-        """ Return positions (relative to root) of target, and k-1 step after """
-        targets = self.terrain_info[self.next_step_index : self.next_step_index + k]
-        if len(targets) < k:
-            # If running out of targets, repeat last target
-            targets = concatenate(
-                (targets, np.repeat(targets[[-1]], k - len(targets), axis=0))
+        self.foot_dist_to_target = np.sqrt(
+            ss(
+                self.robot.feet_xyz[:, 0:2]
+                - self.terrain_info[self.next_step_index, 0:2],
+                axis=1,
             )
-
-        self.walk_target = targets[[0], 0:3].mean(axis=0)
-
-        # delta_pos = targets[:, 0:3] - self.robot.feet_xyz[self.swing_leg]
-        delta_pos = targets[:, 0:3] - self.robot.body_xyz
-        target_thetas = np.arctan2(delta_pos[:, 1], delta_pos[:, 0])
-
-        angle_to_targets = target_thetas - self.robot.body_rpy[2]
-        distance_to_targets = np.linalg.norm(delta_pos[:, 0:2], ord=2, axis=1)
-
-        deltas = np.stack(
-            (
-                np.sin(angle_to_targets) * distance_to_targets,  # x
-                np.cos(angle_to_targets) * distance_to_targets,  # y
-                delta_pos[:, 2],  # z
-            ),
-            axis=1,
         )
 
-        return deltas
+        robot_id = self.robot.id
+        client_id = self._p._client
+        target_id_list = [next_step.id]
+        target_cover_id_list = [next_step.cover_id]
+        self._foot_target_contacts.fill(0)
+
+
+
+        for i, (name, contact) in enumerate(
+            zip(["right_palm", "left_palm"], self._foot_target_contacts)
+        ):
+            foot = self.robot.parts[name]
+            self.robot.feet_contact[i] = pybullet.getContactStates(
+                bodyA=robot_id,
+                linkIndexA=foot.bodyPartIndex,
+                bodiesB=target_id_list,
+                linkIndicesB=target_cover_id_list,
+                results=contact,
+                physicsClientId=client_id,
+            )
+
+        if (
+            self.next_step_index - 1 in self.stop_steps
+            and self.next_step_index - 2 in self.stop_steps
+        ):
+            self.swing_leg = nanargmax(self._foot_target_contacts[:, 0])
+        self.target_reached = self._foot_target_contacts[self.swing_leg, 0] > 0
+
+        # At least one foot is on the plank
+        if self.target_reached:
+            self.target_reached_count += 1
+
+            # Advance after has stopped for awhile
+            if self.target_reached_count > 120:
+                self.stop_on_next_step = False
+                self.set_stop_on_next_step = False
+
+            # Slight delay for target advancement
+            # Needed for not over counting step bonus
+            if self.target_reached_count >= 2:
+                if not self.stop_on_next_step:
+                    self.swing_leg = (self.swing_leg + 1) % 2
+                    self.next_step_index += 1
+                    self.target_reached_count = 0
+                    self.update_steps()
+                self.stop_on_next_step = self.set_stop_on_next_step
+
+            # Prevent out of bound
+            if self.next_step_index >= len(self.terrain_info):
+                self.next_step_index -= 1
