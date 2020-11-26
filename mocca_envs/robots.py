@@ -357,12 +357,12 @@ class Walker2D(WalkerBase):
     foot_names = ["right_foot", "left_foot"]
 
     power_coef = {
-        "torso_joint": 100,
-        "right_thigh_joint": 100,
-        "right_leg_joint": 100,
+        "torso_joint": 40,
+        "right_thigh_joint": 70,
+        "right_leg_joint": 70,
         "right_foot_joint": 50,
-        "left_thigh_joint": 100,
-        "left_leg_joint": 100,
+        "left_thigh_joint": 70,
+        "left_leg_joint": 70,
         "left_foot_joint": 50,
     }
 
@@ -391,11 +391,11 @@ class Crab2D(WalkerBase):
     foot_names = ["right_foot", "left_foot"]
 
     power_coef = {
-        "right_thigh_joint": 100,
-        "right_leg_joint": 100,
+        "right_thigh_joint": 70,
+        "right_leg_joint": 70,
         "right_foot_joint": 50,
-        "left_thigh_joint": 100,
-        "left_leg_joint": 100,
+        "left_thigh_joint": 70,
+        "left_leg_joint": 70,
         "left_foot_joint": 50,
     }
 

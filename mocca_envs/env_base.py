@@ -171,25 +171,27 @@ class EnvBase(gym.Env):
             keys = self._p.getKeyboardEvents()
 
         RELEASED = self._p.KEY_WAS_RELEASED
+        self.keypress_status = keys
 
         # keys is a dict, so need to check key exists
         if keys.get(ord("d")) == RELEASED:
             self.debug = True if not hasattr(self, "debug") else not self.debug
         elif keys.get(ord("r")) == RELEASED:
             self.done = True
-        elif keys.get(65280) == RELEASED:
-            # F1
+        elif keys.get(self._p.B3G_F1) == RELEASED:
             from imageio import imwrite
 
             now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
             imwrite("{}.png".format(now), self.camera.dump_rgb_array())
-        elif keys.get(65281) == RELEASED:
-            # F2
+        elif keys.get(pybullet.B3G_F2) == RELEASED:
             now = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
             self._p.startStateLogging(
                 self._p.STATE_LOGGING_VIDEO_MP4, "{}.mp4".format(now)
             )
         elif keys.get(ord(" ")) == RELEASED:
+            self._p.configureDebugVisualizer(
+                self._p.COV_ENABLE_SINGLE_STEP_RENDERING, 0
+            )
             while True:
                 keys = self._p.getKeyboardEvents()
                 if keys.get(ord(" ")) == RELEASED:

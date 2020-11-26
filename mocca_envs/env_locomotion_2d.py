@@ -23,8 +23,8 @@ class Walker2DCustomEnv(EnvBase):
         super().__init__(self.robot_class, **kwargs)
 
         # used for calculating energy penalty
-        self.electricity_cost = 4.5
-        self.stall_torque_cost = 0.225
+        self.electricity_cost = 2.0
+        self.stall_torque_cost = 0.1
         self.joints_at_limit_cost = 0.1
 
         # goal is to walk as far forward as possible
@@ -141,7 +141,7 @@ class Walker2DCustomEnv(EnvBase):
         )
 
         # tall bonus encourages robot to stay upright
-        self.tall_bonus = 2.0 if self.robot_state[0] > self.termination_height else -1.0
+        self.tall_bonus = 1.0 if self.robot_state[0] > self.termination_height else -1.0
 
         # since getting up can be hard to learn
         # terminate the episode when robot falls
@@ -149,6 +149,9 @@ class Walker2DCustomEnv(EnvBase):
 
 
 class Crab2DCustomEnv(Walker2DCustomEnv):
+
+    # same implementation as Walker2D
+    # only changing the robot class and robot specific settings
     robot_class = Crab2D
-    termination_height = 0.4
+    termination_height = 0.5
     robot_init_position = [0, 0, 1.2]
