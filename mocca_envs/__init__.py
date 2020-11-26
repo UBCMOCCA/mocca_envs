@@ -105,12 +105,12 @@ register(
 
 register(
     id="Walker2DCustomEnv-v0",
-    entry_point="mocca_envs.env_locomotion:Walker2DCustomEnv",
+    entry_point="mocca_envs.env_locomotion_2d:Walker2DCustomEnv",
     max_episode_steps=1000,
 )
 
 register(
     id="Crab2DCustomEnv-v0",
-    entry_point="mocca_envs.env_locomotion:Crab2DCustomEnv",
+    entry_point="mocca_envs.env_locomotion_2d:Crab2DCustomEnv",
     max_episode_steps=1000,
 )

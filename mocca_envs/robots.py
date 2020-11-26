@@ -1,9 +1,11 @@
+import math
 import os
 
 current_dir = os.path.dirname(os.path.realpath(__file__))
 
 import gym
 import numpy as np
+import pybullet
 
 from mocca_envs.bullet_utils import BodyPart, Joint
 
@@ -29,47 +31,56 @@ class WalkerBase:
         self.observation_space = gym.spaces.Box(-high, high, dtype=np.float32)
 
     def apply_action(self, a):
-        assert np.isfinite(a).all()
-        normalized = self.applied_gain * np.clip(a, -1, 1)
-
-        self._p.setJointMotorControlArray(
-            bodyIndex=self.id,
+        forces = (self.ordered_joint_base_gains * a).dot(self.applied_gain)
+        pybullet.setJointMotorControlArray(
+            bodyUniqueId=self.id,
             jointIndices=self.ordered_joint_ids,
-            controlMode=self._p.TORQUE_CONTROL,
-            forces=self.ordered_joint_base_gains * normalized,
+            controlMode=pybullet.TORQUE_CONTROL,
+            forces=forces,
+            physicsClientId=self._p._client,
         )
 
     def calc_state(self, contact_object_ids=None):
 
-        # Use pybullet's array version, should be faster
-        j = self._p.getJointStates(self.id, self.ordered_joint_ids)
-        j = np.array(list(map(lambda x: x[0:2], j))).astype(np.float32)
+        # get joint states for all robot's joints from pybullet
+        joint_info = pybullet.getJointStates(
+            self.id, self.ordered_joint_ids, physicsClientId=self._p._client
+        )
 
-        self.joint_angles = j[:, 0]
+        # first column is joint angles, second column is joint speeds
+        # each joint is a 1 DoF hinge joint, so angle and speed are scalar values
+        # 0.1 is an arbitrary scaling factor to make sure values are not too large
+        # large values can be bad for neural networks
+        joint_angle_and_vel = np.array([j[0:2] for j in joint_info], dtype=np.float32)
+        self.joint_angles = joint_angle_and_vel[:, 0]
+        self.joint_speeds = 0.1 * joint_angle_and_vel[:, 1]
+
+        # normalize joint angles to between [-1, 1] wrt to max. range of motion
+        # same thing, small values are good
         self.normalized_joint_angles = self.to_normalized(self.joint_angles)
-        self.joint_speeds = 0.1 * j[:, 1]  # Normalize
         self.joints_at_limit = np.count_nonzero(
             np.abs(self.normalized_joint_angles) > 0.99
         )
 
+        # get robot's root position and orientation
         body_pose = self.robot_body.pose()
-
-        # Faster if we don't use true CoM
         self.body_xyz = body_pose.xyz()
-
         self.body_rpy = body_pose.rpy()
         roll, pitch, yaw = self.body_rpy
 
-        rot = np.array(
-            [
-                [np.cos(-yaw), -np.sin(-yaw), 0],
-                [np.sin(-yaw), np.cos(-yaw), 0],
-                [0, 0, 1],
-            ]
+        # get root's global velocity, and convert to local velocity
+        # shouldn't matter for 2d
+        vxg, vyg, vzg = self.robot_body.speed()
+        yaw_cos = math.cos(-yaw)
+        yaw_sin = math.sin(-yaw)
+        self.body_vel = (
+            yaw_cos * vxg - yaw_sin * vyg,
+            yaw_sin * vxg + yaw_cos * vyg,
+            vzg,
         )
-        self.body_vel = np.dot(rot, self.robot_body.speed())
         vx, vy, vz = self.body_vel
 
+        # get global positions for feet, and calculate contact with other objects
         self.feet_xyz = np.array([f.pose().xyz() for f in self.feet])
         if contact_object_ids is not None:
             self.feet_contact = np.array(
@@ -85,14 +96,20 @@ class WalkerBase:
                 ]
             )
 
-        height = self.body_xyz[2] - np.min(self.feet_xyz[:, 2])
+        # height is root relative to the lower foot
+        height = self.body_xyz[2] - self.feet_xyz[:, 2].min()
+
+        # state information for the root include height, velocity, and orientation
+        # note that yaw is not included
         more = np.array([height, vx, vy, vz, roll, pitch], dtype=np.float32)
 
+        # complete state is root's info, normalized joint angles, joint speeds, and contact
         state = np.concatenate(
             (more, self.normalized_joint_angles, self.joint_speeds, self.feet_contact)
         )
 
-        return np.clip(state, -5, +5)
+        # clip state to be safe, in case simulation explodes
+        return state.clip(-5, +5)
 
     def initialize(self):
         self.load_robot_model()
@@ -337,25 +354,25 @@ class Child3D(Walker3D):
 
 class Walker2D(WalkerBase):
 
-    foot_names = ["foot", "foot_left"]
+    foot_names = ["right_foot", "left_foot"]
 
     power_coef = {
         "torso_joint": 100,
-        "thigh_joint": 100,
-        "leg_joint": 100,
-        "foot_joint": 50,
-        "thigh_left_joint": 100,
-        "leg_left_joint": 100,
-        "foot_left_joint": 50,
+        "right_thigh_joint": 100,
+        "right_leg_joint": 100,
+        "right_foot_joint": 50,
+        "left_thigh_joint": 100,
+        "left_leg_joint": 100,
+        "left_foot_joint": 50,
     }
 
     def set_base_pose(self, pose=None):
         self.base_joint_angles[:] = 0  # reset
         self.base_orientation = np.array([0, 0, 0, 1])
 
-    def load_robot_model(self, model_path=None, flags=None, root_link_name=None):
+    def load_robot_model(self, model_path=None, flags=0, root_link_name=None):
         # Need to call this first to parse body
-        flags = flags or self._p.MJCF_COLORS_FROM_FILE
+        flags |= self._p.MJCF_COLORS_FROM_FILE
         model_path = model_path or os.path.join(
             current_dir, "data", "robots", "walker2d.xml"
         )
@@ -371,15 +388,15 @@ class Walker2D(WalkerBase):
 
 class Crab2D(WalkerBase):
 
-    foot_names = ["foot", "foot_left"]
+    foot_names = ["right_foot", "left_foot"]
 
     power_coef = {
-        "thigh_left_joint": 100,
-        "leg_left_joint": 100,
-        "foot_left_joint": 50,
-        "thigh_joint": 100,
-        "leg_joint": 100,
-        "foot_joint": 50,
+        "right_thigh_joint": 100,
+        "right_leg_joint": 100,
+        "right_foot_joint": 50,
+        "left_thigh_joint": 100,
+        "left_leg_joint": 100,
+        "left_foot_joint": 50,
     }
 
     def set_base_pose(self, pose=None):

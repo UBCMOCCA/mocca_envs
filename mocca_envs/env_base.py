@@ -98,8 +98,6 @@ class EnvBase(gym.Env):
 
         pc.configureDebugVisualizer(pc.COV_ENABLE_RENDERING, int(self.is_rendered))
 
-        self.state_id = self._p.saveState()
-
     def set_env_params(self, params_dict):
         for k, v in params_dict.items():
             if hasattr(self, k):
