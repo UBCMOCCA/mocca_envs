@@ -108,3 +108,9 @@ register(
     entry_point="mocca_envs.env_locomotion:Walker2DCustomEnv",
     max_episode_steps=1000,
 )
+
+register(
+    id="MikeAgileEnv-v0",
+    entry_point="mocca_envs.env_agility:MikeAgileEnv",
+    max_episode_steps=1000,
+)

@@ -174,7 +174,7 @@ class MonkeyBar:
             baseVisualShapeIndex=box_vshape,
             basePosition=self._pos,
             baseInertialFrameOrientation=self._quat,
-            flags=self._p.URDF_ENABLE_CACHED_GRAPHICS_SHAPES
+            flags=self._p.URDF_ENABLE_CACHED_GRAPHICS_SHAPES,
         )
 
         # self._p.changeDynamics(

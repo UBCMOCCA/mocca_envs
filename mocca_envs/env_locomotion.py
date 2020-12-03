@@ -1623,8 +1623,6 @@ class Monkey3DStepperEnv(Walker3DStepperEnv):
         target_cover_id_list = [next_step.cover_id]
         self._foot_target_contacts.fill(0)
 
-
-
         for i, (name, contact) in enumerate(
             zip(["right_palm", "left_palm"], self._foot_target_contacts)
         ):
